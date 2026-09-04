@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>복구센터 관리자</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
+</head>
+<body>
+<div class="wrap" style="max-width:760px">
+
+  <div class="topbar">
+    <div class="brand">복구센터 관리자</div>
+    <div class="who"><span id="who">...</span><a href="/logout">로그아웃</a></div>
+  </div>
+
+  <div class="stat-grid" id="stats"></div>
+
+  <div class="card">
+    <h2>복구요청 목록</h2>
+    <p class="desc">링크를 입력하고 [DM 발송]을 누르면 봇이 해당 유저의 디스코드 DM으로 즉시 전송합니다.</p>
+    <div class="filter-bar">
+      <button class="small active" data-f="대기">대기<span id="cntPending" class="count-badge" hidden></span></button>
+      <button class="small" data-f="전체">전체</button>
+      <button class="small" data-f="완료">완료</button>
+      <button class="small" data-f="거절">거절</button>
+    </div>
+    <div id="list"><div class="empty">불러오는 중...</div></div>
+  </div>
+
+  <div class="footer">복구센터 · 30일 지난 요청은 자동 삭제됩니다</div>
+</div>
+
+<div id="toast"></div>
+<script src="/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>접근 불가 - 복구센터</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
+</head>
+<body>
+<div class="wrap">
+  <header class="site-header">
+    <h1>접근할 수 없어요</h1>
+    <div class="domain" id="reason">접근 권한이 없습니다.</div>
+  </header>
+  <div class="choice" style="max-width:420px;margin-left:auto;margin-right:auto">
+    <a href="/" class="dark"><div class="t">처음으로 돌아가기</div></a>
+  </div>
+  <div class="footer">권한 문의는 디스코드 서버에서 해주세요.</div>
+</div>
+<script>
+"use strict";
+const r = new URLSearchParams(location.search).get("r");
+if (r) document.getElementById("reason").textContent = r;
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>복구요청 - 복구센터</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">복구센터</div>
+    <div class="who"><span id="who">...</span><a href="/logout">로그아웃</a></div>
+  </div>
+
+  <div class="card">
+    <h2>링크 복구 요청</h2>
+    <p class="desc">구매했던 게임의 다운로드 링크가 만료됐다면 여기에 요청을 남겨주세요.
+    관리자가 확인하는 대로 <b>디스코드 DM으로 새 링크를 보내드립니다.</b></p>
+    <label>게임 이름 *</label>
+    <input type="text" id="game" maxlength="80" placeholder="구매했던 게임 이름을 정확히 입력해주세요">
+    <label>남길 말 (선택)</label>
+    <textarea id="note" maxlength="300" placeholder="예: 8월쯤 구매했어요 / 구매 닉네임이 지금과 달라요 등"></textarea>
+    <button class="primary" id="submit">복구요청 보내기</button>
+    <p class="hint">DM이 차단돼 있으면 링크를 받을 수 없어요. 서버 멤버의 DM을 허용해주세요.</p>
+  </div>
+
+  <div class="card">
+    <h2>내 요청 내역</h2>
+    <p class="desc">완료된 요청의 링크는 디스코드 DM에서 확인하세요.</p>
+    <div id="myList"><div class="empty">불러오는 중...</div></div>
+  </div>
+
+  <div class="footer">복구센터 · 디스코드 게임샵</div>
+</div>
+
+<div id="toast"></div>
+<script src="/user.js"></script>
+</body>
+</html>

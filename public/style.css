@@ -1,0 +1,139 @@
+/* 복구센터 공통 스타일 — 블랙 & 화이트 */
+:root {
+  --bg: #fafafa;
+  --bg-card: #ffffff;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-dim: #71717a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", -apple-system, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 680px; margin: 0 auto; padding: 16px 16px 80px; }
+
+.site-header { text-align: center; padding: 48px 0 12px; }
+.site-header h1 { margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; }
+.site-header .domain { color: var(--text-dim); font-size: .85rem; margin-top: 6px; }
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 0 6px; gap: 10px; flex-wrap: wrap;
+}
+.topbar .brand { font-weight: 800; font-size: 1.15rem; letter-spacing: -0.02em; }
+.topbar .who { color: var(--text-dim); font-size: .84rem; display: flex; align-items: center; gap: 10px; }
+.topbar .who a { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border-strong); border-radius: 7px; padding: 5px 11px; font-weight: 600; }
+.topbar .who a:hover { color: #111; border-color: #111; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 20px;
+  margin-bottom: 14px;
+}
+.card h2 { margin: 0 0 4px; font-size: 1.05rem; font-weight: 700; }
+.card .desc { color: var(--text-dim); font-size: .85rem; margin: 0 0 16px; line-height: 1.6; }
+
+label { display: block; font-size: .82rem; font-weight: 600; color: var(--text-dim); margin: 14px 0 6px; }
+input[type=text], textarea {
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 11px 12px;
+  font-size: .95rem;
+  font-family: inherit;
+}
+input:focus, textarea:focus { outline: none; border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.08); }
+input::placeholder, textarea::placeholder { color: #b0b0b8; }
+textarea { resize: vertical; min-height: 72px; }
+
+button.primary {
+  width: 100%; margin-top: 18px;
+  background: #111; color: #fff;
+  border: none; border-radius: 10px;
+  padding: 13px; font-size: .98rem; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  transition: background .12s;
+}
+button.primary:hover { background: #333; }
+button.primary:disabled { opacity: .4; cursor: default; }
+button.small {
+  background: #fff; color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 7px;
+  padding: 7px 13px; font-size: .82rem; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+button.small:hover { border-color: #111; }
+button.small.active, button.small.good { background: #111; color: #fff; border-color: #111; }
+button.small.good:hover { background: #333; }
+button.small.danger { color: #71717a; }
+button.small.danger:hover { color: #111; }
+
+/* 첫 화면 로그인 선택 */
+.choice { display: grid; gap: 14px; margin-top: 28px; }
+.choice a {
+  display: block; text-decoration: none;
+  background: #fff; color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 14px;
+  padding: 26px 22px;
+  transition: border-color .12s, transform .08s;
+}
+.choice a:hover { border-color: #111; transform: translateY(-1px); }
+.choice a .t { font-size: 1.1rem; font-weight: 800; }
+.choice a .d { color: var(--text-dim); font-size: .85rem; margin-top: 6px; line-height: 1.5; }
+.choice a.dark { background: #111; color: #fff; border-color: #111; }
+.choice a.dark .d { color: #a1a1aa; }
+
+/* 요청 목록 */
+.req-card {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px; margin-bottom: 10px; background: #fafafa;
+}
+.req-card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.req-card .name { font-weight: 700; font-size: .95rem; }
+.req-card .sub { color: var(--text-dim); font-size: .8rem; margin-top: 3px; line-height: 1.6; word-break: break-all; }
+.req-card .controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+.req-card .controls input { flex: 1; min-width: 160px; padding: 8px 10px; font-size: .88rem; }
+
+.badge {
+  display: inline-block; padding: 3px 11px; border-radius: 999px;
+  font-size: .75rem; font-weight: 700; white-space: nowrap;
+  border: 1px solid var(--border-strong); background: #fff; color: var(--text-dim);
+}
+.badge.대기 { background: #f4f4f5; color: #52525b; border-color: #e4e4e7; }
+.badge.완료 { background: #111; color: #fff; border-color: #111; }
+.badge.거절 { background: #f4f4f5; color: #a1a1aa; border-color: #e4e4e7; text-decoration: line-through; }
+
+.empty { color: var(--text-dim); text-align: center; padding: 28px 0; font-size: .88rem; }
+.hint { color: var(--text-dim); font-size: .82rem; line-height: 1.6; margin: 10px 0 0; }
+
+.filter-bar { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 16px 0 14px; }
+.stat { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; }
+.stat .num { font-size: 1.6rem; font-weight: 800; }
+.stat .lbl { font-size: .8rem; color: var(--text-dim); margin-top: 2px; }
+.count-badge { background: #111; color: #fff; border-radius: 999px; font-size: .72rem; padding: 1px 7px; margin-left: 5px; vertical-align: 2px; }
+
+#toast {
+  position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%);
+  background: #111; color: #fff; font-weight: 600;
+  padding: 12px 22px; border-radius: 999px; font-size: .88rem;
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+  max-width: 90vw; text-align: center; z-index: 99;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+#toast.show { opacity: 1; }
+#toast.error { background: #fff; color: #111; border: 1px solid #111; }
+
+.footer { text-align: center; color: #b0b0b8; font-size: .78rem; margin-top: 36px; }
+
+@media (max-width: 480px) { .site-header h1 { font-size: 1.5rem; } }
