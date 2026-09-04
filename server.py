@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-게임 링크 복구센터 서버 (WSGI)
+H Company 통합 홈페이지 서버 (WSGI)
 - 디스코드 OAuth2 로그인 (관리자 / 유저 분기)
-- 유저: 지정 역할 보유자만 접근 → 복구요청 접수
+- 유저: 지정 역할 보유자만 접근 → 링크 복구요청 접수(구매내역 캡쳐 필수)
 - 관리자: 요청 확인 → 봇 토큰으로 유저 DM에 복구 링크 발송
-- Python 표준 라이브러리만 사용. 데이터: data/recover.db
+- Python 표준 라이브러리만 사용. 데이터: data/recover.db, 캡쳐: data/uploads/
 - 로컬 실행: python server.py [포트]   /   호스팅: server:application
 """
 import base64
@@ -32,8 +32,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "recover.db")
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 
 MAX_BODY = 16 * 1024
+MAX_IMAGE_BODY = 6 * 1024 * 1024   # 캡쳐 포함 요청 최대 6MB
 SESSION_HOURS = 24 * 7
 RETENTION_DAYS = 30          # 요청 기록 보관 기간
 REQUEST_COOLDOWN = 60        # 같은 유저 연속 요청 최소 간격(초)
@@ -79,6 +81,12 @@ def init_db():
         );
         """)
         c.commit()
+        try:
+            c.execute("ALTER TABLE requests ADD COLUMN image TEXT NOT NULL DEFAULT ''")
+            c.commit()
+        except sqlite3.OperationalError:
+            pass  # 이미 컬럼 있음
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
         if get_setting("secret") is None:
             set_setting("secret", secrets.token_hex(32))
 
@@ -98,6 +106,29 @@ def set_setting(key, value):
 _last_purge = 0.0
 
 
+def remove_upload(fname):
+    if fname and re.match(r"^req_\d+\.(jpg|png|webp)$", fname):
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, fname))
+        except OSError:
+            pass
+
+
+def decode_image(image_data):
+    """dataURL → (bytes, 확장자). 실패 시 ValueError."""
+    m = re.match(r"^data:image/(png|jpeg|jpg|webp);base64,", image_data)
+    if not m:
+        raise ValueError("이미지 형식이 올바르지 않습니다.")
+    try:
+        img_bytes = base64.b64decode(image_data[m.end():])
+    except Exception:
+        raise ValueError("이미지 형식이 올바르지 않습니다.")
+    if len(img_bytes) > 4 * 1024 * 1024:
+        raise ValueError("이미지가 너무 큽니다 (4MB 이하).")
+    ext = "jpg" if m.group(1) in ("jpeg", "jpg") else m.group(1)
+    return img_bytes, ext
+
+
 def purge_old():
     global _last_purge
     if time.time() - _last_purge < 3600:
@@ -105,6 +136,10 @@ def purge_old():
     _last_purge = time.time()
     cutoff = now() - RETENTION_DAYS * 86400
     with db_lock:
+        rows = db().execute(
+            "SELECT image FROM requests WHERE created_at<? AND image!=''", (cutoff,)).fetchall()
+        for r in rows:
+            remove_upload(r["image"])
         db().execute("DELETE FROM requests WHERE created_at<?", (cutoff,))
         db().commit()
 
@@ -221,19 +256,30 @@ def member_has_role(uid):
     return False, f"디스코드 조회 실패 (코드 {status})"
 
 
-def send_dm(uid, content):
-    """봇 토큰으로 해당 유저에게 DM 전송. 반환: 오류메시지 or None(성공)"""
+def send_dm(uid, embed):
+    """봇 토큰으로 해당 유저에게 임베드 DM 전송. 반환: 오류메시지 or None(성공)"""
     status, ch = discord_call("POST", "/users/@me/channels", bot=True,
                               data={"recipient_id": str(uid)})
     if status != 200 or not isinstance(ch, dict) or "id" not in ch:
         return f"DM 채널 생성 실패 (코드 {status})"
     status, _msg = discord_call("POST", f"/channels/{ch['id']}/messages", bot=True,
-                                data={"content": content})
+                                data={"embeds": [embed]})
     if status in (200, 201):
         return None
     if status == 403:
         return "DM 전송 실패: 유저가 DM을 차단했거나 서버 멤버가 아닙니다."
     return f"DM 전송 실패 (코드 {status})"
+
+
+def build_embed(title, description, fields, color):
+    return {
+        "title": title,
+        "description": description,
+        "color": color,
+        "fields": [{"name": n, "value": v, "inline": False} for n, v in fields if v],
+        "footer": {"text": "H Company · 링크 복구센터"},
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+    }
 
 # ---------------------------------------------------------------- WSGI 기반
 
@@ -397,11 +443,19 @@ def api_request_create(req):
     s = req.session()
     if not s:
         return json_resp({"error": "로그인이 필요합니다."}, 401)
-    d = req.read_json() or {}
+    d = req.read_json(limit=MAX_IMAGE_BODY)
+    if d is None:
+        return json_resp({"error": "잘못된 요청 (이미지가 너무 크면 다시 시도해주세요)"}, 400)
     game = clean(d.get("game"), 80)
     note = clean(d.get("note"), 300)
     if not game:
         return json_resp({"error": "게임 이름을 입력하세요."}, 400)
+    if not d.get("image"):
+        return json_resp({"error": "구매내역 캡쳐를 첨부해주세요."}, 400)
+    try:
+        img_bytes, img_ext = decode_image(d["image"])
+    except ValueError as e:
+        return json_resp({"error": str(e)}, 400)
     with db_lock:
         pending = db().execute(
             "SELECT COUNT(*) FROM requests WHERE uid=? AND status='대기'", (s["uid"],)).fetchone()[0]
@@ -411,9 +465,14 @@ def api_request_create(req):
             "SELECT MAX(created_at) FROM requests WHERE uid=?", (s["uid"],)).fetchone()[0]
         if recent and now() - recent < REQUEST_COOLDOWN:
             return json_resp({"error": "잠시 후 다시 시도해주세요."}, 400)
-        db().execute(
+        cur = db().execute(
             "INSERT INTO requests(uid,username,game,note,created_at,updated_at) VALUES(?,?,?,?,?,?)",
             (s["uid"], s["name"], game, note, now(), now()))
+        rid = cur.lastrowid
+        fname = f"req_{rid}.{img_ext}"
+        with open(os.path.join(UPLOAD_DIR, fname), "wb") as f:
+            f.write(img_bytes)
+        db().execute("UPDATE requests SET image=? WHERE id=?", (fname, rid))
         db().commit()
     return json_resp({"ok": True})
 
@@ -443,6 +502,26 @@ def api_admin_requests(req):
     return json_resp({"requests": row_dicts(rows)})
 
 
+def api_admin_image(req):
+    """복구요청 구매내역 캡쳐 (관리자 전용)"""
+    try:
+        rid = int((req.query().get("id") or ["0"])[0])
+    except ValueError:
+        rid = 0
+    with db_lock:
+        row = db().execute("SELECT image FROM requests WHERE id=?", (rid,)).fetchone()
+    fname = row["image"] if row else ""
+    if not fname or not re.match(r"^req_\d+\.(jpg|png|webp)$", fname):
+        return json_resp({"error": "이미지가 없습니다."}, 404)
+    fpath = os.path.join(UPLOAD_DIR, fname)
+    if not os.path.isfile(fpath):
+        return json_resp({"error": "이미지가 없습니다."}, 404)
+    with open(fpath, "rb") as f:
+        data = f.read()
+    ctype = "image/jpeg" if fname.endswith(".jpg") else ("image/png" if fname.endswith(".png") else "image/webp")
+    return Response(data, 200, [("Content-Type", ctype), ("Cache-Control", "private, max-age=3600")])
+
+
 def api_admin_respond(req):
     d = req.read_json() or {}
     rid = d.get("id")
@@ -461,19 +540,27 @@ def api_admin_respond(req):
     if action == "approve":
         if not link:
             return json_resp({"error": "복구 링크를 입력하세요."}, 400)
-        content = (f"🔗 **[{row['game']}] 링크 복구 안내**\n"
-                   f"요청하신 다운로드 링크가 복구되었습니다.\n\n{link}")
-        if message:
-            content += f"\n\n💬 {message}"
-        content += "\n\n(이 링크도 일정 기간 후 만료될 수 있어요. 필요하면 복구센터에서 다시 요청해주세요.)"
+        embed = build_embed(
+            "🔗 링크 복구 완료",
+            f"상품 **{row['game']}** 의 다운로드 링크가 복구되었습니다.",
+            [
+                ("다운로드 링크", link),
+                ("안내", message),
+                ("유의사항", "이 링크도 일정 기간 후 만료될 수 있습니다. 필요하면 홈페이지에서 다시 요청해주세요."),
+            ],
+            0x2ECC71)
         reply_store, new_status = link, "완료"
     else:
         reason = message or "사유 미기재"
-        content = (f"❌ **[{row['game']}] 복구요청 안내**\n"
-                   f"요청이 거절되었습니다.\n사유: {reason}")
+        embed = build_embed(
+            "❌ 복구요청 거절",
+            f"상품 **{row['game']}** 의 복구요청이 거절되었습니다.",
+            [("사유", reason),
+             ("문의", "궁금한 점은 디스코드 서버 문의 채널을 이용해주세요.")],
+            0xE74C3C)
         reply_store, new_status = reason, "거절"
 
-    err = send_dm(row["uid"], content)
+    err = send_dm(row["uid"], embed)
     if err:
         return json_resp({"error": err}, 400)
     with db_lock:
@@ -489,6 +576,9 @@ def api_admin_delete(req):
     if not isinstance(rid, int):
         return json_resp({"error": "잘못된 요청"}, 400)
     with db_lock:
+        row = db().execute("SELECT image FROM requests WHERE id=?", (rid,)).fetchone()
+        if row:
+            remove_upload(row["image"])
         db().execute("DELETE FROM requests WHERE id=?", (rid,))
         db().commit()
     return json_resp({"ok": True})
@@ -506,6 +596,7 @@ GET_ROUTES = {
 }
 GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,
+    "/api/admin/image": api_admin_image,
 }
 POST_ROUTES = {
     "/api/request": api_request_create,

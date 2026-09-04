@@ -116,6 +116,24 @@ button.small.danger:hover { color: #111; }
 .empty { color: var(--text-dim); text-align: center; padding: 28px 0; font-size: .88rem; }
 .hint { color: var(--text-dim); font-size: .82rem; line-height: 1.6; margin: 10px 0 0; }
 
+/* 이미지 첨부 */
+.dropzone {
+  margin-top: 4px;
+  border: 2px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 26px 12px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: .88rem;
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.dropzone:hover, .dropzone.dragover { border-color: #111; background: #f4f4f5; color: #111; }
+.image-preview { margin-top: 10px; display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.image-preview img { max-width: 100%; max-height: 220px; border: 1px solid var(--border-strong); border-radius: 8px; }
+.image-preview[hidden], .dropzone[hidden] { display: none; }
+.req-thumb { max-height: 130px; max-width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; }
+
 .filter-bar { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 16px 0 14px; }
 .stat { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; }

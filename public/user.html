@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>복구요청 - 복구센터</title>
+<title>링크 복구 - H Company</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
 </head>
@@ -11,7 +11,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">복구센터</div>
+    <div class="brand">H Company</div>
     <div class="who"><span id="who">...</span><a href="/logout">로그아웃</a></div>
   </div>
 
@@ -21,6 +21,14 @@
     관리자가 확인하는 대로 <b>디스코드 DM으로 새 링크를 보내드립니다.</b></p>
     <label>게임 이름 *</label>
     <input type="text" id="game" maxlength="80" placeholder="구매했던 게임 이름을 정확히 입력해주세요">
+    <label>구매내역 캡쳐 *</label>
+    <div class="dropzone" id="dropzone"><span>클릭하거나 이미지를 끌어다 놓으세요</span></div>
+    <input type="file" id="imageFile" accept="image/*" hidden>
+    <div class="image-preview" id="imagePreview" hidden>
+      <img id="previewImg" alt="구매내역 캡쳐 미리보기">
+      <button type="button" class="small danger" id="removeImage">첨부 취소</button>
+    </div>
+    <p class="hint">구매 채널이나 봇 DM의 <b>구매 내역이 보이게 캡쳐</b>해서 첨부해주세요. 캡쳐가 없으면 접수되지 않습니다.</p>
     <label>남길 말 (선택)</label>
     <textarea id="note" maxlength="300" placeholder="예: 8월쯤 구매했어요 / 구매 닉네임이 지금과 달라요 등"></textarea>
     <button class="primary" id="submit">복구요청 보내기</button>

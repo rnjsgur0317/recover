@@ -72,6 +72,11 @@ function render() {
           </div>
           <span class="badge ${esc(r.status)}">${esc(r.status)}</span>
         </div>
+        ${r.image ? `
+        <div style="margin-top:10px">
+          <div class="sub" style="margin-bottom:4px">구매내역 캡쳐 (클릭하면 크게 보기)</div>
+          <a href="/api/admin/image?id=${r.id}" target="_blank"><img class="req-thumb" src="/api/admin/image?id=${r.id}" alt="구매내역 캡쳐"></a>
+        </div>` : `<div class="sub" style="margin-top:8px">캡쳐 없음 (구버전 요청)</div>`}
         ${r.status === "대기" ? `
         <div class="controls">
           <input type="text" data-link maxlength="500" placeholder="복구 링크 (https://...)">
