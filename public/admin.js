@@ -34,6 +34,7 @@ function fmtDate(ts) {
 
 let cache = [];
 let chargeCache = [];
+let orderCache = [];
 let shopUpdatedAt = 0;
 let filter = "대기";
 
@@ -48,6 +49,7 @@ async function refresh() {
   const data = await api("/api/admin/requests");
   cache = data.requests;
   chargeCache = data.charges || [];
+  orderCache = data.orders || [];
   shopUpdatedAt = data.shop_updated_at || 0;
   render();
 }
@@ -62,6 +64,7 @@ function render() {
   cb.hidden = pending === 0;
   cb.textContent = pending;
   renderCharges();
+  renderOrders();
 
   const rows = cache.filter((r) => filter === "전체" || r.status === filter);
   const box = $("#list");
@@ -135,6 +138,23 @@ function render() {
       } catch (e) { toast(e.message, true); }
     });
   });
+}
+
+function renderOrders() {
+  const box = $("#orderList");
+  box.innerHTML = orderCache.length
+    ? orderCache.map((o) => `
+      <div class="req-card">
+        <div class="head">
+          <div>
+            <div class="name">${esc(o.game)} · ${Number(o.price).toLocaleString("ko-KR")}원</div>
+            <div class="sub">${esc(o.username)} (${esc(o.uid)}) · ${fmtDate(o.created_at)}</div>
+            ${o.result ? `<div class="sub">${esc(o.result)}</div>` : ""}
+          </div>
+          <span class="badge ${esc(o.status)}">${esc(o.status)}</span>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">주문이 없어요.</div>';
 }
 
 function renderCharges() {

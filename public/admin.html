@@ -12,7 +12,7 @@
 
   <div class="topbar">
     <div class="brand">H Company 관리자</div>
-    <div class="who"><span id="who">...</span><a href="/logout">로그아웃</a></div>
+    <div class="who"><span id="who">...</span><a href="/user">유저 페이지</a><a href="/logout">로그아웃</a></div>
   </div>
 
   <div class="stat-grid" id="stats"></div>
@@ -27,6 +27,12 @@
       <button class="small" data-f="거절">거절</button>
     </div>
     <div id="list"><div class="empty">불러오는 중...</div></div>
+  </div>
+
+  <div class="card">
+    <h2>웹 구매 주문 현황</h2>
+    <p class="desc">주문은 봇이 자동 처리합니다(차감·DM 발송). 여기서는 현황만 확인해요.</p>
+    <div id="orderList"><div class="empty">불러오는 중...</div></div>
   </div>
 
   <div class="card">

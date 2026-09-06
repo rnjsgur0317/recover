@@ -150,6 +150,8 @@ button.small.danger:hover { color: #111; }
   color: #d4d4d8; font-size: 2rem; font-weight: 800; cursor: default;
 }
 .game-info { padding: 11px 13px 13px; }
+.buy-btn { width: 100%; margin-top: 9px; }
+.buy-btn:disabled { opacity: .5; cursor: default; }
 .game-name { font-weight: 700; font-size: .9rem; line-height: 1.4; word-break: keep-all; }
 .game-price { margin-top: 5px; font-size: .85rem; font-weight: 700; }
 .game-tag {
@@ -177,6 +179,8 @@ button.small.danger:hover { color: #111; }
 .badge.완료 { background: #111; color: #fff; border-color: #111; }
 .badge.거절 { background: #f4f4f5; color: #a1a1aa; border-color: #e4e4e7; text-decoration: line-through; }
 .badge.전달됨 { background: #fff; color: #111; border-color: #111; }
+.badge.처리중 { background: #f4f4f5; color: #52525b; border-color: #e4e4e7; }
+.badge.실패 { background: #f4f4f5; color: #a1a1aa; border-color: #e4e4e7; text-decoration: line-through; }
 
 .empty { color: var(--text-dim); text-align: center; padding: 28px 0; font-size: .88rem; }
 .hint { color: var(--text-dim); font-size: .82rem; line-height: 1.6; margin: 10px 0 0; }

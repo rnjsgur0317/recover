@@ -15,6 +15,7 @@
     <div class="who">
       <span class="balance-chip" id="balanceChip" hidden>잔액 <b id="balance">0</b>원</span>
       <span id="who">...</span>
+      <a href="/admin" id="adminLink" hidden>관리자</a>
       <a href="/logout">로그아웃</a>
     </div>
   </div>
@@ -78,6 +79,11 @@
 
   <!-- 내 요청 -->
   <section class="tab-page" id="page-my">
+    <div class="card">
+      <h2>구매 내역</h2>
+      <p class="desc">구매한 게임의 다운로드 링크는 디스코드 DM으로 발송됩니다.</p>
+      <div id="myOrders"><div class="empty">불러오는 중...</div></div>
+    </div>
     <div class="card">
       <h2>충전 신청 내역</h2>
       <div id="myCharges"><div class="empty">불러오는 중...</div></div>

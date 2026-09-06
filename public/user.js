@@ -44,7 +44,10 @@ document.querySelectorAll(".tabs button").forEach((btn) =>
   }));
 
 // ---- 프로필
-api("/api/me").then((me) => { $("#who").textContent = `${me.name} 님`; }).catch(() => {});
+api("/api/me").then((me) => {
+  $("#who").textContent = `${me.name} 님`;
+  if (me.role === "admin") $("#adminLink").hidden = false;
+}).catch(() => {});
 
 // ---- 게임 목록 + 잔액
 let shopCache = null;
@@ -83,6 +86,9 @@ function renderShop() {
           <div class="game-info">
             <div class="game-name">${esc(g.name)}</div>
             <div class="game-price">${fmtWon(g.price)}원${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}</div>
+            ${g.is_subscription
+              ? '<button class="small buy-btn" disabled title="정기결제는 디스코드 자판기에서">디스코드에서 구매</button>'
+              : `<button class="small good buy-btn" data-buy="${esc(g.name)}" data-price="${g.price}">구매하기</button>`}
           </div>
         </div>`).join("") +
       `</div>`;
@@ -91,6 +97,24 @@ function renderShop() {
     : `<div class="card"><div class="empty">${q ? "검색 결과가 없어요." : "아직 등록된 게임이 없어요."}</div></div>`;
   box.querySelectorAll(".game-img:not(.placeholder)").forEach((img) =>
     img.addEventListener("click", () => window.open(img.src, "_blank")));
+  box.querySelectorAll("[data-buy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const name = b.dataset.buy;
+      const price = Number(b.dataset.price);
+      if ((shopCache?.balance ?? 0) < price) {
+        return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
+      }
+      if (!confirm(`'${name}'을(를) ${fmtWon(price)}원에 구매할까요?\n\n잔액에서 차감되고, 다운로드 링크가 디스코드 DM으로 발송됩니다.`)) return;
+      try {
+        b.disabled = true;
+        await api("/api/order", { game: name });
+        toast("주문 완료! 봇이 곧 처리하고 디스코드 DM으로 링크를 보내드려요. (최대 1분)");
+        loadMy();
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
+    }));
 }
 
 $("#gameSearch").addEventListener("input", renderShop);
@@ -204,6 +228,20 @@ async function loadMy() {
           </div>
         </div>`).join("")
       : '<div class="empty">아직 요청이 없어요.</div>';
+
+    const obox = $("#myOrders");
+    obox.innerHTML = (data.orders || []).length
+      ? data.orders.map((o) => `
+        <div class="req-card">
+          <div class="head">
+            <div>
+              <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원</div>
+              <div class="sub">${fmtDate(o.created_at)}${o.result ? " · " + esc(o.result) : (o.status === "대기" || o.status === "처리중" ? " · 봇이 처리 중이에요 (최대 1분)" : "")}</div>
+            </div>
+            <span class="badge ${esc(o.status)}">${esc(o.status)}</span>
+          </div>
+        </div>`).join("")
+      : '<div class="empty">구매 내역이 없어요.</div>';
 
     const cbox = $("#myCharges");
     cbox.innerHTML = data.charges.length

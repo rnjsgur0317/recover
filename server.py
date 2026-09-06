@@ -98,6 +98,17 @@ def init_db():
             status TEXT NOT NULL DEFAULT '대기',    -- 대기(봇 전달 전) / 전달됨(관리자 확인 중)
             created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS orders (        -- 웹 구매 주문
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT NOT NULL,
+            username TEXT NOT NULL,
+            game TEXT NOT NULL,
+            price INTEGER NOT NULL,                -- 주문 시점 표시가 (실제 차감은 봇이 계산)
+            status TEXT NOT NULL DEFAULT '대기',    -- 대기/처리중/완료/실패
+            result TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         """)
         c.commit()
         try:
@@ -165,6 +176,7 @@ def purge_old():
             remove_upload(r["image"])
         db().execute("DELETE FROM requests WHERE created_at<?", (cutoff,))
         db().execute("DELETE FROM charges WHERE created_at<?", (cutoff,))
+        db().execute("DELETE FROM orders WHERE created_at<?", (cutoff,))
         db().commit()
 
 
@@ -533,7 +545,11 @@ def api_my_requests(req):
         charges = db().execute(
             "SELECT id,amount,status,created_at "
             "FROM charges WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
-    return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges)})
+        orders = db().execute(
+            "SELECT id,game,price,status,result,created_at "
+            "FROM orders WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
+    return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
+                      "orders": row_dicts(orders)})
 
 
 def api_shopdata(req):
@@ -614,6 +630,46 @@ def api_charge_create(req):
         db().commit()
     return json_resp({"ok": True})
 
+def api_order_create(req):
+    """웹 게임 구매 주문 → 봇이 가져가서 실제 결제(차감·DM 링크 발송) 처리."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    d = req.read_json() or {}
+    game = clean(d.get("game"), 100)
+    if not game:
+        return json_resp({"error": "잘못된 요청"}, 400)
+    shop = load_shop()
+    info = (shop.get("products") or {}).get(game)
+    if not info:
+        return json_resp({"error": "판매 중인 상품이 아닙니다."}, 400)
+    if info.get("is_subscription"):
+        return json_resp({"error": "정기결제 상품은 디스코드 자판기에서 구매해주세요."}, 400)
+    price = int(info.get("price", 0) or 0)
+    balance = shop.get("balances", {}).get(s["uid"], 0)
+    if balance < price:
+        return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 가격 {price:,}원) 충전 후 이용해주세요."}, 400)
+    with db_lock:
+        inflight = db().execute(
+            "SELECT COUNT(*) FROM orders WHERE uid=? AND status IN ('대기','처리중')",
+            (s["uid"],)).fetchone()[0]
+        if inflight >= 3:
+            return json_resp({"error": "처리 중인 주문이 3건 있습니다. 잠시 후 다시 시도해주세요."}, 400)
+        dup = db().execute(
+            "SELECT COUNT(*) FROM orders WHERE uid=? AND game=? AND status IN ('대기','처리중')",
+            (s["uid"], game)).fetchone()[0]
+        if dup:
+            return json_resp({"error": "이미 같은 게임 주문이 처리 중입니다."}, 400)
+        recent = db().execute(
+            "SELECT MAX(created_at) FROM orders WHERE uid=?", (s["uid"],)).fetchone()[0]
+        if recent and now() - recent < 15:
+            return json_resp({"error": "잠시 후 다시 시도해주세요."}, 400)
+        db().execute(
+            "INSERT INTO orders(uid,username,game,price,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+            (s["uid"], s["name"], game, price, now(), now()))
+        db().commit()
+    return json_resp({"ok": True})
+
 # ---------------------------------------------------------------- API: 봇 동기화
 
 def check_sync(req, limit=MAX_SYNC_BODY):
@@ -649,6 +705,40 @@ def api_sync_ack(req):
     with db_lock:
         for rid in ids:
             db().execute("UPDATE charges SET status='전달됨' WHERE id=? AND status='대기'", (rid,))
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_sync_pull_orders(req):
+    """봇: 대기 중인 웹 구매 주문 가져가기(가져가면 '처리중')."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    with db_lock:
+        # 15분 넘게 결과가 안 온 '처리중' → 실패 처리 (봇 중단 등)
+        db().execute(
+            "UPDATE orders SET status='실패', result='처리 시간 초과 — 잔액이 차감됐다면 관리자에게 문의해주세요', updated_at=? "
+            "WHERE status='처리중' AND updated_at<?", (now(), now() - 900))
+        rows = db().execute(
+            "SELECT id,uid,username,game,price FROM orders WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
+        for r in rows:
+            db().execute("UPDATE orders SET status='처리중', updated_at=? WHERE id=?", (now(), r["id"]))
+        db().commit()
+    return json_resp({"orders": row_dicts(rows)})
+
+
+def api_sync_order_results(req):
+    """봇: 주문 처리 결과 보고. {key, results: [{id, ok, msg}]}"""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    with db_lock:
+        for res in (d.get("results") or [])[:50]:
+            if not isinstance(res, dict) or not isinstance(res.get("id"), int):
+                continue
+            db().execute(
+                "UPDATE orders SET status=?, result=?, updated_at=? WHERE id=? AND status='처리중'",
+                ("완료" if res.get("ok") else "실패", clean(str(res.get("msg", "")), 300), now(), res["id"]))
         db().commit()
     return json_resp({"ok": True})
 
@@ -720,7 +810,9 @@ def api_admin_requests(req):
     with db_lock:
         rows = db().execute("SELECT * FROM requests ORDER BY id DESC LIMIT 300").fetchall()
         charges = db().execute("SELECT * FROM charges ORDER BY id DESC LIMIT 100").fetchall()
+        orders = db().execute("SELECT * FROM orders ORDER BY id DESC LIMIT 100").fetchall()
     return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
+                      "orders": row_dicts(orders),
                       "shop_updated_at": load_shop().get("updated_at", 0)})
 
 
@@ -825,7 +917,10 @@ GET_ADMIN_ROUTES = {
 POST_ROUTES = {
     "/api/request": api_request_create,
     "/api/charge": api_charge_create,
+    "/api/order": api_order_create,
     "/api/sync/pull": api_sync_pull,
+    "/api/sync/pull_orders": api_sync_pull_orders,
+    "/api/sync/order_results": api_sync_order_results,
     "/api/sync/ack": api_sync_ack,
     "/api/sync/push": api_sync_push,
     "/api/sync/images": api_sync_images,
