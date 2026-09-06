@@ -24,7 +24,7 @@
     <button data-tab="shop" class="active">게임 목록</button>
     <button data-tab="charge">잔액 충전</button>
     <button data-tab="recover">링크 복구</button>
-    <button data-tab="my">내 요청</button>
+    <button data-tab="my">내 정보</button>
   </nav>
 
   <!-- 게임 목록 -->
@@ -79,8 +79,18 @@
 
   <!-- 내 요청 -->
   <section class="tab-page" id="page-my">
+    <div class="card" id="profileCard" hidden>
+      <h2>구매자 정보</h2>
+      <div class="stat-grid" id="profileStats"></div>
+      <div id="tierProgress"></div>
+      <div id="profileExtra"></div>
+    </div>
     <div class="card">
-      <h2>구매 내역</h2>
+      <h2>최근 구매한 게임</h2>
+      <div id="recentBuys"><div class="empty">불러오는 중...</div></div>
+    </div>
+    <div class="card">
+      <h2>구매 내역 (웹 주문)</h2>
       <p class="desc">구매한 게임의 다운로드 링크는 디스코드 DM으로 발송됩니다.</p>
       <div id="myOrders"><div class="empty">불러오는 중...</div></div>
     </div>

@@ -575,6 +575,7 @@ def api_shopdata(req):
     balance = shop.get("balances", {}).get(s["uid"], 0)
     return json_resp({
         "balance": balance,
+        "profile": shop.get("profiles", {}).get(s["uid"]),
         "updated_at": shop.get("updated_at", 0),
         "categories": [{"name": c, "games": cats[c]} for c in order],
     })
@@ -755,6 +756,8 @@ def api_sync_push(req):
     shop = load_shop()
     shop["products"] = products
     shop["balances"] = {str(k): v for k, v in balances.items()}
+    if isinstance(d.get("profiles"), dict):
+        shop["profiles"] = d["profiles"]
     shop["updated_at"] = now()
     save_shop(shop)
     return json_resp({"ok": True})

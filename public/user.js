@@ -61,6 +61,7 @@ async function loadShop() {
       ? `목록·잔액은 봇과 자동 동기화됩니다. (마지막 동기화: ${fmtDate(shopCache.updated_at)})`
       : "아직 봇과 동기화 전입니다. 잠시 후 새로고침해주세요.";
     renderShop();
+    renderProfile();
   } catch (e) {
     $("#gameList").innerHTML = '<div class="empty">목록을 불러올 수 없어요.</div>';
   }
@@ -115,6 +116,58 @@ function renderShop() {
         b.disabled = false;
       }
     }));
+}
+
+// ---- 구매자 정보 (봇 데이터)
+function renderProfile() {
+  const p = shopCache && shopCache.profile;
+  const rbox = $("#recentBuys");
+  if (!p) {
+    $("#profileCard").hidden = true;
+    rbox.innerHTML = '<div class="empty">아직 구매 정보가 없어요. 디스코드에서 !가입 후 이용해주세요.</div>';
+    return;
+  }
+  $("#profileCard").hidden = false;
+  $("#profileStats").innerHTML = `
+    <div class="stat"><div class="num">${fmtWon(p.total)}원</div><div class="lbl">누적 구매액</div></div>
+    <div class="stat"><div class="num" style="font-size:1.05rem;padding-top:6px">${esc(p.tier)}</div><div class="lbl">현재 등급</div></div>
+    <div class="stat"><div class="num">${fmtWon(p.purchase_count)}</div><div class="lbl">총 구매 횟수</div></div>
+    <div class="stat"><div class="num">${fmtWon(p.point)}p</div><div class="lbl">보유 포인트</div></div>`;
+
+  if (p.next_tier && p.next_threshold > 0) {
+    const pct = Math.max(3, Math.min(100, Math.round(p.total / p.next_threshold * 100)));
+    $("#tierProgress").innerHTML = `
+      <div class="tier-bar-wrap">
+        <div class="tier-bar-label">
+          <span>다음 등급 <b>${esc(p.next_tier)}</b>까지 <b>${fmtWon(p.remaining)}원</b> 남음</span>
+          <span>${pct}%</span>
+        </div>
+        <div class="tier-bar"><div class="tier-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  } else {
+    $("#tierProgress").innerHTML = '<p class="hint">최고 등급에 도달했어요! 🎉</p>';
+  }
+
+  const extras = [];
+  if (p.game_pass) {
+    extras.push(`게임패스 <b>${esc(p.game_pass.tier)}</b> 이용 중 (만료 ${fmtDate(p.game_pass.expires_at)})`);
+  }
+  for (const sb of p.subscriptions || []) {
+    extras.push(`정기결제 <b>${esc(sb.name)}</b> 구독 중 (다음 결제 ${fmtDate(sb.next_payment)})`);
+  }
+  $("#profileExtra").innerHTML = extras.length
+    ? `<p class="hint" style="margin-top:12px">${extras.join("<br>")}</p>` : "";
+
+  rbox.innerHTML = (p.recent || []).length
+    ? p.recent.map((e) => `
+      <div class="item-row">
+        <div>
+          <div class="name">${esc(e.name)}</div>
+          <div class="sub">${fmtDate(e.ts)}${e.type === "subscription" ? " · 정기결제" : (e.type === "renewal" ? " · 자동갱신" : "")}</div>
+        </div>
+        <span class="price">${fmtWon(e.paid)}원</span>
+      </div>`).join("")
+    : '<div class="empty">아직 구매한 게임이 없어요.</div>';
 }
 
 $("#gameSearch").addEventListener("input", renderShop);

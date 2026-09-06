@@ -159,6 +159,29 @@ button.small.danger:hover { color: #111; }
   border-radius: 999px; padding: 2px 8px; vertical-align: 1px;
 }
 
+/* 등급 진행 바 */
+.tier-bar-wrap { margin-top: 4px; }
+.tier-bar-label {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: .82rem; color: var(--text-dim); margin-bottom: 6px;
+}
+.tier-bar-label b { color: var(--text); }
+.tier-bar {
+  height: 8px; border-radius: 999px; background: #f0f0f2;
+  border: 1px solid var(--border); overflow: hidden;
+}
+.tier-bar-fill { height: 100%; background: #111; border-radius: 999px; transition: width .3s; }
+
+/* 최근 구매 목록 */
+.item-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 12px 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.item-row:last-child { border-bottom: none; }
+.item-row .name { font-weight: 700; font-size: .92rem; }
+.item-row .sub { color: var(--text-dim); font-size: .8rem; margin-top: 2px; }
+.item-row .price { font-weight: 700; white-space: nowrap; font-size: .9rem; }
+
 /* 요청 목록 */
 .req-card {
   border: 1px solid var(--border); border-radius: 10px;
