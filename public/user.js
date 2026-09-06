@@ -60,11 +60,42 @@ async function loadShop() {
     $("#shopUpdated").textContent = shopCache.updated_at
       ? `목록·잔액은 봇과 자동 동기화됩니다. (마지막 동기화: ${fmtDate(shopCache.updated_at)})`
       : "아직 봇과 동기화 전입니다. 잠시 후 새로고침해주세요.";
+    renderCatSide();
     renderShop();
     renderProfile();
   } catch (e) {
     $("#gameList").innerHTML = '<div class="empty">목록을 불러올 수 없어요.</div>';
   }
+}
+
+let selectedCat = "전체";
+
+function renderCatSide() {
+  const side = $("#catSide");
+  const total = shopCache.categories.reduce((n, c) => n + c.games.length, 0);
+  const cats = [{ name: "전체", n: total }, ...shopCache.categories.map((c) => ({ name: c.name, n: c.games.length }))];
+  if (!cats.some((c) => c.name === selectedCat)) selectedCat = "전체";
+  side.innerHTML = cats.map((c) =>
+    `<button class="${c.name === selectedCat ? "active" : ""}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="n">${c.n}</span></button>`).join("");
+  side.querySelectorAll("button").forEach((b) =>
+    b.addEventListener("click", () => {
+      selectedCat = b.dataset.cat;
+      renderCatSide();
+      renderShop();
+    }));
+}
+
+function gameCard(g) {
+  return `
+    <div class="game-card" data-open="${esc(g.name)}" role="button" tabindex="0">
+      ${g.img
+        ? `<img class="game-img" loading="lazy" src="/api/shop/image?name=${encodeURIComponent(g.name)}" alt="${esc(g.name)}">`
+        : `<div class="game-img placeholder">H</div>`}
+      <div class="game-info">
+        <div class="game-name">${esc(g.name)}</div>
+        <div class="game-price">${fmtWon(g.price)}원${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}</div>
+      </div>
+    </div>`;
 }
 
 function renderShop() {
@@ -74,48 +105,80 @@ function renderShop() {
   let html = "";
   let total = 0;
   for (const cat of shopCache.categories) {
+    if (selectedCat !== "전체" && cat.name !== selectedCat) continue;
     const games = cat.games.filter((g) => !q || g.name.toLowerCase().includes(q));
     if (!games.length) continue;
     total += games.length;
     html += `<div class="cat-title">${esc(cat.name)} <span class="cat-count">${games.length}</span></div>
-      <div class="game-grid">` +
-      games.map((g) => `
-        <div class="game-card">
-          ${g.img
-            ? `<img class="game-img" loading="lazy" src="/api/shop/image?name=${encodeURIComponent(g.name)}" alt="${esc(g.name)}">`
-            : `<div class="game-img placeholder">H</div>`}
-          <div class="game-info">
-            <div class="game-name">${esc(g.name)}</div>
-            <div class="game-price">${fmtWon(g.price)}원${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}</div>
-            ${g.is_subscription
-              ? '<button class="small buy-btn" disabled title="정기결제는 디스코드 자판기에서">디스코드에서 구매</button>'
-              : `<button class="small good buy-btn" data-buy="${esc(g.name)}" data-price="${g.price}">구매하기</button>`}
-          </div>
-        </div>`).join("") +
-      `</div>`;
+      <div class="game-grid">` + games.map(gameCard).join("") + `</div>`;
   }
   box.innerHTML = total ? html
-    : `<div class="card"><div class="empty">${q ? "검색 결과가 없어요." : "아직 등록된 게임이 없어요."}</div></div>`;
-  box.querySelectorAll(".game-img:not(.placeholder)").forEach((img) =>
-    img.addEventListener("click", () => window.open(img.src, "_blank")));
-  box.querySelectorAll("[data-buy]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      const name = b.dataset.buy;
-      const price = Number(b.dataset.price);
-      if ((shopCache?.balance ?? 0) < price) {
+    : `<div class="card"><div class="empty">${q ? "검색 결과가 없어요." : "이 카테고리에 게임이 없어요."}</div></div>`;
+  box.querySelectorAll("[data-open]").forEach((card) =>
+    card.addEventListener("click", () => openDetail(card.dataset.open)));
+}
+
+// ---- 게임 상세 모달
+function closeDetail() {
+  $("#detailOverlay").hidden = true;
+}
+$("#detailClose").addEventListener("click", closeDetail);
+$("#detailOverlay").addEventListener("click", (e) => { if (e.target === $("#detailOverlay")) closeDetail(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDetail(); });
+
+async function openDetail(name) {
+  const body = $("#detailBody");
+  body.innerHTML = '<div class="empty">불러오는 중...</div>';
+  $("#detailOverlay").hidden = false;
+  let d;
+  try {
+    d = await api("/api/shop/detail?name=" + encodeURIComponent(name));
+  } catch (e) {
+    body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    return;
+  }
+  const dt = d.detail || {};
+  const off = dt.official && dt.official > d.price
+    ? Math.round((1 - d.price / dt.official) * 100) : 0;
+  body.innerHTML = `
+    ${d.img ? `<img class="detail-img" src="/api/shop/image?name=${encodeURIComponent(d.name)}" alt="${esc(d.name)}">` : ""}
+    <div class="detail-name">${esc(d.name)}</div>
+    <div class="detail-prices">
+      <span class="now">${fmtWon(d.price)}원</span>
+      ${dt.official ? `<span class="was">정가 ${fmtWon(dt.official)}원</span>` : ""}
+      ${off > 0 ? `<span class="off">${off}% 할인</span>` : ""}
+    </div>
+    <div class="detail-row">카테고리 <b>${esc(d.category)}</b>${d.is_subscription ? ' · <span class="game-tag">정기결제</span>' : ""}</div>
+    ${dt.rating ? `<div class="detail-row">수위 <b>${esc(dt.rating)}</b></div>` : ""}
+    ${dt.seller ? `<div class="detail-row">공식 판매처 <a href="${esc(dt.seller)}" target="_blank" rel="noopener">바로가기 ↗</a></div>` : ""}
+    ${(dt.comments || []).length ? `
+      <div class="detail-comments">
+        <div class="ttl">코멘트</div>
+        <ul>${dt.comments.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
+      </div>` : ""}
+    ${d.is_subscription
+      ? '<button class="primary" disabled style="opacity:.5">정기결제는 디스코드 자판기에서</button>'
+      : `<button class="primary" id="detailBuy">${fmtWon(d.price)}원으로 구매하기</button>`}
+    <p class="hint" style="text-align:center">구매 시 잔액에서 차감되고, 다운로드 링크가 디스코드 DM으로 발송됩니다.</p>`;
+  const buyBtn = $("#detailBuy");
+  if (buyBtn) {
+    buyBtn.addEventListener("click", async () => {
+      if ((shopCache?.balance ?? 0) < d.price) {
         return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
       }
-      if (!confirm(`'${name}'을(를) ${fmtWon(price)}원에 구매할까요?\n\n잔액에서 차감되고, 다운로드 링크가 디스코드 DM으로 발송됩니다.`)) return;
+      if (!confirm(`'${d.name}'을(를) ${fmtWon(d.price)}원에 구매할까요?`)) return;
       try {
-        b.disabled = true;
-        await api("/api/order", { game: name });
+        buyBtn.disabled = true;
+        await api("/api/order", { game: d.name });
+        closeDetail();
         toast("주문 완료! 봇이 곧 처리하고 디스코드 DM으로 링크를 보내드려요. (최대 1분)");
         loadMy();
       } catch (e) {
         toast(e.message, true);
-        b.disabled = false;
+        buyBtn.disabled = false;
       }
-    }));
+    });
+  }
 }
 
 // ---- 구매자 정보 (봇 데이터)

@@ -200,6 +200,39 @@ def save_shop(data):
 def shopimg_filename(name, ext):
     return "img_" + hashlib.sha1(name.encode()).hexdigest()[:16] + "." + ext
 
+
+def parse_intro_detail(content):
+    """소개글 텍스트 → {official, rating, seller, comments}. 없는 항목은 생략."""
+    out = {}
+    m = re.search(r"공식가격\s*:\s*~~\s*([\d,]+)\s*원?\s*~~", content)
+    if m:
+        try:
+            out["official"] = int(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    m = re.search(r"수위\s*:\s*(.+)", content)
+    if m:
+        out["rating"] = m.group(1).strip()[:60]
+    m = re.search(r"\[<\s*(https?://[^>\]]+)\s*>\]", content)
+    if m:
+        out["seller"] = m.group(1).strip()[:300]
+    comments = []
+    in_comment = False
+    for line in content.splitlines():
+        st = line.strip()
+        if "코멘트" in st and st.startswith("#"):
+            in_comment = True
+            continue
+        if "구매 안내" in st:
+            break
+        if in_comment and st.startswith("*"):
+            c = st.lstrip("*").strip()
+            if c:
+                comments.append(c[:200])
+    if comments:
+        out["comments"] = comments[:10]
+    return out
+
 # ---------------------------------------------------------------- 유틸
 
 def now():
@@ -767,6 +800,45 @@ def api_sync_images(req):
     return json_resp({"images": {n: e.get("att", "") for n, e in shop.get("images", {}).items()}})
 
 
+def api_sync_details(req):
+    """봇: 소개글 상세정보 push. {key, details: {게임명: 소개글 텍스트}}"""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    details = d.get("details")
+    if not isinstance(details, dict):
+        return json_resp({"error": "잘못된 데이터"}, 400)
+    shop = load_shop()
+    store = shop.setdefault("details", {})
+    for name, content in list(details.items())[:300]:
+        name = clean(str(name), 100)
+        if name and isinstance(content, str):
+            store[name] = parse_intro_detail(content[:6000])
+    save_shop(shop)
+    return json_resp({"ok": True})
+
+
+def api_shop_detail(req):
+    """게임 상세 (로그인 필요)"""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    name = clean((req.query().get("name") or [""])[0], 100)
+    shop = load_shop()
+    info = (shop.get("products") or {}).get(name)
+    if not info:
+        return json_resp({"error": "판매 중인 상품이 아닙니다."}, 404)
+    return json_resp({
+        "name": name,
+        "price": info.get("price", 0),
+        "category": info.get("category", "기타"),
+        "is_subscription": bool(info.get("is_subscription")),
+        "img": name in shop.get("images", {}),
+        "detail": shop.get("details", {}).get(name, {}),
+        "balance": shop.get("balances", {}).get(s["uid"], 0),
+    })
+
+
 def api_sync_image(req):
     """봇: 게임 소개 이미지 업로드/교체. {key, name, att, image: dataURL}"""
     d = check_sync(req, limit=MAX_SYNC_IMAGE)
@@ -907,6 +979,7 @@ GET_ROUTES = {
     "/api/my": api_my_requests,
     "/api/shopdata": api_shopdata,
     "/api/shop/image": api_shop_image,
+    "/api/shop/detail": api_shop_detail,
 }
 GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,
@@ -923,6 +996,7 @@ POST_ROUTES = {
     "/api/sync/push": api_sync_push,
     "/api/sync/images": api_sync_images,
     "/api/sync/image": api_sync_image,
+    "/api/sync/details": api_sync_details,
 }
 POST_ADMIN_ROUTES = {
     "/api/admin/respond": api_admin_respond,

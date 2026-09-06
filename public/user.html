@@ -29,13 +29,25 @@
 
   <!-- 게임 목록 -->
   <section class="tab-page active" id="page-shop">
-    <div class="card">
-      <input type="text" id="gameSearch" placeholder="게임 이름 검색" style="margin-bottom:4px">
-      <p class="hint" id="shopUpdated" style="margin-top:8px">불러오는 중...</p>
+    <div class="shop-layout">
+      <aside class="cat-side" id="catSide"></aside>
+      <div class="shop-main">
+        <div class="card" style="padding:14px 16px">
+          <input type="text" id="gameSearch" placeholder="게임 이름 검색">
+          <p class="hint" id="shopUpdated" style="margin-top:8px;margin-bottom:0">불러오는 중...</p>
+        </div>
+        <div id="gameList"><div class="empty">불러오는 중...</div></div>
+      </div>
     </div>
-    <div id="gameList"><div class="empty">불러오는 중...</div></div>
-    <p class="hint" style="text-align:center">구매는 디스코드 서버의 자판기에서 할 수 있어요. 잔액이 부족하면 [잔액 충전] 탭!</p>
   </section>
+
+  <!-- 게임 상세 모달 -->
+  <div class="modal-overlay" id="detailOverlay" hidden>
+    <div class="modal" id="detailModal">
+      <button class="modal-close" id="detailClose">✕</button>
+      <div id="detailBody"></div>
+    </div>
+  </div>
 
   <!-- 잔액 충전 -->
   <section class="tab-page" id="page-charge">
