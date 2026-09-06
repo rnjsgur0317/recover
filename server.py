@@ -41,7 +41,7 @@ SHOPIMG_DIR = os.path.join(DATA_DIR, "shopimg")     # 게임 소개 이미지
 MAX_BODY = 16 * 1024
 MAX_IMAGE_BODY = 6 * 1024 * 1024   # 캡쳐 포함 요청 최대 6MB
 MAX_SYNC_BODY = 2 * 1024 * 1024    # 상품/잔액 동기화 최대 2MB
-MAX_SYNC_IMAGE = 9 * 1024 * 1024   # 소개 이미지 동기화 최대 9MB
+MAX_SYNC_IMAGE = 12 * 1024 * 1024  # 소개 이미지/영상 동기화 최대 12MB (base64 포함)
 SESSION_HOURS = 24 * 7
 RETENTION_DAYS = 30          # 요청 기록 보관 기간
 REQUEST_COOLDOWN = 60        # 같은 유저 연속 요청 최소 간격(초)
@@ -145,7 +145,25 @@ def remove_upload(fname):
             pass
 
 
-IMG_CTYPE = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+IMG_CTYPE = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif",
+             "mp4": "video/mp4", "webm": "video/webm"}
+VIDEO_EXTS = ("mp4", "webm")
+
+
+def decode_media(data_url, limit=8 * 1024 * 1024):
+    """dataURL(이미지 또는 영상) → (bytes, 확장자). 실패 시 ValueError."""
+    m = re.match(r"^data:(image/(?:png|jpeg|jpg|webp|gif)|video/(?:mp4|webm));base64,", data_url)
+    if not m:
+        raise ValueError("지원하지 않는 파일 형식입니다.")
+    try:
+        raw = base64.b64decode(data_url[m.end():])
+    except Exception:
+        raise ValueError("파일 형식이 올바르지 않습니다.")
+    if len(raw) > limit:
+        raise ValueError("파일이 너무 큽니다.")
+    sub = m.group(1).split("/")[1]
+    ext = "jpg" if sub in ("jpeg", "jpg") else sub
+    return raw, ext
 
 
 def decode_image(image_data, limit=4 * 1024 * 1024):
@@ -594,11 +612,16 @@ def api_shopdata(req):
         if cat not in cats:
             cats[cat] = []
             order.append(cat)
+        entry = images.get(name)
+        media = None
+        if entry:
+            media = "video" if entry.get("file", "").rsplit(".", 1)[-1] in VIDEO_EXTS else "img"
         cats[cat].append({
             "name": name,
             "price": info.get("price", 0),
             "is_subscription": bool(info.get("is_subscription")),
-            "img": name in images,
+            "img": bool(entry),
+            "media": media,
         })
     balance = shop.get("balances", {}).get(s["uid"], 0)
     return json_resp({
@@ -616,7 +639,7 @@ def api_shop_image(req):
     name = (req.query().get("name") or [""])[0]
     entry = load_shop().get("images", {}).get(name)
     fname = (entry or {}).get("file", "")
-    if not fname or not re.match(r"^img_[0-9a-f]{16}\.(jpg|png|webp|gif)$", fname):
+    if not fname or not re.match(r"^img_[0-9a-f]{16}\.(jpg|png|webp|gif|mp4|webm)$", fname):
         return json_resp({"error": "이미지가 없습니다."}, 404)
     fpath = os.path.join(SHOPIMG_DIR, fname)
     if not os.path.isfile(fpath):
@@ -828,12 +851,17 @@ def api_shop_detail(req):
     info = (shop.get("products") or {}).get(name)
     if not info:
         return json_resp({"error": "판매 중인 상품이 아닙니다."}, 404)
+    entry = shop.get("images", {}).get(name)
+    media = None
+    if entry:
+        media = "video" if entry.get("file", "").rsplit(".", 1)[-1] in VIDEO_EXTS else "img"
     return json_resp({
         "name": name,
         "price": info.get("price", 0),
         "category": info.get("category", "기타"),
         "is_subscription": bool(info.get("is_subscription")),
-        "img": name in shop.get("images", {}),
+        "img": bool(entry),
+        "media": media,
         "detail": shop.get("details", {}).get(name, {}),
         "balance": shop.get("balances", {}).get(s["uid"], 0),
     })
@@ -849,7 +877,7 @@ def api_sync_image(req):
     if not name or not att or not d.get("image"):
         return json_resp({"error": "잘못된 데이터"}, 400)
     try:
-        img_bytes, ext = decode_image(d["image"], limit=6 * 1024 * 1024)
+        img_bytes, ext = decode_media(d["image"], limit=8 * 1024 * 1024)
     except ValueError as e:
         return json_resp({"error": str(e)}, 400)
     shop = load_shop()

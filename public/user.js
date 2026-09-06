@@ -85,12 +85,19 @@ function renderCatSide() {
     }));
 }
 
+function mediaTag(g, cls) {
+  const src = `/api/shop/image?name=${encodeURIComponent(g.name)}`;
+  if (!g.img) return `<div class="${cls} placeholder">H</div>`;
+  if (g.media === "video") {
+    return `<video class="${cls}" src="${src}" preload="metadata" muted playsinline></video>`;
+  }
+  return `<img class="${cls}" loading="lazy" src="${src}" alt="${esc(g.name)}">`;
+}
+
 function gameCard(g) {
   return `
     <div class="game-card" data-open="${esc(g.name)}" role="button" tabindex="0">
-      ${g.img
-        ? `<img class="game-img" loading="lazy" src="/api/shop/image?name=${encodeURIComponent(g.name)}" alt="${esc(g.name)}">`
-        : `<div class="game-img placeholder">H</div>`}
+      ${mediaTag(g, "game-img")}
       <div class="game-info">
         <div class="game-name">${esc(g.name)}</div>
         <div class="game-price">${fmtWon(g.price)}원${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}</div>
@@ -140,8 +147,13 @@ async function openDetail(name) {
   const dt = d.detail || {};
   const off = dt.official && dt.official > d.price
     ? Math.round((1 - d.price / dt.official) * 100) : 0;
+  const dsrc = `/api/shop/image?name=${encodeURIComponent(d.name)}`;
   body.innerHTML = `
-    ${d.img ? `<img class="detail-img" src="/api/shop/image?name=${encodeURIComponent(d.name)}" alt="${esc(d.name)}">` : ""}
+    ${d.img
+      ? (d.media === "video"
+        ? `<video class="detail-img" src="${dsrc}" controls muted playsinline loop></video>`
+        : `<img class="detail-img" src="${dsrc}" alt="${esc(d.name)}">`)
+      : ""}
     <div class="detail-name">${esc(d.name)}</div>
     <div class="detail-prices">
       <span class="now">${fmtWon(d.price)}원</span>
