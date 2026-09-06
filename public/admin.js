@@ -33,6 +33,8 @@ function fmtDate(ts) {
 }
 
 let cache = [];
+let chargeCache = [];
+let shopUpdatedAt = 0;
 let filter = "대기";
 
 document.querySelectorAll(".filter-bar button").forEach((b) =>
@@ -45,6 +47,8 @@ document.querySelectorAll(".filter-bar button").forEach((b) =>
 async function refresh() {
   const data = await api("/api/admin/requests");
   cache = data.requests;
+  chargeCache = data.charges || [];
+  shopUpdatedAt = data.shop_updated_at || 0;
   render();
 }
 
@@ -57,6 +61,7 @@ function render() {
   const cb = $("#cntPending");
   cb.hidden = pending === 0;
   cb.textContent = pending;
+  renderCharges();
 
   const rows = cache.filter((r) => filter === "전체" || r.status === filter);
   const box = $("#list");
@@ -130,6 +135,26 @@ function render() {
       } catch (e) { toast(e.message, true); }
     });
   });
+}
+
+function renderCharges() {
+  $("#syncInfo").textContent = shopUpdatedAt
+    ? `마지막 봇 동기화: ${fmtDate(shopUpdatedAt)}`
+    : "아직 봇과 동기화되지 않았어요 (봇의 websync 설정 확인).";
+  const box = $("#chargeList");
+  box.innerHTML = chargeCache.length
+    ? chargeCache.map((c) => `
+      <div class="req-card">
+        <div class="head">
+          <div>
+            <div class="name">${Number(c.amount).toLocaleString("ko-KR")}원</div>
+            <div class="sub">${esc(c.username)} (${esc(c.uid)}) · ${fmtDate(c.created_at)}</div>
+            <div class="sub">코드1: ${esc(c.code1)}${c.code2 ? " · 코드2: " + esc(c.code2) : ""}</div>
+          </div>
+          <span class="badge ${esc(c.status)}">${esc(c.status)}</span>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">충전 신청이 없어요.</div>';
 }
 
 api("/api/me").then((me) => { $("#who").textContent = `${me.name} 님`; }).catch(() => {});

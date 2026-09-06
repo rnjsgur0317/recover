@@ -27,15 +27,21 @@ from secrets_config import (
     CLIENT_ID, CLIENT_SECRET, BOT_TOKEN, ADMIN_IDS,
     GUILD_ID, USER_ROLE_ID, BASE_URL,
 )
+import secrets_config
+SYNC_KEY = getattr(secrets_config, "SYNC_KEY", "")  # 미설정이면 동기화 API 비활성
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "recover.db")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+SHOP_PATH = os.path.join(DATA_DIR, "shop.json")     # 봇이 밀어올린 상품/잔액
+SHOPIMG_DIR = os.path.join(DATA_DIR, "shopimg")     # 게임 소개 이미지
 
 MAX_BODY = 16 * 1024
 MAX_IMAGE_BODY = 6 * 1024 * 1024   # 캡쳐 포함 요청 최대 6MB
+MAX_SYNC_BODY = 2 * 1024 * 1024    # 상품/잔액 동기화 최대 2MB
+MAX_SYNC_IMAGE = 9 * 1024 * 1024   # 소개 이미지 동기화 최대 9MB
 SESSION_HOURS = 24 * 7
 RETENTION_DAYS = 30          # 요청 기록 보관 기간
 REQUEST_COOLDOWN = 60        # 같은 유저 연속 요청 최소 간격(초)
@@ -81,12 +87,26 @@ def init_db():
         );
         """)
         c.commit()
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS charges (       -- 잔액 충전(문상) 신청
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT NOT NULL,
+            username TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            code1 TEXT NOT NULL,
+            code2 TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '대기',    -- 대기(봇 전달 전) / 전달됨(관리자 확인 중)
+            created_at INTEGER NOT NULL
+        );
+        """)
+        c.commit()
         try:
             c.execute("ALTER TABLE requests ADD COLUMN image TEXT NOT NULL DEFAULT ''")
             c.commit()
         except sqlite3.OperationalError:
             pass  # 이미 컬럼 있음
         os.makedirs(UPLOAD_DIR, exist_ok=True)
+        os.makedirs(SHOPIMG_DIR, exist_ok=True)
         if get_setting("secret") is None:
             set_setting("secret", secrets.token_hex(32))
 
@@ -107,24 +127,27 @@ _last_purge = 0.0
 
 
 def remove_upload(fname):
-    if fname and re.match(r"^req_\d+\.(jpg|png|webp)$", fname):
+    if fname and re.match(r"^req_\d+\.(jpg|png|webp|gif)$", fname):
         try:
             os.remove(os.path.join(UPLOAD_DIR, fname))
         except OSError:
             pass
 
 
-def decode_image(image_data):
+IMG_CTYPE = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+
+
+def decode_image(image_data, limit=4 * 1024 * 1024):
     """dataURL → (bytes, 확장자). 실패 시 ValueError."""
-    m = re.match(r"^data:image/(png|jpeg|jpg|webp);base64,", image_data)
+    m = re.match(r"^data:image/(png|jpeg|jpg|webp|gif);base64,", image_data)
     if not m:
         raise ValueError("이미지 형식이 올바르지 않습니다.")
     try:
         img_bytes = base64.b64decode(image_data[m.end():])
     except Exception:
         raise ValueError("이미지 형식이 올바르지 않습니다.")
-    if len(img_bytes) > 4 * 1024 * 1024:
-        raise ValueError("이미지가 너무 큽니다 (4MB 이하).")
+    if len(img_bytes) > limit:
+        raise ValueError("이미지가 너무 큽니다.")
     ext = "jpg" if m.group(1) in ("jpeg", "jpg") else m.group(1)
     return img_bytes, ext
 
@@ -141,7 +164,29 @@ def purge_old():
         for r in rows:
             remove_upload(r["image"])
         db().execute("DELETE FROM requests WHERE created_at<?", (cutoff,))
+        db().execute("DELETE FROM charges WHERE created_at<?", (cutoff,))
         db().commit()
+
+
+# ---------------------------------------------------------------- 상점 데이터 (봇 동기화)
+
+def load_shop():
+    try:
+        with open(SHOP_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"products": {}, "balances": {}, "images": {}, "updated_at": 0}
+
+
+def save_shop(data):
+    tmp = SHOP_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, SHOP_PATH)
+
+
+def shopimg_filename(name, ext):
+    return "img_" + hashlib.sha1(name.encode()).hexdigest()[:16] + "." + ext
 
 # ---------------------------------------------------------------- 유틸
 
@@ -485,7 +530,182 @@ def api_my_requests(req):
         rows = db().execute(
             "SELECT id,game,note,status,admin_reply,created_at,updated_at "
             "FROM requests WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
-    return json_resp({"requests": row_dicts(rows)})
+        charges = db().execute(
+            "SELECT id,amount,status,created_at "
+            "FROM charges WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
+    return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges)})
+
+
+def api_shopdata(req):
+    """게임 목록 + 내 잔액. 봇이 약 1분마다 동기화."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    shop = load_shop()
+    images = shop.get("images", {})
+    cats = {}
+    order = []
+    for name, info in (shop.get("products") or {}).items():
+        cat = info.get("category") or "기타"
+        if cat not in cats:
+            cats[cat] = []
+            order.append(cat)
+        cats[cat].append({
+            "name": name,
+            "price": info.get("price", 0),
+            "is_subscription": bool(info.get("is_subscription")),
+            "img": name in images,
+        })
+    balance = shop.get("balances", {}).get(s["uid"], 0)
+    return json_resp({
+        "balance": balance,
+        "updated_at": shop.get("updated_at", 0),
+        "categories": [{"name": c, "games": cats[c]} for c in order],
+    })
+
+
+def api_shop_image(req):
+    """게임 소개 이미지 (로그인 필요)"""
+    if not req.session():
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    name = (req.query().get("name") or [""])[0]
+    entry = load_shop().get("images", {}).get(name)
+    fname = (entry or {}).get("file", "")
+    if not fname or not re.match(r"^img_[0-9a-f]{16}\.(jpg|png|webp|gif)$", fname):
+        return json_resp({"error": "이미지가 없습니다."}, 404)
+    fpath = os.path.join(SHOPIMG_DIR, fname)
+    if not os.path.isfile(fpath):
+        return json_resp({"error": "이미지가 없습니다."}, 404)
+    with open(fpath, "rb") as f:
+        data = f.read()
+    ext = fname.rsplit(".", 1)[1]
+    return Response(data, 200, [("Content-Type", IMG_CTYPE[ext]),
+                                ("Cache-Control", "private, max-age=600")])
+
+
+def api_charge_create(req):
+    """문화상품권 충전 신청 → 봇이 가져가서 관리자 DM(승인 버튼)으로 전달."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    d = req.read_json() or {}
+    code1 = clean(d.get("code1"), 100)
+    code2 = clean(d.get("code2"), 100)
+    try:
+        amount = int(str(d.get("amount", "")).replace(",", "").replace("원", "").strip())
+    except ValueError:
+        return json_resp({"error": "금액은 숫자만 입력해주세요."}, 400)
+    if not code1:
+        return json_resp({"error": "문화상품권 코드를 입력하세요."}, 400)
+    if amount <= 0 or amount > 1000000:
+        return json_resp({"error": "금액을 확인해주세요. (1 ~ 1,000,000원)"}, 400)
+    with db_lock:
+        pending = db().execute(
+            "SELECT COUNT(*) FROM charges WHERE uid=? AND status='대기'", (s["uid"],)).fetchone()[0]
+        if pending >= 3:
+            return json_resp({"error": "전달 대기 중인 충전 신청이 3건 있습니다. 잠시 후 다시 시도해주세요."}, 400)
+        recent = db().execute(
+            "SELECT MAX(created_at) FROM charges WHERE uid=?", (s["uid"],)).fetchone()[0]
+        if recent and now() - recent < REQUEST_COOLDOWN:
+            return json_resp({"error": "잠시 후 다시 시도해주세요."}, 400)
+        db().execute(
+            "INSERT INTO charges(uid,username,amount,code1,code2,created_at) VALUES(?,?,?,?,?,?)",
+            (s["uid"], s["name"], amount, code1, code2, now()))
+        db().commit()
+    return json_resp({"ok": True})
+
+# ---------------------------------------------------------------- API: 봇 동기화
+
+def check_sync(req, limit=MAX_SYNC_BODY):
+    """동기화 요청 인증. 성공 시 본문 dict, 실패 시 None."""
+    if not SYNC_KEY:
+        return None
+    d = req.read_json(limit=limit)
+    if not isinstance(d, dict):
+        return None
+    if not hmac.compare_digest(str(d.get("key", "")), SYNC_KEY):
+        return None
+    return d
+
+
+def api_sync_pull(req):
+    """봇: 아직 디스코드로 전달 안 된 충전 신청 가져가기."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    with db_lock:
+        rows = db().execute(
+            "SELECT id,uid,username,amount,code1,code2 FROM charges "
+            "WHERE status='대기' ORDER BY id LIMIT 20").fetchall()
+    return json_resp({"charges": row_dicts(rows)})
+
+
+def api_sync_ack(req):
+    """봇: 관리자 DM 전달 완료 표시."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    ids = [i for i in (d.get("ids") or []) if isinstance(i, int)][:50]
+    with db_lock:
+        for rid in ids:
+            db().execute("UPDATE charges SET status='전달됨' WHERE id=? AND status='대기'", (rid,))
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_sync_push(req):
+    """봇: 상품 목록 + 잔액 밀어올리기."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    products = d.get("products")
+    balances = d.get("balances")
+    if not isinstance(products, dict) or not isinstance(balances, dict):
+        return json_resp({"error": "잘못된 데이터"}, 400)
+    shop = load_shop()
+    shop["products"] = products
+    shop["balances"] = {str(k): v for k, v in balances.items()}
+    shop["updated_at"] = now()
+    save_shop(shop)
+    return json_resp({"ok": True})
+
+
+def api_sync_images(req):
+    """봇: 웹이 이미 갖고 있는 이미지 목록 {게임명: 첨부ID}."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    shop = load_shop()
+    return json_resp({"images": {n: e.get("att", "") for n, e in shop.get("images", {}).items()}})
+
+
+def api_sync_image(req):
+    """봇: 게임 소개 이미지 업로드/교체. {key, name, att, image: dataURL}"""
+    d = check_sync(req, limit=MAX_SYNC_IMAGE)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    name = clean(d.get("name"), 100)
+    att = clean(str(d.get("att", "")), 40)
+    if not name or not att or not d.get("image"):
+        return json_resp({"error": "잘못된 데이터"}, 400)
+    try:
+        img_bytes, ext = decode_image(d["image"], limit=6 * 1024 * 1024)
+    except ValueError as e:
+        return json_resp({"error": str(e)}, 400)
+    shop = load_shop()
+    images = shop.setdefault("images", {})
+    old = images.get(name)
+    fname = shopimg_filename(name, ext)
+    with open(os.path.join(SHOPIMG_DIR, fname), "wb") as f:
+        f.write(img_bytes)
+    if old and old.get("file") and old["file"] != fname:
+        try:
+            os.remove(os.path.join(SHOPIMG_DIR, old["file"]))
+        except OSError:
+            pass
+    images[name] = {"att": att, "file": fname}
+    save_shop(shop)
+    return json_resp({"ok": True})
 
 # ---------------------------------------------------------------- API: 관리자
 
@@ -499,7 +719,9 @@ def require_admin(req):
 def api_admin_requests(req):
     with db_lock:
         rows = db().execute("SELECT * FROM requests ORDER BY id DESC LIMIT 300").fetchall()
-    return json_resp({"requests": row_dicts(rows)})
+        charges = db().execute("SELECT * FROM charges ORDER BY id DESC LIMIT 100").fetchall()
+    return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
+                      "shop_updated_at": load_shop().get("updated_at", 0)})
 
 
 def api_admin_image(req):
@@ -511,7 +733,7 @@ def api_admin_image(req):
     with db_lock:
         row = db().execute("SELECT image FROM requests WHERE id=?", (rid,)).fetchone()
     fname = row["image"] if row else ""
-    if not fname or not re.match(r"^req_\d+\.(jpg|png|webp)$", fname):
+    if not fname or not re.match(r"^req_\d+\.(jpg|png|webp|gif)$", fname):
         return json_resp({"error": "이미지가 없습니다."}, 404)
     fpath = os.path.join(UPLOAD_DIR, fname)
     if not os.path.isfile(fpath):
@@ -593,6 +815,8 @@ GET_ROUTES = {
     "/admin": route_admin_page,
     "/api/me": api_me,
     "/api/my": api_my_requests,
+    "/api/shopdata": api_shopdata,
+    "/api/shop/image": api_shop_image,
 }
 GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,
@@ -600,6 +824,12 @@ GET_ADMIN_ROUTES = {
 }
 POST_ROUTES = {
     "/api/request": api_request_create,
+    "/api/charge": api_charge_create,
+    "/api/sync/pull": api_sync_pull,
+    "/api/sync/ack": api_sync_ack,
+    "/api/sync/push": api_sync_push,
+    "/api/sync/images": api_sync_images,
+    "/api/sync/image": api_sync_image,
 }
 POST_ADMIN_ROUTES = {
     "/api/admin/respond": api_admin_respond,

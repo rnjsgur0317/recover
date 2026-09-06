@@ -1,4 +1,4 @@
-// 복구센터 - 유저 페이지
+// H Company - 유저 페이지 (게임 목록 / 잔액 충전 / 링크 복구 / 내 요청)
 "use strict";
 
 const $ = (sel) => document.querySelector(sel);
@@ -8,7 +8,7 @@ function toast(msg, isError) {
   el.textContent = msg;
   el.className = isError ? "show error" : "show";
   clearTimeout(el._t);
-  el._t = setTimeout(() => (el.className = ""), 3000);
+  el._t = setTimeout(() => (el.className = ""), 3200);
 }
 
 function esc(s) {
@@ -32,31 +32,94 @@ function fmtDate(ts) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-async function loadMe() {
-  const me = await api("/api/me");
-  $("#who").textContent = `${me.name} 님`;
+function fmtWon(n) {
+  return Number(n || 0).toLocaleString("ko-KR");
 }
 
-async function loadMy() {
-  const data = await api("/api/my");
-  const box = $("#myList");
-  box.innerHTML = data.requests.length
-    ? data.requests.map((r) => `
-      <div class="req-card">
-        <div class="head">
-          <div>
-            <div class="name">${esc(r.game)}</div>
-            <div class="sub">${fmtDate(r.created_at)}${r.note ? " · " + esc(r.note) : ""}</div>
-            ${r.status === "완료" ? '<div class="sub">디스코드 DM으로 링크를 보냈어요. 확인해주세요!</div>' : ""}
-            ${r.status === "거절" && r.admin_reply ? `<div class="sub">사유: ${esc(r.admin_reply)}</div>` : ""}
+// ---- 탭
+document.querySelectorAll(".tabs button").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".tab-page").forEach((p) => p.classList.toggle("active", p.id === "page-" + btn.dataset.tab));
+  }));
+
+// ---- 프로필
+api("/api/me").then((me) => { $("#who").textContent = `${me.name} 님`; }).catch(() => {});
+
+// ---- 게임 목록 + 잔액
+let shopCache = null;
+
+async function loadShop() {
+  try {
+    shopCache = await api("/api/shopdata");
+    $("#balance").textContent = fmtWon(shopCache.balance);
+    $("#balanceChip").hidden = false;
+    $("#shopUpdated").textContent = shopCache.updated_at
+      ? `목록·잔액은 봇과 자동 동기화됩니다. (마지막 동기화: ${fmtDate(shopCache.updated_at)})`
+      : "아직 봇과 동기화 전입니다. 잠시 후 새로고침해주세요.";
+    renderShop();
+  } catch (e) {
+    $("#gameList").innerHTML = '<div class="empty">목록을 불러올 수 없어요.</div>';
+  }
+}
+
+function renderShop() {
+  if (!shopCache) return;
+  const q = $("#gameSearch").value.trim().toLowerCase();
+  const box = $("#gameList");
+  let html = "";
+  let total = 0;
+  for (const cat of shopCache.categories) {
+    const games = cat.games.filter((g) => !q || g.name.toLowerCase().includes(q));
+    if (!games.length) continue;
+    total += games.length;
+    html += `<div class="cat-title">${esc(cat.name)} <span class="cat-count">${games.length}</span></div>
+      <div class="game-grid">` +
+      games.map((g) => `
+        <div class="game-card">
+          ${g.img
+            ? `<img class="game-img" loading="lazy" src="/api/shop/image?name=${encodeURIComponent(g.name)}" alt="${esc(g.name)}">`
+            : `<div class="game-img placeholder">H</div>`}
+          <div class="game-info">
+            <div class="game-name">${esc(g.name)}</div>
+            <div class="game-price">${fmtWon(g.price)}원${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}</div>
           </div>
-          <span class="badge ${esc(r.status)}">${esc(r.status)}</span>
-        </div>
-      </div>`).join("")
-    : '<div class="empty">아직 요청이 없어요.</div>';
+        </div>`).join("") +
+      `</div>`;
+  }
+  box.innerHTML = total ? html
+    : `<div class="card"><div class="empty">${q ? "검색 결과가 없어요." : "아직 등록된 게임이 없어요."}</div></div>`;
+  box.querySelectorAll(".game-img:not(.placeholder)").forEach((img) =>
+    img.addEventListener("click", () => window.open(img.src, "_blank")));
 }
 
-// ---- 구매내역 캡쳐 첨부
+$("#gameSearch").addEventListener("input", renderShop);
+loadShop();
+setInterval(loadShop, 60000);
+
+// ---- 잔액 충전
+$("#chargeSubmit").addEventListener("click", async () => {
+  const body = {
+    code1: $("#chargeCode1").value.trim(),
+    code2: $("#chargeCode2").value.trim(),
+    amount: $("#chargeAmount").value.trim(),
+  };
+  if (!body.code1) return toast("문화상품권 코드를 입력하세요.", true);
+  if (!body.amount) return toast("금액을 입력하세요.", true);
+  try {
+    $("#chargeSubmit").disabled = true;
+    await api("/api/charge", body);
+    ["chargeCode1", "chargeCode2", "chargeAmount"].forEach((id) => ($("#" + id).value = ""));
+    toast("충전 신청 완료! 관리자 승인 후 잔액이 반영됩니다. (결과는 디스코드 DM)");
+    loadMy();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    $("#chargeSubmit").disabled = false;
+  }
+});
+
+// ---- 구매내역 캡쳐 첨부 (링크 복구)
 let imageData = "";
 
 async function compressImage(file) {
@@ -122,6 +185,40 @@ $("#submit").addEventListener("click", async () => {
   }
 });
 
-loadMe().catch(() => {});
-loadMy().catch(() => {});
-setInterval(() => loadMy().catch(() => {}), 30000);
+// ---- 내 요청
+async function loadMy() {
+  try {
+    const data = await api("/api/my");
+    const box = $("#myList");
+    box.innerHTML = data.requests.length
+      ? data.requests.map((r) => `
+        <div class="req-card">
+          <div class="head">
+            <div>
+              <div class="name">${esc(r.game)}</div>
+              <div class="sub">${fmtDate(r.created_at)}${r.note ? " · " + esc(r.note) : ""}</div>
+              ${r.status === "완료" ? '<div class="sub">디스코드 DM으로 링크를 보냈어요. 확인해주세요!</div>' : ""}
+              ${r.status === "거절" && r.admin_reply ? `<div class="sub">사유: ${esc(r.admin_reply)}</div>` : ""}
+            </div>
+            <span class="badge ${esc(r.status)}">${esc(r.status)}</span>
+          </div>
+        </div>`).join("")
+      : '<div class="empty">아직 요청이 없어요.</div>';
+
+    const cbox = $("#myCharges");
+    cbox.innerHTML = data.charges.length
+      ? data.charges.map((c) => `
+        <div class="req-card">
+          <div class="head">
+            <div>
+              <div class="name">${fmtWon(c.amount)}원 충전</div>
+              <div class="sub">${fmtDate(c.created_at)} · ${c.status === "대기" ? "곧 관리자에게 전달돼요" : "관리자 확인 중 · 결과는 디스코드 DM"}</div>
+            </div>
+            <span class="badge ${esc(c.status)}">${esc(c.status)}</span>
+          </div>
+        </div>`).join("")
+      : '<div class="empty">충전 신청 내역이 없어요.</div>';
+  } catch (e) { /* 무시 */ }
+}
+loadMy();
+setInterval(loadMy, 30000);

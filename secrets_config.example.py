@@ -23,3 +23,6 @@ USER_ROLE_ID = 123456789012345678
 
 # 사이트 주소 — 디스코드 OAuth2 Redirects 에 "<BASE_URL>/callback" 등록 필요
 BASE_URL = "https://chhc.pythonanywhere.com"
+
+# 봇<->웹 동기화 인증키 — 아무 긴 랜덤 문자열. coinbot\websync.py 의 SYNC_KEY 와 동일해야 함
+SYNC_KEY = "랜덤한 긴 문자열"

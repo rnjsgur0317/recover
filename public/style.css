@@ -93,6 +93,70 @@ button.small.danger:hover { color: #111; }
 .choice a.dark { background: #111; color: #fff; border-color: #111; }
 .choice a.dark .d { color: #a1a1aa; }
 
+/* 탭 */
+.tabs {
+  display: flex; gap: 4px; margin: 14px 0 16px;
+  background: #f0f0f2;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+  flex-wrap: wrap;
+}
+.tabs button {
+  flex: 1; min-width: 96px;
+  background: transparent; color: var(--text-dim);
+  border: none; border-radius: 8px;
+  padding: 10px 6px; font-size: .88rem; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+  transition: background .12s, color .12s;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button.active { background: #111; color: #fff; }
+.tab-page { display: none; }
+.tab-page.active { display: block; }
+
+/* 잔액 칩 */
+.balance-chip {
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  padding: 5px 12px; background: #fff; font-size: .84rem; color: var(--text);
+}
+.balance-chip b { font-weight: 800; }
+
+/* 게임 목록 */
+.cat-title {
+  font-size: .95rem; font-weight: 800; margin: 20px 2px 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cat-count {
+  background: #f0f0f2; color: var(--text-dim);
+  border-radius: 999px; font-size: .72rem; font-weight: 700; padding: 2px 9px;
+}
+.game-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.game-card {
+  background: #fff; border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+  transition: border-color .12s, transform .08s;
+}
+.game-card:hover { border-color: #111; transform: translateY(-1px); }
+.game-img {
+  width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
+  background: #f4f4f5; cursor: zoom-in; border-bottom: 1px solid var(--border);
+}
+.game-img.placeholder {
+  display: flex; align-items: center; justify-content: center;
+  color: #d4d4d8; font-size: 2rem; font-weight: 800; cursor: default;
+}
+.game-info { padding: 11px 13px 13px; }
+.game-name { font-weight: 700; font-size: .9rem; line-height: 1.4; word-break: keep-all; }
+.game-price { margin-top: 5px; font-size: .85rem; font-weight: 700; }
+.game-tag {
+  font-size: .68rem; font-weight: 700; color: #fff; background: #111;
+  border-radius: 999px; padding: 2px 8px; vertical-align: 1px;
+}
+
 /* 요청 목록 */
 .req-card {
   border: 1px solid var(--border); border-radius: 10px;
@@ -112,6 +176,7 @@ button.small.danger:hover { color: #111; }
 .badge.대기 { background: #f4f4f5; color: #52525b; border-color: #e4e4e7; }
 .badge.완료 { background: #111; color: #fff; border-color: #111; }
 .badge.거절 { background: #f4f4f5; color: #a1a1aa; border-color: #e4e4e7; text-decoration: line-through; }
+.badge.전달됨 { background: #fff; color: #111; border-color: #111; }
 
 .empty { color: var(--text-dim); text-align: center; padding: 28px 0; font-size: .88rem; }
 .hint { color: var(--text-dim); font-size: .82rem; line-height: 1.6; margin: 10px 0 0; }
