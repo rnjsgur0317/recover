@@ -460,12 +460,7 @@ def route_callback(req):
             return redirect("/denied.html?r=" + urllib.parse.quote("이 계정은 관리자가 아닙니다."))
         return redirect("/admin", set_cookie=session_cookie(make_session(uid, name, "admin")))
 
-    # 유저: 역할 확인
-    has_role, err = member_has_role(uid)
-    if err:
-        return redirect("/denied.html?r=" + urllib.parse.quote(err))
-    if not has_role:
-        return redirect("/denied.html?r=" + urllib.parse.quote("사이트 접근 권한이 없습니다. 구매 이력이 있는 계정으로 로그인해주세요."))
+    # 유저: 조건 없이 로그인 허용
     return redirect("/user", set_cookie=session_cookie(make_session(uid, name, "user")))
 
 
