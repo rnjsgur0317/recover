@@ -178,6 +178,22 @@ button.small.danger:hover { color: #111; }
   border-radius: 999px; padding: 1px 7px; vertical-align: 1px;
 }
 .off-chip.hot, .game-tag.hot { background: #111; }
+
+/* BEST (인기 게임) — 앰버 골드 포인트 */
+:root { --best: #f59e0b; --best-bg: #fffbeb; }
+.best-title { color: #b45309; }
+.best-count { background: var(--best-bg); color: #b45309; border: 1px solid #fcd34d; }
+.cat-side button.best-cat { color: #b45309; font-weight: 800; }
+.cat-side button.best-cat.active { background: var(--best); color: #fff; }
+.game-card.best { border-color: var(--best); box-shadow: 0 0 0 1px var(--best); position: relative; }
+.best-ribbon {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  background: var(--best); color: #fff;
+  font-size: .68rem; font-weight: 800; letter-spacing: .06em;
+  border-radius: 6px; padding: 3px 9px;
+  box-shadow: 0 2px 8px rgba(245,158,11,.4);
+}
+.game-tag.best-tag { background: var(--best); vertical-align: 3px; }
 .upcoming-sep { border-top: 2px dashed var(--border-strong); margin: 34px 0 20px; }
 .upcoming-card { border-style: dashed; }
 

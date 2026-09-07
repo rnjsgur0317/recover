@@ -131,6 +131,11 @@ def init_db():
             sale_price INTEGER NOT NULL,
             created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS bests (         -- BEST(인기) 게임
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game TEXT NOT NULL UNIQUE,
+            created_at INTEGER NOT NULL
+        );
         """)
         c.commit()
         for stmt in (
@@ -642,6 +647,12 @@ def discount_map():
     return {r["game"]: r["sale_price"] for r in rows}
 
 
+def best_set():
+    with db_lock:
+        rows = db().execute("SELECT game FROM bests").fetchall()
+    return {r["game"] for r in rows}
+
+
 def api_shopdata(req):
     """게임 목록 + 내 잔액 + 신작 목록. 봇이 약 1분마다 동기화."""
     s = req.session()
@@ -651,6 +662,7 @@ def api_shopdata(req):
     images = shop.get("images", {})
     details = shop.get("details", {})
     sales = discount_map()
+    bests = best_set()
     cats = {}
     order = []
     for name, info in (shop.get("products") or {}).items():
@@ -674,6 +686,8 @@ def api_shopdata(req):
             g["official"] = official
         if name in sales:
             g["sale_price"] = sales[name]
+        if name in bests:
+            g["best"] = True
         cats[cat].append(g)
     with db_lock:
         upc = db().execute(
@@ -1066,6 +1080,8 @@ def api_shop_detail(req):
     }
     if name in sales:
         out["sale_price"] = sales[name]
+    if name in best_set():
+        out["best"] = True
     return json_resp(out)
 
 
@@ -1137,10 +1153,12 @@ def api_admin_requests(req):
         notices = db().execute("SELECT * FROM notices ORDER BY id DESC LIMIT 50").fetchall()
         upcoming = db().execute("SELECT * FROM upcoming ORDER BY id DESC LIMIT 50").fetchall()
         discounts = db().execute("SELECT * FROM discounts ORDER BY id DESC LIMIT 100").fetchall()
+        bests = db().execute("SELECT * FROM bests ORDER BY id DESC LIMIT 100").fetchall()
     shop = load_shop()
     return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
                       "orders": row_dicts(orders), "notices": row_dicts(notices),
                       "upcoming": row_dicts(upcoming), "discounts": row_dicts(discounts),
+                      "bests": row_dicts(bests),
                       "product_names": [{"name": n, "price": i.get("price", 0)}
                                         for n, i in (shop.get("products") or {}).items()
                                         if not i.get("is_subscription")],
@@ -1385,6 +1403,28 @@ def api_admin_discount(req):
     return json_resp({"ok": True})
 
 
+def api_admin_best(req):
+    """BEST(인기) 게임 관리. {action: 'set'|'unset', game}"""
+    d = req.read_json() or {}
+    action = d.get("action")
+    game = clean(d.get("game"), 100)
+    if not game:
+        return json_resp({"error": "게임 이름을 입력하세요."}, 400)
+    if action == "set":
+        if game not in (load_shop().get("products") or {}):
+            return json_resp({"error": "판매 목록에 없는 게임입니다. 이름을 정확히 입력하세요."}, 400)
+        with db_lock:
+            db().execute("INSERT OR IGNORE INTO bests(game,created_at) VALUES(?,?)", (game, now()))
+            db().commit()
+    elif action == "unset":
+        with db_lock:
+            db().execute("DELETE FROM bests WHERE game=?", (game,))
+            db().commit()
+    else:
+        return json_resp({"error": "잘못된 요청"}, 400)
+    return json_resp({"ok": True})
+
+
 def api_admin_reservation_send(req):
     """예약 완료 건에 출시 링크 DM 발송. {id, message?}"""
     d = req.read_json() or {}
@@ -1472,6 +1512,7 @@ POST_ADMIN_ROUTES = {
     "/api/admin/notice": api_admin_notice,
     "/api/admin/upcoming": api_admin_upcoming,
     "/api/admin/discount": api_admin_discount,
+    "/api/admin/best": api_admin_best,
     "/api/admin/reservation_send": api_admin_reservation_send,
 }
 

@@ -78,16 +78,26 @@ function saleGames() {
   return out;
 }
 
+function bestGames() {
+  const out = [];
+  for (const c of shopCache.categories) {
+    for (const g of c.games) if (g.best) out.push(g);
+  }
+  return out;
+}
+
 function renderCatSide() {
   const side = $("#catSide");
   const total = shopCache.categories.reduce((n, c) => n + c.games.length, 0);
   const sales = saleGames();
+  const bests = bestGames();
   const cats = [{ name: "전체", n: total }];
+  if (bests.length) cats.push({ name: "⭐ BEST", n: bests.length });
   if (sales.length) cats.push({ name: "🔥 할인", n: sales.length });
   cats.push(...shopCache.categories.map((c) => ({ name: c.name, n: c.games.length })));
   if (!cats.some((c) => c.name === selectedCat)) selectedCat = "전체";
   side.innerHTML = cats.map((c) =>
-    `<button class="${c.name === selectedCat ? "active" : ""}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="n">${c.n}</span></button>`).join("");
+    `<button class="${c.name === selectedCat ? "active" : ""}${c.name === "⭐ BEST" ? " best-cat" : ""}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="n">${c.n}</span></button>`).join("");
   side.querySelectorAll("button").forEach((b) =>
     b.addEventListener("click", () => {
       selectedCat = b.dataset.cat;
@@ -123,7 +133,8 @@ function priceBlock(g) {
 
 function gameCard(g) {
   return `
-    <div class="game-card" data-open="${esc(g.name)}" role="button" tabindex="0">
+    <div class="game-card${g.best ? " best" : ""}" data-open="${esc(g.name)}" role="button" tabindex="0">
+      ${g.best ? '<span class="best-ribbon">BEST</span>' : ""}
       ${mediaTag(g, "game-img")}
       <div class="game-info">
         <div class="game-name">${esc(g.name)}${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}${g.sale_price != null ? ' <span class="game-tag hot">할인중</span>' : ""}</div>
@@ -143,7 +154,20 @@ function renderShop() {
     total = games.length;
     html = `<div class="cat-title">🔥 할인 중인 게임 <span class="cat-count">${games.length}</span></div>
       <div class="game-grid">` + games.map(gameCard).join("") + `</div>`;
+  } else if (selectedCat === "⭐ BEST") {
+    const games = bestGames().filter((g) => !q || g.name.toLowerCase().includes(q));
+    total = games.length;
+    html = `<div class="cat-title best-title">⭐ BEST <span class="cat-count best-count">${games.length}</span></div>
+      <div class="game-grid">` + games.map(gameCard).join("") + `</div>`;
   } else {
+    if (selectedCat === "전체") {
+      const bests = bestGames().filter((g) => !q || g.name.toLowerCase().includes(q));
+      if (bests.length) {
+        total += bests.length;
+        html += `<div class="cat-title best-title">⭐ BEST <span class="cat-count best-count">${bests.length}</span></div>
+          <div class="game-grid">` + bests.map(gameCard).join("") + `</div>`;
+      }
+    }
     for (const cat of shopCache.categories) {
       if (selectedCat !== "전체" && cat.name !== selectedCat) continue;
       const games = cat.games.filter((g) => !q || g.name.toLowerCase().includes(q));
@@ -254,7 +278,7 @@ async function openDetail(name) {
     </div>` : "";
   body.innerHTML = `
     ${gallery}
-    <div class="detail-name">${esc(d.name)}${d.sale_price != null ? ' <span class="game-tag hot">할인중</span>' : ""}</div>
+    <div class="detail-name">${d.best ? '<span class="game-tag best-tag">BEST</span> ' : ""}${esc(d.name)}${d.sale_price != null ? ' <span class="game-tag hot">할인중</span>' : ""}</div>
     <div class="detail-prices">
       <span class="now">${fmtWon(nowPrice)}원</span>
       ${base && base > nowPrice ? `<span class="was">${d.sale_price != null ? "판매가" : "정가"} ${fmtWon(base)}원</span>` : ""}

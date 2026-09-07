@@ -23,7 +23,7 @@
     <button data-tab="order">주문·예약<span id="cntReserve" class="count-badge" hidden></span></button>
     <button data-tab="notice">공지</button>
     <button data-tab="upcoming">신작</button>
-    <button data-tab="discount">할인</button>
+    <button data-tab="discount">할인·BEST</button>
   </nav>
 
   <!-- 복구요청 -->
@@ -120,6 +120,14 @@
     <div class="card">
       <h2>할인 중인 게임</h2>
       <div id="discountAdminList"><div class="empty">불러오는 중...</div></div>
+    </div>
+    <div class="card">
+      <h2>⭐ BEST (인기 게임)</h2>
+      <p class="desc">지정하면 유저 게임 목록 <b>최상단 BEST 섹션</b>에 골드 뱃지와 함께 표시됩니다.</p>
+      <label>게임 이름</label>
+      <input type="text" id="bestGame" maxlength="100" list="dcGameList">
+      <button class="primary" id="bestSet">BEST 지정</button>
+      <div id="bestAdminList" style="margin-top:16px"><div class="empty">불러오는 중...</div></div>
     </div>
   </section>
 

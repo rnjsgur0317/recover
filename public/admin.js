@@ -42,6 +42,7 @@ let orderCache = [];
 let noticeCache = [];
 let upcomingCache = [];
 let discountCache = [];
+let bestCache = [];
 let shopUpdatedAt = 0;
 let filter = "대기";
 
@@ -67,6 +68,7 @@ async function refresh() {
   noticeCache = data.notices || [];
   upcomingCache = data.upcoming || [];
   discountCache = data.discounts || [];
+  bestCache = data.bests || [];
   shopUpdatedAt = data.shop_updated_at || 0;
   $("#dcGameList").innerHTML = (data.product_names || [])
     .map((p) => `<option value="${esc(p.name)}">${fmtWon(p.price)}원</option>`).join("");
@@ -91,6 +93,7 @@ function render() {
   renderNotices();
   renderUpcoming();
   renderDiscounts();
+  renderBests();
 }
 
 function setBadge(sel, n) {
@@ -475,6 +478,39 @@ function renderDiscounts() {
       try {
         await api("/api/admin/discount", { action: "unset", game: b.dataset.dcoff });
         toast("할인 종료");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    }));
+}
+
+// ---- BEST 관리
+$("#bestSet").addEventListener("click", async () => {
+  const game = $("#bestGame").value.trim();
+  if (!game) return toast("게임 이름을 입력하세요.", true);
+  try {
+    await api("/api/admin/best", { action: "set", game });
+    $("#bestGame").value = "";
+    toast("BEST 지정 완료! 유저 목록 최상단에 표시됩니다.");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderBests() {
+  const box = $("#bestAdminList");
+  box.innerHTML = bestCache.length
+    ? bestCache.map((b) => `
+      <div class="req-card">
+        <div class="head">
+          <div class="name">⭐ ${esc(b.game)}</div>
+          <button class="small danger" data-bestoff="${esc(b.game)}">해제</button>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">지정된 BEST 게임이 없어요.</div>';
+  box.querySelectorAll("[data-bestoff]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        await api("/api/admin/best", { action: "unset", game: b.dataset.bestoff });
+        toast("BEST 해제");
         refresh();
       } catch (e) { toast(e.message, true); }
     }));
