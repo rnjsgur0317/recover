@@ -545,7 +545,12 @@ def route_callback(req):
             return redirect("/denied.html?r=" + urllib.parse.quote("이 계정은 관리자가 아닙니다."))
         return redirect("/admin", set_cookie=session_cookie(make_session(uid, name, "admin")))
 
-    # 유저: 조건 없이 로그인 허용
+    # 유저: 지정 역할 보유자만
+    has_role, err = member_has_role(uid)
+    if err:
+        return redirect("/denied.html?r=" + urllib.parse.quote(err))
+    if not has_role:
+        return redirect("/denied.html?r=" + urllib.parse.quote("사이트 접근 권한이 없습니다. 디스코드 서버에서 권한을 받은 뒤 이용해주세요."))
     return redirect("/user", set_cookie=session_cookie(make_session(uid, name, "user")))
 
 
