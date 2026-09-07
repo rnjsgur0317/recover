@@ -670,7 +670,7 @@ def api_shopdata(req):
     bests = best_set()
     cats = {}
     order = []
-    for name, info in (shop.get("products") or {}).items():
+    for idx, (name, info) in enumerate((shop.get("products") or {}).items()):
         cat = info.get("category") or "기타"
         if cat not in cats:
             cats[cat] = []
@@ -693,7 +693,13 @@ def api_shopdata(req):
             g["sale_price"] = sales[name]
         if name in bests:
             g["best"] = True
+        g["_sort"] = (int(info.get("reg", 0) or 0), idx)
         cats[cat].append(g)
+    # 최근 등록이 맨 위 (등록시각 desc, 없으면 목록 뒤쪽=최근 등록으로 간주)
+    for cat in cats:
+        cats[cat].sort(key=lambda x: x["_sort"], reverse=True)
+        for g in cats[cat]:
+            g.pop("_sort", None)
     with db_lock:
         upc = db().execute(
             "SELECT id,name,price,discount_price,note,image FROM upcoming ORDER BY id DESC").fetchall()
