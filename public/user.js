@@ -95,9 +95,12 @@ function renderCatSide() {
   if (bests.length) cats.push({ name: "⭐ BEST", n: bests.length });
   if (sales.length) cats.push({ name: "🔥 할인", n: sales.length });
   cats.push(...shopCache.categories.map((c) => ({ name: c.name, n: c.games.length })));
+  if ((shopCache.upcoming || []).length) {
+    cats.push({ name: "🚀 신작 예약", n: shopCache.upcoming.length, divider: true });
+  }
   if (!cats.some((c) => c.name === selectedCat)) selectedCat = "전체";
   side.innerHTML = cats.map((c) =>
-    `<button class="${c.name === selectedCat ? "active" : ""}${c.name === "⭐ BEST" ? " best-cat" : ""}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="n">${c.n}</span></button>`).join("");
+    `<button class="${c.name === selectedCat ? "active" : ""}${c.name === "⭐ BEST" ? " best-cat" : ""}${c.divider ? " new-cat" : ""}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="n">${c.n}</span></button>`).join("");
   side.querySelectorAll("button").forEach((b) =>
     b.addEventListener("click", () => {
       selectedCat = b.dataset.cat;
@@ -149,6 +152,10 @@ function renderShop() {
   const box = $("#gameList");
   let html = "";
   let total = 0;
+  if (selectedCat === "🚀 신작 예약") {
+    renderUpcomingInto(box, q);
+    return;
+  }
   if (selectedCat === "🔥 할인") {
     const games = saleGames().filter((g) => !q || g.name.toLowerCase().includes(q));
     total = games.length;
@@ -181,16 +188,16 @@ function renderShop() {
     : `<div class="card"><div class="empty">${q ? "검색 결과가 없어요." : "이 카테고리에 게임이 없어요."}</div></div>`;
   box.querySelectorAll("[data-open]").forEach((card) =>
     card.addEventListener("click", () => openDetail(card.dataset.open)));
-  renderUpcoming();
 }
 
 // ---- 신작(출시 예정) 예약
-function renderUpcoming() {
-  const box = $("#upcomingSection");
-  const ups = shopCache.upcoming || [];
-  if (!ups.length) { box.innerHTML = ""; return; }
+function renderUpcomingInto(box, q) {
+  const ups = (shopCache.upcoming || []).filter((u) => !q || u.name.toLowerCase().includes(q));
+  if (!ups.length) {
+    box.innerHTML = '<div class="card"><div class="empty">출시 예정 게임이 없어요.</div></div>';
+    return;
+  }
   box.innerHTML = `
-    <div class="upcoming-sep"></div>
     <div class="cat-title">🚀 출시 예정 · 예약 구매 <span class="cat-count">${ups.length}</span></div>
     <p class="hint" style="margin:-4px 2px 10px">예약 구매하면 출시가보다 저렴하게! 출시되면 링크가 DM과 [내 정보]로 발송됩니다.</p>
     <div class="game-grid">` + ups.map((u) => {

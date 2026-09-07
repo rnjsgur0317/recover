@@ -144,6 +144,16 @@ button.small.danger:hover { color: #111; }
 .cat-side button:hover { color: var(--text); background: #f4f4f5; }
 .cat-side button.active { background: #111; color: #fff; }
 .cat-side button .n { font-size: .72rem; opacity: .6; }
+.cat-side button.new-cat {
+  margin-top: 8px; padding-top: 12px;
+  border-top: 1px dashed var(--border-strong); border-radius: 0 0 8px 8px;
+  font-weight: 800;
+}
+.cat-side button.new-cat.active { background: #111; color: #fff; }
+@media (max-width: 640px) {
+  .cat-side button.new-cat { margin-top: 0; padding-top: 9px; border-top: none;
+    border-left: 1px dashed var(--border-strong); border-radius: 8px; margin-left: 6px; padding-left: 14px; }
+}
 @media (max-width: 640px) {
   .shop-layout { display: block; }
   .cat-side {
