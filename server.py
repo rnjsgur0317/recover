@@ -638,6 +638,7 @@ def api_my_requests(req):
     for o in orders:
         o = dict(o)
         o["link_ok"] = (o["status"] == "완료"
+                        and o["kind"] != "pass"
                         and (o["kind"] != "reserve" or o["link_sent"])
                         and now() - o["updated_at"] <= 7 * 86400
                         and bool((products.get(o["game"]) or {}).get("link")))
@@ -658,6 +659,57 @@ def best_set():
     return {r["game"] for r in rows}
 
 
+def media_flags(shop, name):
+    files = entry_files(shop.get("images", {}).get(name))
+    if not files:
+        return False, None
+    return True, ("video" if files[0].rsplit(".", 1)[-1] in VIDEO_EXTS else "img")
+
+
+def pass_info(shop, uid):
+    """게임패스 화면 데이터: 패스 상품 목록 + 내 패스 상태 + 무료 수령 가능 게임."""
+    passes = shop.get("passes") or {}
+    gp = ((shop.get("profiles") or {}).get(uid) or {}).get("game_pass") or None
+    active = bool(gp and gp.get("expires_at", 0) > now())
+    defs = []
+    for name, pd in passes.items():
+        charge, action = int(pd.get("price", 0)), "new"
+        if active:
+            if gp.get("tier") == "7일" and pd.get("tier") == "30일":
+                charge = int(pd.get("price", 0)) - int((passes.get("게임패스 7일") or {}).get("price", 0))
+                action = "upgrade"
+            else:
+                action = "extend"
+        defs.append({"name": name, "price": int(pd.get("price", 0)), "tier": pd.get("tier", ""),
+                     "days": int(pd.get("days", 0)), "categories": pd.get("categories", []),
+                     "charge": charge, "action": action})
+    claimable = []
+    if active and gp.get("purchased_at"):
+        claimed = set(gp.get("claimed", []))
+        cats = set(gp.get("categories", []))
+        for name, info in (shop.get("products") or {}).items():
+            if info.get("is_game_pass") or info.get("is_subscription"):
+                continue
+            if info.get("category") not in cats:
+                continue
+            reg = int(info.get("reg", 0) or 0)
+            if reg <= 0 or reg < gp.get("purchased_at", 0) or reg > gp.get("expires_at", 0):
+                continue
+            if f"{name}|{reg}" in claimed:
+                continue
+            has_img, media = media_flags(shop, name)
+            claimable.append({"name": name, "price": info.get("price", 0),
+                              "img": has_img, "media": media,
+                              "category": info.get("category", "")})
+        claimable.sort(key=lambda x: x["name"])
+    my = None
+    if active:
+        my = {"tier": gp.get("tier", ""), "purchased_at": gp.get("purchased_at", 0),
+              "expires_at": gp.get("expires_at", 0), "categories": gp.get("categories", []),
+              "claimed_count": len(gp.get("claimed", []))}
+    return {"defs": defs, "my": my, "claimable": claimable}
+
+
 def api_shopdata(req):
     """게임 목록 + 내 잔액 + 신작 목록. 봇이 약 1분마다 동기화."""
     s = req.session()
@@ -671,6 +723,8 @@ def api_shopdata(req):
     cats = {}
     order = []
     for idx, (name, info) in enumerate((shop.get("products") or {}).items()):
+        if info.get("is_game_pass"):
+            continue  # 게임패스 상품은 전용 [게임패스] 탭에서
         cat = info.get("category") or "기타"
         if cat not in cats:
             cats[cat] = []
@@ -712,6 +766,7 @@ def api_shopdata(req):
         "upcoming": [{"id": u["id"], "name": u["name"], "price": u["price"],
                       "discount_price": u["discount_price"], "note": u["note"],
                       "img": bool(u["image"])} for u in upc],
+        "pass": pass_info(shop, s["uid"]),
     })
 
 
@@ -793,6 +848,8 @@ def game_order_price(shop, game):
     info = (shop.get("products") or {}).get(game)
     if not info:
         return 0, 0, "판매 중인 상품이 아닙니다."
+    if info.get("is_game_pass"):
+        return 0, 0, "게임패스는 [게임패스] 탭에서 구매해주세요."
     if info.get("is_subscription"):
         return 0, 0, "정기결제 상품은 디스코드 자판기에서 구매해주세요."
     sale = discount_map().get(game)
@@ -890,6 +947,59 @@ def api_reserve(req):
             "INSERT INTO orders(uid,username,game,price,kind,fixed,created_at,updated_at) "
             "VALUES(?,?,?,?,'reserve',1,?,?)",
             (s["uid"], s["name"], row["name"], price, now(), now()))
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_pass_buy(req):
+    """게임패스 구매/연장/업그레이드 신청 → 봇이 결제·적용."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    d = req.read_json() or {}
+    name = clean(d.get("name"), 100)
+    shop = load_shop()
+    pinfo = pass_info(shop, s["uid"])
+    target = next((p for p in pinfo["defs"] if p["name"] == name), None)
+    if not target:
+        return json_resp({"error": "게임패스 상품이 아닙니다."}, 400)
+    charge = target["charge"]
+    balance = shop.get("balances", {}).get(s["uid"], 0)
+    if balance < charge:
+        return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 결제 {charge:,}원)"}, 400)
+    with db_lock:
+        err = _order_guards(s["uid"], [name])
+        if err:
+            return json_resp({"error": err}, 400)
+        db().execute(
+            "INSERT INTO orders(uid,username,game,price,kind,fixed,created_at,updated_at) "
+            "VALUES(?,?,?,?,'pass',0,?,?)",
+            (s["uid"], s["name"], name, charge, now(), now()))
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_pass_claim(req):
+    """게임패스 무료 수령 신청 → 봇이 검증 후 링크 DM."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    d = req.read_json() or {}
+    game = clean(d.get("game"), 100)
+    shop = load_shop()
+    pinfo = pass_info(shop, s["uid"])
+    if not pinfo["my"]:
+        return json_resp({"error": "게임패스 권한이 없습니다. 패스를 먼저 구매해주세요."}, 400)
+    if not any(c["name"] == game for c in pinfo["claimable"]):
+        return json_resp({"error": "무료 수령 대상이 아니거나 이미 수령한 게임입니다."}, 400)
+    with db_lock:
+        err = _order_guards(s["uid"], [game])
+        if err:
+            return json_resp({"error": err}, 400)
+        db().execute(
+            "INSERT INTO orders(uid,username,game,price,kind,fixed,created_at,updated_at) "
+            "VALUES(?,?,?,0,'claim',1,?,?)",
+            (s["uid"], s["name"], game, now(), now()))
         db().commit()
     return json_resp({"ok": True})
 
@@ -1030,6 +1140,9 @@ def api_sync_push(req):
         updated = True
     if isinstance(d.get("profiles"), dict):
         shop["profiles"] = d["profiles"]
+        updated = True
+    if isinstance(d.get("passes"), dict):
+        shop["passes"] = d["passes"]
         updated = True
     if not updated:
         return json_resp({"error": "잘못된 데이터"}, 400)
@@ -1506,6 +1619,8 @@ POST_ROUTES = {
     "/api/charge": api_charge_create,
     "/api/order": api_order_create,
     "/api/reserve": api_reserve,
+    "/api/pass/buy": api_pass_buy,
+    "/api/pass/claim": api_pass_claim,
     "/api/sync/pull": api_sync_pull,
     "/api/sync/ack_approved": api_sync_ack_approved,
     "/api/sync/pull_orders": api_sync_pull_orders,

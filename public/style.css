@@ -204,6 +204,13 @@ button.small.danger:hover { color: #111; }
   box-shadow: 0 2px 8px rgba(245,158,11,.4);
 }
 .game-tag.best-tag { background: var(--best); vertical-align: 3px; }
+
+/* 게임패스 — 보라 포인트 */
+:root { --pass: #8b5cf6; }
+.game-tag.pass-tag, .off-chip.pass-chip { background: var(--pass); }
+.pass-title { color: #6d28d9; }
+.pass-card { border-color: var(--pass); box-shadow: 0 0 0 1px var(--pass); }
+.pass-def-card { border-style: dashed; border-color: #c4b5fd; }
 .upcoming-sep { border-top: 2px dashed var(--border-strong); margin: 34px 0 20px; }
 .upcoming-card { border-style: dashed; }
 

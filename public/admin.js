@@ -243,7 +243,10 @@ function renderOrders() {
       <div class="req-card">
         <div class="head">
           <div>
-            <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${o.kind === "reserve" ? ' <span class="game-tag">예약</span>' : ""}${o.fixed && o.kind !== "reserve" ? ' <span class="game-tag hot">할인가</span>' : ""}</div>
+            <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${
+              { reserve: ' <span class="game-tag">예약</span>',
+                pass: ' <span class="game-tag pass-tag">게임패스</span>',
+                claim: ' <span class="game-tag pass-tag">무료 수령</span>' }[o.kind] || ""}${o.fixed && o.kind === "order" ? ' <span class="game-tag hot">할인가</span>' : ""}</div>
             <div class="sub">${esc(o.username)} (${esc(o.uid)}) · ${fmtDate(o.created_at)}</div>
             ${o.result ? `<div class="sub">${esc(o.result)}</div>` : ""}
             ${o.kind === "reserve" && o.link_sent ? '<div class="sub">✅ 출시 링크 발송됨</div>' : ""}

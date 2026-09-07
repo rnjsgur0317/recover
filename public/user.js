@@ -95,9 +95,12 @@ function renderCatSide() {
   if (bests.length) cats.push({ name: "⭐ BEST", n: bests.length });
   if (sales.length) cats.push({ name: "🔥 할인", n: sales.length });
   cats.push(...shopCache.categories.map((c) => ({ name: c.name, n: c.games.length })));
-  if ((shopCache.upcoming || []).length) {
+  const hasUpcoming = (shopCache.upcoming || []).length > 0;
+  if (hasUpcoming) {
     cats.push({ name: "🚀 신작 예약", n: shopCache.upcoming.length, divider: true });
   }
+  const pinfo = shopCache.pass || { defs: [], my: null, claimable: [] };
+  cats.push({ name: "🎫 게임패스", n: pinfo.my ? pinfo.claimable.length : "", divider: !hasUpcoming });
   if (!cats.some((c) => c.name === selectedCat)) selectedCat = "전체";
   side.innerHTML = cats.map((c) =>
     `<button class="${c.name === selectedCat ? "active" : ""}${c.name === "⭐ BEST" ? " best-cat" : ""}${c.divider ? " new-cat" : ""}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="n">${c.n}</span></button>`).join("");
@@ -154,6 +157,10 @@ function renderShop() {
   let total = 0;
   if (selectedCat === "🚀 신작 예약") {
     renderUpcomingInto(box, q);
+    return;
+  }
+  if (selectedCat === "🎫 게임패스") {
+    renderPassInto(box);
     return;
   }
   if (selectedCat === "🔥 할인") {
@@ -226,6 +233,95 @@ function renderUpcomingInto(box, q) {
         b.disabled = true;
         await api("/api/reserve", { id: Number(b.dataset.reserve) });
         toast("예약 완료! 출시되면 디스코드 DM과 [내 정보]에서 링크를 받을 수 있어요.");
+        loadMy();
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
+    }));
+}
+
+// ---- 게임패스
+function renderPassInto(box) {
+  const p = shopCache.pass || { defs: [], my: null, claimable: [] };
+  let html = "";
+  if (p.my) {
+    const daysLeft = Math.max(0, Math.ceil((p.my.expires_at - Date.now() / 1000) / 86400));
+    html += `<div class="card pass-card">
+      <h2>🎫 게임패스 이용 중 <span class="game-tag pass-tag">${esc(p.my.tier)}</span></h2>
+      <p class="desc" style="margin:0">
+        만료: <b>${fmtDate(p.my.expires_at)}</b> (약 ${daysLeft}일 남음 — 만료되면 권한이 자동으로 사라져요)<br>
+        무료 수령 대상: <b>${(p.my.categories || []).map(esc).join(", ") || "-"}</b> 카테고리 · 지금까지 <b>${p.my.claimed_count}개</b> 수령
+      </p>
+    </div>
+    <div class="cat-title pass-title">🎁 무료 수령 가능 <span class="cat-count">${p.claimable.length}</span></div>`;
+    if (p.claimable.length) {
+      html += `<p class="hint" style="margin:-4px 2px 10px">패스 기간 중 새로 등록된 게임입니다. [무료 수령]을 누르면 봇이 링크를 DM으로 보내드려요.</p>
+        <div class="game-grid">` + p.claimable.map((g) => `
+          <div class="game-card">
+            ${mediaTag(g, "game-img")}
+            <div class="game-info">
+              <div class="game-name">${esc(g.name)}</div>
+              <div class="price-was">${fmtWon(g.price)}원</div>
+              <div class="game-price">무료 <span class="off-chip pass-chip">PASS</span></div>
+              <button class="small good buy-btn" data-claim="${esc(g.name)}">무료 수령</button>
+            </div>
+          </div>`).join("") + `</div>`;
+    } else {
+      html += '<div class="card"><div class="empty">지금 수령 가능한 게임이 없어요.<br>패스 기간 중 새 게임이 등록되면 여기에 떠요!</div></div>';
+    }
+  } else {
+    html += `<div class="card">
+      <h2>🎫 게임패스</h2>
+      <p class="desc" style="margin:0"><b>게임패스 권한이 없습니다.</b><br>
+      패스를 구매하면 <b>패스 기간 동안 새로 등록되는 게임을 전부 무료로</b> 받을 수 있어요.
+      기간이 끝나면 권한은 자동으로 사라집니다.</p>
+    </div>`;
+  }
+  if (p.defs.length) {
+    html += `<div class="cat-title pass-title">${p.my ? "연장 · 업그레이드" : "패스 구매"}</div><div class="game-grid">` +
+      p.defs.map((d) => {
+        const label = { new: "구매", extend: "연장", upgrade: "업그레이드" }[d.action] || "구매";
+        return `
+        <div class="game-card pass-def-card">
+          <div class="game-info">
+            <div class="game-name">🎫 ${esc(d.name)}</div>
+            <div class="sub" style="font-size:.8rem;color:#71717a;margin-top:4px;line-height:1.6">
+              ${d.days}일 동안 <b>${(d.categories || []).map(esc).join(", ")}</b> 카테고리<br>신작 게임 전부 무료 수령</div>
+            ${d.charge !== d.price ? `<div class="price-was">${fmtWon(d.price)}원</div>` : ""}
+            <div class="game-price">${fmtWon(d.charge)}원${d.action === "upgrade" ? ' <span class="off-chip pass-chip">차액만</span>' : ""}</div>
+            <button class="small good buy-btn" data-passbuy="${esc(d.name)}" data-charge="${d.charge}" data-label="${label}">${label}하기</button>
+          </div>
+        </div>`;
+      }).join("") + `</div>`;
+  }
+  box.innerHTML = html;
+
+  box.querySelectorAll("[data-claim]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const name = b.dataset.claim;
+      if (!confirm(`'${name}'을(를) 게임패스로 무료 수령할까요?\n\n봇이 처리 후 링크를 DM으로 보내드려요. (최대 1분)`)) return;
+      try {
+        b.disabled = true;
+        await api("/api/pass/claim", { game: name });
+        toast("수령 신청 완료! 봇이 곧 링크를 DM으로 보내드려요.");
+        loadMy();
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
+    }));
+  box.querySelectorAll("[data-passbuy]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const charge = Number(b.dataset.charge);
+      if ((shopCache?.balance ?? 0) < charge) {
+        return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
+      }
+      if (!confirm(`게임패스 '${b.dataset.passbuy}' ${b.dataset.label} — ${fmtWon(charge)}원을 결제할까요?`)) return;
+      try {
+        b.disabled = true;
+        await api("/api/pass/buy", { name: b.dataset.passbuy });
+        toast("결제 신청 완료! 봇이 곧 처리하고 DM으로 안내드려요. (최대 1분)");
         loadMy();
       } catch (e) {
         toast(e.message, true);
@@ -600,7 +696,10 @@ async function loadMy() {
         <div class="req-card">
           <div class="head">
             <div>
-              <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${o.kind === "reserve" ? ' <span class="game-tag">예약</span>' : ""}</div>
+              <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${
+                { reserve: ' <span class="game-tag">예약</span>',
+                  pass: ' <span class="game-tag pass-tag">게임패스</span>',
+                  claim: ' <span class="game-tag pass-tag">무료 수령</span>' }[o.kind] || ""}</div>
               <div class="sub">${fmtDate(o.created_at)}${o.result ? " · " + esc(o.result) : (o.status === "대기" || o.status === "처리중" ? " · 봇이 처리 중이에요 (최대 1분)" : "")}</div>
               ${o.kind === "reserve" && o.status === "완료" && !o.link_sent ? '<div class="sub">출시되면 링크가 발송돼요.</div>' : ""}
               <div class="link-slot" id="linkSlot${o.id}"></div>
