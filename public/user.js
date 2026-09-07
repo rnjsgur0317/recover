@@ -70,10 +70,21 @@ async function loadShop() {
 
 let selectedCat = "전체";
 
+function saleGames() {
+  const out = [];
+  for (const c of shopCache.categories) {
+    for (const g of c.games) if (g.sale_price != null) out.push(g);
+  }
+  return out;
+}
+
 function renderCatSide() {
   const side = $("#catSide");
   const total = shopCache.categories.reduce((n, c) => n + c.games.length, 0);
-  const cats = [{ name: "전체", n: total }, ...shopCache.categories.map((c) => ({ name: c.name, n: c.games.length }))];
+  const sales = saleGames();
+  const cats = [{ name: "전체", n: total }];
+  if (sales.length) cats.push({ name: "🔥 할인", n: sales.length });
+  cats.push(...shopCache.categories.map((c) => ({ name: c.name, n: c.games.length })));
   if (!cats.some((c) => c.name === selectedCat)) selectedCat = "전체";
   side.innerHTML = cats.map((c) =>
     `<button class="${c.name === selectedCat ? "active" : ""}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="n">${c.n}</span></button>`).join("");
@@ -94,13 +105,29 @@ function mediaTag(g, cls) {
   return `<img class="${cls}" loading="lazy" src="${src}" alt="${esc(g.name)}">`;
 }
 
+function priceBlock(g) {
+  // 정가(취소선) → 판매가 → 할인% / 사이트 할인 중이면 할인가 기준
+  const nowPrice = g.sale_price ?? g.price;
+  const base = g.sale_price != null ? g.price : (g.official || 0);
+  let html = "";
+  if (base && base > nowPrice) {
+    const off = Math.round((1 - nowPrice / base) * 100);
+    html += `<div class="price-was">${g.sale_price != null ? "판매가" : "정가"} ${fmtWon(base)}원</div>`;
+    html += `<div class="game-price">${fmtWon(nowPrice)}원 <span class="off-chip${g.sale_price != null ? " hot" : ""}">${off}%↓</span></div>`;
+  } else {
+    html += `<div class="game-price">${fmtWon(nowPrice)}원</div>`;
+  }
+  if (g.sale_price != null) html += "";
+  return html;
+}
+
 function gameCard(g) {
   return `
     <div class="game-card" data-open="${esc(g.name)}" role="button" tabindex="0">
       ${mediaTag(g, "game-img")}
       <div class="game-info">
-        <div class="game-name">${esc(g.name)}</div>
-        <div class="game-price">${fmtWon(g.price)}원${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}</div>
+        <div class="game-name">${esc(g.name)}${g.is_subscription ? ' <span class="game-tag">정기결제</span>' : ""}${g.sale_price != null ? ' <span class="game-tag hot">할인중</span>' : ""}</div>
+        ${priceBlock(g)}
       </div>
     </div>`;
 }
@@ -111,19 +138,87 @@ function renderShop() {
   const box = $("#gameList");
   let html = "";
   let total = 0;
-  for (const cat of shopCache.categories) {
-    if (selectedCat !== "전체" && cat.name !== selectedCat) continue;
-    const games = cat.games.filter((g) => !q || g.name.toLowerCase().includes(q));
-    if (!games.length) continue;
-    total += games.length;
-    html += `<div class="cat-title">${esc(cat.name)} <span class="cat-count">${games.length}</span></div>
+  if (selectedCat === "🔥 할인") {
+    const games = saleGames().filter((g) => !q || g.name.toLowerCase().includes(q));
+    total = games.length;
+    html = `<div class="cat-title">🔥 할인 중인 게임 <span class="cat-count">${games.length}</span></div>
       <div class="game-grid">` + games.map(gameCard).join("") + `</div>`;
+  } else {
+    for (const cat of shopCache.categories) {
+      if (selectedCat !== "전체" && cat.name !== selectedCat) continue;
+      const games = cat.games.filter((g) => !q || g.name.toLowerCase().includes(q));
+      if (!games.length) continue;
+      total += games.length;
+      html += `<div class="cat-title">${esc(cat.name)} <span class="cat-count">${games.length}</span></div>
+        <div class="game-grid">` + games.map(gameCard).join("") + `</div>`;
+    }
   }
   box.innerHTML = total ? html
     : `<div class="card"><div class="empty">${q ? "검색 결과가 없어요." : "이 카테고리에 게임이 없어요."}</div></div>`;
   box.querySelectorAll("[data-open]").forEach((card) =>
     card.addEventListener("click", () => openDetail(card.dataset.open)));
+  renderUpcoming();
 }
+
+// ---- 신작(출시 예정) 예약
+function renderUpcoming() {
+  const box = $("#upcomingSection");
+  const ups = shopCache.upcoming || [];
+  if (!ups.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `
+    <div class="upcoming-sep"></div>
+    <div class="cat-title">🚀 출시 예정 · 예약 구매 <span class="cat-count">${ups.length}</span></div>
+    <p class="hint" style="margin:-4px 2px 10px">예약 구매하면 출시가보다 저렴하게! 출시되면 링크가 DM과 [내 정보]로 발송됩니다.</p>
+    <div class="game-grid">` + ups.map((u) => {
+      const off = u.price > u.discount_price ? Math.round((1 - u.discount_price / u.price) * 100) : 0;
+      return `
+      <div class="game-card upcoming-card">
+        ${u.img ? `<img class="game-img" loading="lazy" src="/api/shop/upcimg?id=${u.id}" alt="${esc(u.name)}">`
+                : `<div class="game-img placeholder">🚀</div>`}
+        <div class="game-info">
+          <div class="game-name">${esc(u.name)} <span class="game-tag">출시 예정</span></div>
+          ${u.price > u.discount_price ? `<div class="price-was">출시가 ${fmtWon(u.price)}원</div>` : ""}
+          <div class="game-price">예약가 ${fmtWon(u.discount_price)}원 ${off ? `<span class="off-chip hot">${off}%↓</span>` : ""}</div>
+          ${u.note ? `<div class="sub" style="font-size:.78rem;color:#71717a;margin-top:4px">${esc(u.note)}</div>` : ""}
+          <button class="small good buy-btn" data-reserve="${u.id}" data-rname="${esc(u.name)}" data-rprice="${u.discount_price}">예약 구매</button>
+        </div>
+      </div>`;
+    }).join("") + `</div>`;
+  box.querySelectorAll("[data-reserve]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const price = Number(b.dataset.rprice);
+      if ((shopCache?.balance ?? 0) < price) {
+        return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
+      }
+      if (!confirm(`'${b.dataset.rname}'을(를) 예약가 ${fmtWon(price)}원에 예약 구매할까요?\n\n지금 잔액에서 차감되고, 출시되면 링크가 발송됩니다.`)) return;
+      try {
+        b.disabled = true;
+        await api("/api/reserve", { id: Number(b.dataset.reserve) });
+        toast("예약 완료! 출시되면 디스코드 DM과 [내 정보]에서 링크를 받을 수 있어요.");
+        loadMy();
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
+    }));
+}
+
+// ---- 공지사항
+async function loadNotices() {
+  try {
+    const data = await api("/api/notices");
+    const box = $("#noticeList");
+    box.innerHTML = data.notices.length
+      ? data.notices.map((n) => `
+        <div class="card">
+          <h2>${esc(n.title)}</h2>
+          <p class="desc" style="margin:0;white-space:pre-wrap">${esc(n.body)}</p>
+          <p class="hint" style="margin-top:10px">${fmtDate(n.created_at)}</p>
+        </div>`).join("")
+      : '<div class="card"><div class="empty">등록된 공지가 없어요.</div></div>';
+  } catch (e) { /* 무시 */ }
+}
+loadNotices();
 
 // ---- 게임 상세 모달
 function closeDetail() {
@@ -145,19 +240,25 @@ async function openDetail(name) {
     return;
   }
   const dt = d.detail || {};
-  const off = dt.official && dt.official > d.price
-    ? Math.round((1 - d.price / dt.official) * 100) : 0;
-  const dsrc = `/api/shop/image?name=${encodeURIComponent(d.name)}`;
+  const nowPrice = d.sale_price ?? d.price;
+  const base = d.sale_price != null ? d.price : (dt.official || 0);
+  const off = base && base > nowPrice ? Math.round((1 - nowPrice / base) * 100) : 0;
+  const mediaList = d.media_list || (d.img ? [d.media || "img"] : []);
+  const gallery = mediaList.length ? `
+    <div class="gallery">
+      <div class="gallery-view" id="galleryView"></div>
+      ${mediaList.length > 1 ? `
+        <button class="gal-btn prev" id="galPrev">‹</button>
+        <button class="gal-btn next" id="galNext">›</button>
+        <div class="gal-dots" id="galDots">${mediaList.map((_, i) => `<span data-dot="${i}"></span>`).join("")}</div>` : ""}
+    </div>` : "";
   body.innerHTML = `
-    ${d.img
-      ? (d.media === "video"
-        ? `<video class="detail-img" src="${dsrc}" controls muted playsinline loop></video>`
-        : `<img class="detail-img" src="${dsrc}" alt="${esc(d.name)}">`)
-      : ""}
-    <div class="detail-name">${esc(d.name)}</div>
+    ${gallery}
+    <div class="detail-name">${esc(d.name)}${d.sale_price != null ? ' <span class="game-tag hot">할인중</span>' : ""}</div>
     <div class="detail-prices">
-      <span class="now">${fmtWon(d.price)}원</span>
-      ${dt.official ? `<span class="was">정가 ${fmtWon(dt.official)}원</span>` : ""}
+      <span class="now">${fmtWon(nowPrice)}원</span>
+      ${base && base > nowPrice ? `<span class="was">${d.sale_price != null ? "판매가" : "정가"} ${fmtWon(base)}원</span>` : ""}
+      ${dt.official && d.sale_price != null && dt.official > d.price ? `<span class="was">정가 ${fmtWon(dt.official)}원</span>` : ""}
       ${off > 0 ? `<span class="off">${off}% 할인</span>` : ""}
     </div>
     <div class="detail-row">카테고리 <b>${esc(d.category)}</b>${d.is_subscription ? ' · <span class="game-tag">정기결제</span>' : ""}</div>
@@ -170,15 +271,39 @@ async function openDetail(name) {
       </div>` : ""}
     ${d.is_subscription
       ? '<button class="primary" disabled style="opacity:.5">정기결제는 디스코드 자판기에서</button>'
-      : `<button class="primary" id="detailBuy">${fmtWon(d.price)}원으로 구매하기</button>`}
-    <p class="hint" style="text-align:center">구매 시 잔액에서 차감되고, 다운로드 링크가 디스코드 DM으로 발송됩니다.</p>`;
+      : `<div class="detail-actions">
+           <button class="primary" id="detailBuy" style="margin-top:0">${fmtWon(nowPrice)}원 바로 구매</button>
+           <button class="primary ghost" id="detailCart" style="margin-top:0">🛒 장바구니</button>
+         </div>`}
+    <p class="hint" style="text-align:center">구매 시 잔액에서 차감되고, 링크는 디스코드 DM과 [내 정보]에서 7일간 받을 수 있어요.</p>`;
+
+  // 갤러리
+  if (mediaList.length) {
+    let gi = 0;
+    const view = $("#galleryView");
+    const show = () => {
+      const src = `/api/shop/image?name=${encodeURIComponent(d.name)}&i=${gi}`;
+      view.innerHTML = mediaList[gi] === "video"
+        ? `<video class="detail-img" src="${src}" controls muted playsinline loop></video>`
+        : `<img class="detail-img" src="${src}" alt="${esc(d.name)}">`;
+      document.querySelectorAll("[data-dot]").forEach((el, i) => el.classList.toggle("on", i === gi));
+    };
+    show();
+    if (mediaList.length > 1) {
+      $("#galPrev").addEventListener("click", () => { gi = (gi - 1 + mediaList.length) % mediaList.length; show(); });
+      $("#galNext").addEventListener("click", () => { gi = (gi + 1) % mediaList.length; show(); });
+      document.querySelectorAll("[data-dot]").forEach((el, i) =>
+        el.addEventListener("click", () => { gi = i; show(); }));
+    }
+  }
+
   const buyBtn = $("#detailBuy");
   if (buyBtn) {
     buyBtn.addEventListener("click", async () => {
-      if ((shopCache?.balance ?? 0) < d.price) {
+      if ((shopCache?.balance ?? 0) < nowPrice) {
         return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
       }
-      if (!confirm(`'${d.name}'을(를) ${fmtWon(d.price)}원에 구매할까요?`)) return;
+      if (!confirm(`'${d.name}'을(를) ${fmtWon(nowPrice)}원에 구매할까요?`)) return;
       try {
         buyBtn.disabled = true;
         await api("/api/order", { game: d.name });
@@ -190,8 +315,89 @@ async function openDetail(name) {
         buyBtn.disabled = false;
       }
     });
+    $("#detailCart").addEventListener("click", () => {
+      addToCart(d.name);
+      closeDetail();
+    });
   }
 }
+
+// ---- 장바구니 (이 브라우저에 저장)
+function getCart() {
+  try { return JSON.parse(localStorage.getItem("cart") || "[]"); } catch (e) { return []; }
+}
+function setCart(items) {
+  try { localStorage.setItem("cart", JSON.stringify(items)); } catch (e) {}
+  const cnt = $("#cartCount");
+  cnt.hidden = items.length === 0;
+  cnt.textContent = items.length;
+}
+function addToCart(name) {
+  const items = getCart();
+  if (items.includes(name)) return toast("이미 장바구니에 있어요.");
+  if (items.length >= 10) return toast("장바구니는 최대 10개까지 담을 수 있어요.", true);
+  items.push(name);
+  setCart(items);
+  toast(`'${name}' 장바구니에 담았어요.`);
+}
+function findGame(name) {
+  for (const c of (shopCache?.categories || [])) {
+    for (const g of c.games) if (g.name === name) return g;
+  }
+  return null;
+}
+function renderCart() {
+  const items = getCart().filter((n) => findGame(n));  // 판매 종료된 건 제거
+  setCart(items);
+  const box = $("#cartBody");
+  if (!items.length) {
+    box.innerHTML = '<div class="empty">장바구니가 비어 있어요.<br>게임 상세에서 [🛒 장바구니]를 눌러 담아보세요.</div>';
+    return;
+  }
+  let total = 0;
+  box.innerHTML = items.map((n) => {
+    const g = findGame(n);
+    const p = g.sale_price ?? g.price;
+    total += p;
+    return `
+      <div class="item-row">
+        <div><div class="name">${esc(n)}</div>
+        ${g.sale_price != null ? '<div class="sub">🔥 할인가 적용</div>' : ""}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="price">${fmtWon(p)}원</span>
+          <button class="small danger" data-rm="${esc(n)}">빼기</button>
+        </div>
+      </div>`;
+  }).join("") + `
+    <div class="cart-total">합계 <b>${fmtWon(total)}원</b> <span class="hint" style="margin:0">(내 잔액 ${fmtWon(shopCache?.balance ?? 0)}원)</span></div>
+    <button class="primary" id="cartBuyAll">일괄 구매 (${items.length}개)</button>`;
+  box.querySelectorAll("[data-rm]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setCart(getCart().filter((n) => n !== b.dataset.rm));
+      renderCart();
+    }));
+  $("#cartBuyAll").addEventListener("click", async () => {
+    if ((shopCache?.balance ?? 0) < total) {
+      return toast(`잔액이 부족해요. (필요 ${fmtWon(total)}원 / 보유 ${fmtWon(shopCache.balance)}원)`, true);
+    }
+    if (!confirm(`${items.length}개 게임을 총 ${fmtWon(total)}원에 일괄 구매할까요?\n\n각 게임의 링크가 디스코드 DM으로 발송됩니다.`)) return;
+    try {
+      $("#cartBuyAll").disabled = true;
+      await api("/api/order", { games: items });
+      setCart([]);
+      $("#cartOverlay").hidden = true;
+      toast("일괄 주문 완료! 봇이 곧 처리하고 게임마다 DM으로 링크를 보내드려요.");
+      loadMy();
+    } catch (e) {
+      toast(e.message, true);
+      renderCart();
+    }
+  });
+}
+$("#cartBtn").addEventListener("click", () => { $("#cartOverlay").hidden = false; renderCart(); });
+$("#cartClose").addEventListener("click", () => { $("#cartOverlay").hidden = true; });
+$("#cartOverlay").addEventListener("click", (e) => { if (e.target === $("#cartOverlay")) $("#cartOverlay").hidden = true; });
+setCart(getCart());
 
 // ---- 구매자 정보 (봇 데이터)
 function renderProfile() {
@@ -363,13 +569,31 @@ async function loadMy() {
         <div class="req-card">
           <div class="head">
             <div>
-              <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원</div>
+              <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${o.kind === "reserve" ? ' <span class="game-tag">예약</span>' : ""}</div>
               <div class="sub">${fmtDate(o.created_at)}${o.result ? " · " + esc(o.result) : (o.status === "대기" || o.status === "처리중" ? " · 봇이 처리 중이에요 (최대 1분)" : "")}</div>
+              ${o.kind === "reserve" && o.status === "완료" && !o.link_sent ? '<div class="sub">출시되면 링크가 발송돼요.</div>' : ""}
+              <div class="link-slot" id="linkSlot${o.id}"></div>
             </div>
-            <span class="badge ${esc(o.status)}">${esc(o.status)}</span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+              <span class="badge ${esc(o.status)}">${esc(o.status)}</span>
+              ${o.link_ok ? `<button class="small good" data-getlink="${o.id}">링크 받기</button>` : ""}
+            </div>
           </div>
         </div>`).join("")
       : '<div class="empty">구매 내역이 없어요.</div>';
+    obox.querySelectorAll("[data-getlink]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        try {
+          const r = await api("/api/my/link?id=" + b.dataset.getlink);
+          const slot = $("#linkSlot" + b.dataset.getlink);
+          slot.innerHTML = `<div class="link-box"><a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.link)}</a>
+            <button class="small" data-copy="${esc(r.link)}">복사</button></div>`;
+          slot.querySelector("[data-copy]").addEventListener("click", async (ev) => {
+            try { await navigator.clipboard.writeText(ev.target.dataset.copy); toast("링크 복사 완료!"); }
+            catch (e) { toast("복사 실패 — 길게 눌러 복사해주세요.", true); }
+          });
+        } catch (e) { toast(e.message, true); }
+      }));
 
     const cbox = $("#myCharges");
     cbox.innerHTML = data.charges.length
@@ -378,7 +602,12 @@ async function loadMy() {
           <div class="head">
             <div>
               <div class="name">${fmtWon(c.amount)}원 충전</div>
-              <div class="sub">${fmtDate(c.created_at)} · ${c.status === "대기" ? "곧 관리자에게 전달돼요" : "관리자 확인 중 · 결과는 디스코드 DM"}</div>
+              <div class="sub">${fmtDate(c.created_at)} · ${
+                { "대기": "곧 관리자에게 전달돼요",
+                  "전달됨": "관리자 확인 중 · 결과는 디스코드 DM",
+                  "승인처리중": "승인됨 · 잔액 반영 중 (약 1분)",
+                  "승인": "충전 완료!",
+                  "거절": "거절됨 · 사유는 디스코드 DM 확인" }[c.status] || ""}</div>
             </div>
             <span class="badge ${esc(c.status)}">${esc(c.status)}</span>
           </div>

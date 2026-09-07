@@ -13,6 +13,7 @@
   <div class="topbar">
     <div class="brand">H Company</div>
     <div class="who">
+      <button class="cart-btn" id="cartBtn" title="장바구니">🛒<span class="cart-count" id="cartCount" hidden>0</span></button>
       <span class="balance-chip" id="balanceChip" hidden>잔액 <b id="balance">0</b>원</span>
       <span id="who">...</span>
       <a href="/admin" id="adminLink" hidden>관리자</a>
@@ -22,6 +23,7 @@
 
   <nav class="tabs">
     <button data-tab="shop" class="active">게임 목록</button>
+    <button data-tab="notice">공지사항</button>
     <button data-tab="charge">잔액 충전</button>
     <button data-tab="recover">링크 복구</button>
     <button data-tab="my">내 정보</button>
@@ -37,15 +39,30 @@
           <p class="hint" id="shopUpdated" style="margin-top:8px;margin-bottom:0">불러오는 중...</p>
         </div>
         <div id="gameList"><div class="empty">불러오는 중...</div></div>
+        <div id="upcomingSection"></div>
       </div>
     </div>
   </section>
 
+  <!-- 공지사항 -->
+  <section class="tab-page" id="page-notice">
+    <div id="noticeList"><div class="empty">불러오는 중...</div></div>
+  </section>
+
   <!-- 게임 상세 모달 -->
   <div class="modal-overlay" id="detailOverlay" hidden>
-    <div class="modal" id="detailModal">
+    <div class="modal modal-lg" id="detailModal">
       <button class="modal-close" id="detailClose">✕</button>
       <div id="detailBody"></div>
+    </div>
+  </div>
+
+  <!-- 장바구니 모달 -->
+  <div class="modal-overlay" id="cartOverlay" hidden>
+    <div class="modal" id="cartModal">
+      <button class="modal-close" id="cartClose">✕</button>
+      <h2 style="margin:0 0 12px">🛒 장바구니</h2>
+      <div id="cartBody"></div>
     </div>
   </div>
 

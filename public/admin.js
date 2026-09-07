@@ -1,4 +1,4 @@
-// 복구센터 - 관리자 페이지
+// H Company - 관리자 페이지
 "use strict";
 
 const $ = (sel) => document.querySelector(sel);
@@ -8,7 +8,7 @@ function toast(msg, isError) {
   el.textContent = msg;
   el.className = isError ? "show error" : "show";
   clearTimeout(el._t);
-  el._t = setTimeout(() => (el.className = ""), 3000);
+  el._t = setTimeout(() => (el.className = ""), 3200);
 }
 
 function esc(s) {
@@ -32,17 +32,31 @@ function fmtDate(ts) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-let cache = [];
+function fmtWon(n) {
+  return Number(n || 0).toLocaleString("ko-KR");
+}
+
+let cache = [];        // 복구요청
 let chargeCache = [];
 let orderCache = [];
+let noticeCache = [];
+let upcomingCache = [];
+let discountCache = [];
 let shopUpdatedAt = 0;
 let filter = "대기";
+
+// ---- 탭
+document.querySelectorAll(".tabs button").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".tab-page").forEach((p) => p.classList.toggle("active", p.id === "page-" + btn.dataset.tab));
+  }));
 
 document.querySelectorAll(".filter-bar button").forEach((b) =>
   b.addEventListener("click", () => {
     document.querySelectorAll(".filter-bar button").forEach((x) => x.classList.toggle("active", x === b));
     filter = b.dataset.f;
-    render();
+    renderRecover();
   }));
 
 async function refresh() {
@@ -50,22 +64,43 @@ async function refresh() {
   cache = data.requests;
   chargeCache = data.charges || [];
   orderCache = data.orders || [];
+  noticeCache = data.notices || [];
+  upcomingCache = data.upcoming || [];
+  discountCache = data.discounts || [];
   shopUpdatedAt = data.shop_updated_at || 0;
+  $("#dcGameList").innerHTML = (data.product_names || [])
+    .map((p) => `<option value="${esc(p.name)}">${fmtWon(p.price)}원</option>`).join("");
   render();
 }
 
 function render() {
   const pending = cache.filter((r) => r.status === "대기").length;
+  const chargePending = chargeCache.filter((c) => c.status === "대기" || c.status === "전달됨").length;
+  const reservePending = orderCache.filter((o) => o.kind === "reserve" && o.status === "완료" && !o.link_sent).length;
   $("#stats").innerHTML = `
-    <div class="stat"><div class="num">${pending}</div><div class="lbl">대기중</div></div>
-    <div class="stat"><div class="num">${cache.filter((r) => r.status === "완료").length}</div><div class="lbl">완료</div></div>
-    <div class="stat"><div class="num">${cache.filter((r) => r.status === "거절").length}</div><div class="lbl">거절</div></div>`;
-  const cb = $("#cntPending");
-  cb.hidden = pending === 0;
-  cb.textContent = pending;
+    <div class="stat"><div class="num">${pending}</div><div class="lbl">복구 대기</div></div>
+    <div class="stat"><div class="num">${chargePending}</div><div class="lbl">충전 대기</div></div>
+    <div class="stat"><div class="num">${orderCache.filter((o) => o.status === "대기" || o.status === "처리중").length}</div><div class="lbl">주문 처리중</div></div>
+    <div class="stat"><div class="num">${reservePending}</div><div class="lbl">링크 발송 대기</div></div>`;
+  setBadge("#cntPending", pending);
+  setBadge("#cntCharge", chargePending);
+  setBadge("#cntReserve", reservePending);
+  renderRecover();
   renderCharges();
   renderOrders();
+  renderNotices();
+  renderUpcoming();
+  renderDiscounts();
+}
 
+function setBadge(sel, n) {
+  const el = $(sel);
+  el.hidden = n === 0;
+  el.textContent = n;
+}
+
+// ---- 복구요청
+function renderRecover() {
   const rows = cache.filter((r) => filter === "전체" || r.status === filter);
   const box = $("#list");
   box.innerHTML = rows.length
@@ -130,7 +165,7 @@ function render() {
       });
     }
     card.querySelector("[data-del]").addEventListener("click", async () => {
-      if (!confirm(`[${r.game}] 요청 기록을 삭제할까요?${r.status === "대기" ? " (DM은 발송되지 않습니다)" : ""}`)) return;
+      if (!confirm(`[${r.game}] 요청 기록을 삭제할까요?`)) return;
       try {
         await api("/api/admin/delete", { id: r.id });
         toast("삭제 완료");
@@ -140,6 +175,64 @@ function render() {
   });
 }
 
+// ---- 충전 관리
+function renderCharges() {
+  $("#syncInfo").textContent = shopUpdatedAt
+    ? `(마지막 봇 동기화: ${fmtDate(shopUpdatedAt)})`
+    : "(아직 봇과 동기화 전 — 봇을 켜야 승인 반영이 됩니다)";
+  const box = $("#chargeList");
+  box.innerHTML = chargeCache.length
+    ? chargeCache.map((c) => `
+      <div class="req-card">
+        <div class="head">
+          <div>
+            <div class="name">${fmtWon(c.amount)}원</div>
+            <div class="sub">${esc(c.username)} (${esc(c.uid)}) · ${fmtDate(c.created_at)}</div>
+            <div class="sub">코드1: ${esc(c.code1)}${c.code2 ? " · 코드2: " + esc(c.code2) : ""}</div>
+            ${c.admin_note ? `<div class="sub">거절 사유: ${esc(c.admin_note)}</div>` : ""}
+          </div>
+          <span class="badge ${esc(c.status)}">${esc(c.status)}</span>
+        </div>
+        ${(c.status === "대기" || c.status === "전달됨") ? `
+        <div class="controls">
+          <input type="text" data-reason maxlength="200" placeholder="거절 사유 (거절 시에만)">
+        </div>
+        <div class="controls">
+          <button class="small good" data-capprove>승인 (잔액 충전)</button>
+          <button class="small" data-creject>거절 (사유 DM)</button>
+        </div>` : ""}
+      </div>`).join("")
+    : '<div class="empty">충전 신청이 없어요.</div>';
+
+  box.querySelectorAll(".req-card").forEach((card, i) => {
+    const c = chargeCache[i];
+    const ap = card.querySelector("[data-capprove]");
+    if (!ap) return;
+    ap.addEventListener("click", async () => {
+      if (!confirm(`${esc(c.username)}님에게 ${fmtWon(c.amount)}원을 충전 승인할까요?\n(문상 코드를 먼저 확인하세요!)`)) return;
+      try {
+        ap.disabled = true;
+        const r = await api("/api/admin/charge_action", { id: c.id, action: "approve" });
+        toast(r.msg || "승인 완료");
+        refresh();
+      } catch (e) {
+        toast(e.message, true);
+        ap.disabled = false;
+      }
+    });
+    card.querySelector("[data-creject]").addEventListener("click", async () => {
+      const reason = card.querySelector("[data-reason]").value.trim();
+      if (!confirm(`${fmtWon(c.amount)}원 충전을 거절하고 사유를 DM으로 보낼까요?`)) return;
+      try {
+        await api("/api/admin/charge_action", { id: c.id, action: "reject", reason });
+        toast("거절 처리 및 DM 발송 완료");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    });
+  });
+}
+
+// ---- 주문·예약
 function renderOrders() {
   const box = $("#orderList");
   box.innerHTML = orderCache.length
@@ -147,34 +240,244 @@ function renderOrders() {
       <div class="req-card">
         <div class="head">
           <div>
-            <div class="name">${esc(o.game)} · ${Number(o.price).toLocaleString("ko-KR")}원</div>
+            <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${o.kind === "reserve" ? ' <span class="game-tag">예약</span>' : ""}${o.fixed && o.kind !== "reserve" ? ' <span class="game-tag hot">할인가</span>' : ""}</div>
             <div class="sub">${esc(o.username)} (${esc(o.uid)}) · ${fmtDate(o.created_at)}</div>
             ${o.result ? `<div class="sub">${esc(o.result)}</div>` : ""}
+            ${o.kind === "reserve" && o.link_sent ? '<div class="sub">✅ 출시 링크 발송됨</div>' : ""}
           </div>
           <span class="badge ${esc(o.status)}">${esc(o.status)}</span>
         </div>
+        ${o.kind === "reserve" && o.status === "완료" && !o.link_sent ? `
+        <div class="controls">
+          <input type="text" data-rmsg maxlength="300" placeholder="추가 메시지 (선택)">
+          <button class="small good" data-sendlink="${o.id}">출시 링크 발송</button>
+        </div>` : ""}
       </div>`).join("")
     : '<div class="empty">주문이 없어요.</div>';
+
+  box.querySelectorAll("[data-sendlink]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const card = b.closest(".req-card");
+      const message = card.querySelector("[data-rmsg]").value.trim();
+      if (!confirm("판매 목록에 등록된 이 게임의 링크를 예약자 DM으로 보낼까요?")) return;
+      try {
+        b.disabled = true;
+        await api("/api/admin/reservation_send", { id: Number(b.dataset.sendlink), message });
+        toast("출시 링크 발송 완료!");
+        refresh();
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
+    }));
 }
 
-function renderCharges() {
-  $("#syncInfo").textContent = shopUpdatedAt
-    ? `마지막 봇 동기화: ${fmtDate(shopUpdatedAt)}`
-    : "아직 봇과 동기화되지 않았어요 (봇의 websync 설정 확인).";
-  const box = $("#chargeList");
-  box.innerHTML = chargeCache.length
-    ? chargeCache.map((c) => `
+// ---- 공지 관리
+function renderNotices() {
+  const box = $("#noticeAdminList");
+  box.innerHTML = noticeCache.length
+    ? noticeCache.map((n) => `
+      <div class="req-card">
+        <div class="head">
+          <div style="flex:1;min-width:0">
+            <input type="text" data-nt maxlength="100" value="${esc(n.title)}" style="font-weight:700;margin-bottom:6px">
+            <textarea data-nb maxlength="2000" style="min-height:60px;font-size:.86rem">${esc(n.body)}</textarea>
+            <div class="sub" style="margin-top:4px">${fmtDate(n.created_at)}</div>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="small good" data-nsave="${n.id}">수정 저장</button>
+          <button class="small danger" data-ndel="${n.id}">삭제</button>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">공지가 없어요.</div>';
+
+  box.querySelectorAll("[data-nsave]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const card = b.closest(".req-card");
+      try {
+        await api("/api/admin/notice", {
+          action: "update", id: Number(b.dataset.nsave),
+          title: card.querySelector("[data-nt]").value.trim(),
+          body: card.querySelector("[data-nb]").value.trim(),
+        });
+        toast("공지 수정 완료");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    }));
+  box.querySelectorAll("[data-ndel]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("이 공지를 삭제할까요?")) return;
+      try {
+        await api("/api/admin/notice", { action: "delete", id: Number(b.dataset.ndel) });
+        toast("삭제 완료");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    }));
+}
+
+$("#ntAdd").addEventListener("click", async () => {
+  const title = $("#ntTitle").value.trim();
+  const body = $("#ntBody").value.trim();
+  if (!title) return toast("제목을 입력하세요.", true);
+  try {
+    await api("/api/admin/notice", { action: "add", title, body });
+    $("#ntTitle").value = "";
+    $("#ntBody").value = "";
+    toast("공지 등록 완료");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+// ---- 신작 관리
+let upImageData = "";
+
+async function compressImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const maxW = 1280;
+  const scale = Math.min(1, maxW / bitmap.width);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+function clearUpImage() {
+  upImageData = "";
+  $("#upPreviewImg").src = "";
+  $("#upPreview").hidden = true;
+  $("#upDrop").hidden = false;
+  $("#upImageFile").value = "";
+}
+
+$("#upDrop").addEventListener("click", () => $("#upImageFile").click());
+$("#upImageFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file || !file.type.startsWith("image/")) return toast("이미지 파일만 첨부할 수 있어요.", true);
+  try {
+    upImageData = await compressImage(file);
+    $("#upPreviewImg").src = upImageData;
+    $("#upPreview").hidden = false;
+    $("#upDrop").hidden = true;
+  } catch (err) { toast("이미지를 읽을 수 없어요.", true); }
+});
+$("#upRemoveImage").addEventListener("click", clearUpImage);
+["dragover", "dragleave", "drop"].forEach((evt) =>
+  $("#upDrop").addEventListener(evt, (e) => {
+    e.preventDefault();
+    $("#upDrop").classList.toggle("dragover", evt === "dragover");
+    if (evt === "drop") $("#upImageFile").files = e.dataTransfer.files,
+      $("#upImageFile").dispatchEvent(new Event("change"));
+  }));
+
+$("#upAdd").addEventListener("click", async () => {
+  const body = {
+    action: "add",
+    name: $("#upName").value.trim(),
+    price: $("#upPrice").value.trim(),
+    discount_price: $("#upDc").value.trim(),
+    note: $("#upNote").value.trim(),
+  };
+  if (upImageData) body.image = upImageData;
+  if (!body.name || !body.price) return toast("이름/출시가를 입력하세요.", true);
+  try {
+    await api("/api/admin/upcoming", body);
+    ["upName", "upPrice", "upDc", "upNote"].forEach((id) => ($("#" + id).value = ""));
+    clearUpImage();
+    toast("신작 등록 완료 — 유저 목록 하단에 표시됩니다.");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderUpcoming() {
+  const box = $("#upcomingAdminList");
+  box.innerHTML = upcomingCache.length
+    ? upcomingCache.map((u) => `
+      <div class="req-card">
+        <div class="head">
+          <div style="display:flex;align-items:center;gap:12px;min-width:0">
+            ${u.image ? `<img class="req-thumb" src="/api/shop/upcimg?id=${u.id}" alt="" style="max-height:70px">` : ""}
+            <div style="flex:1;min-width:0">
+              <input type="text" data-un maxlength="100" value="${esc(u.name)}" style="font-weight:700">
+              <div class="controls" style="margin-top:6px">
+                <input type="text" data-up value="${u.price}" placeholder="출시가" style="max-width:110px;flex:none">
+                <input type="text" data-ud value="${u.discount_price}" placeholder="예약가" style="max-width:110px;flex:none">
+                <input type="text" data-uo maxlength="300" value="${esc(u.note)}" placeholder="소개">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="small good" data-usave="${u.id}">수정 저장</button>
+          <button class="small danger" data-udel="${u.id}">삭제 (출시 후)</button>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">등록된 신작이 없어요.</div>';
+
+  box.querySelectorAll("[data-usave]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const card = b.closest(".req-card");
+      try {
+        await api("/api/admin/upcoming", {
+          action: "update", id: Number(b.dataset.usave),
+          name: card.querySelector("[data-un]").value.trim(),
+          price: card.querySelector("[data-up]").value.trim(),
+          discount_price: card.querySelector("[data-ud]").value.trim(),
+          note: card.querySelector("[data-uo]").value.trim(),
+        });
+        toast("수정 완료");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    }));
+  box.querySelectorAll("[data-udel]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("이 신작 항목을 삭제할까요? (예약자 링크 발송을 먼저 확인하세요)")) return;
+      try {
+        await api("/api/admin/upcoming", { action: "delete", id: Number(b.dataset.udel) });
+        toast("삭제 완료");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    }));
+}
+
+// ---- 할인 관리
+$("#dcSet").addEventListener("click", async () => {
+  const game = $("#dcGame").value.trim();
+  const sale_price = $("#dcPrice").value.trim();
+  if (!game || !sale_price) return toast("게임 이름과 할인가를 입력하세요.", true);
+  try {
+    await api("/api/admin/discount", { action: "set", game, sale_price });
+    $("#dcGame").value = "";
+    $("#dcPrice").value = "";
+    toast("할인 시작! 유저 목록 [🔥 할인]에 표시됩니다.");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderDiscounts() {
+  const box = $("#discountAdminList");
+  box.innerHTML = discountCache.length
+    ? discountCache.map((d) => `
       <div class="req-card">
         <div class="head">
           <div>
-            <div class="name">${Number(c.amount).toLocaleString("ko-KR")}원</div>
-            <div class="sub">${esc(c.username)} (${esc(c.uid)}) · ${fmtDate(c.created_at)}</div>
-            <div class="sub">코드1: ${esc(c.code1)}${c.code2 ? " · 코드2: " + esc(c.code2) : ""}</div>
+            <div class="name">${esc(d.game)}</div>
+            <div class="sub">할인가 ${fmtWon(d.sale_price)}원 · ${fmtDate(d.created_at)}</div>
           </div>
-          <span class="badge ${esc(c.status)}">${esc(c.status)}</span>
+          <button class="small danger" data-dcoff="${esc(d.game)}">할인 종료</button>
         </div>
       </div>`).join("")
-    : '<div class="empty">충전 신청이 없어요.</div>';
+    : '<div class="empty">할인 중인 게임이 없어요.</div>';
+  box.querySelectorAll("[data-dcoff]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm(`'${b.dataset.dcoff}' 할인을 종료할까요?`)) return;
+      try {
+        await api("/api/admin/discount", { action: "unset", game: b.dataset.dcoff });
+        toast("할인 종료");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    }));
 }
 
 api("/api/me").then((me) => { $("#who").textContent = `${me.name} 님`; }).catch(() => {});

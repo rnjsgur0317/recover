@@ -98,24 +98,53 @@ def init_db():
             status TEXT NOT NULL DEFAULT '대기',    -- 대기(봇 전달 전) / 전달됨(관리자 확인 중)
             created_at INTEGER NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS orders (        -- 웹 구매 주문
+        CREATE TABLE IF NOT EXISTS orders (        -- 웹 구매 주문 / 신작 예약
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uid TEXT NOT NULL,
             username TEXT NOT NULL,
             game TEXT NOT NULL,
-            price INTEGER NOT NULL,                -- 주문 시점 표시가 (실제 차감은 봇이 계산)
+            price INTEGER NOT NULL,                -- 주문 시점 가격 (fixed=1이면 봇이 이 금액 그대로 차감)
             status TEXT NOT NULL DEFAULT '대기',    -- 대기/처리중/완료/실패
             result TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS notices (       -- 공지사항
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS upcoming (      -- 신작(출시 예정) 목록
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price INTEGER NOT NULL,                -- 출시가
+            discount_price INTEGER NOT NULL,       -- 예약 구매가 (소량 할인)
+            note TEXT NOT NULL DEFAULT '',
+            image TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS discounts (     -- 할인 중인 게임
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game TEXT NOT NULL UNIQUE,
+            sale_price INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
         """)
         c.commit()
-        try:
-            c.execute("ALTER TABLE requests ADD COLUMN image TEXT NOT NULL DEFAULT ''")
-            c.commit()
-        except sqlite3.OperationalError:
-            pass  # 이미 컬럼 있음
+        for stmt in (
+            "ALTER TABLE requests ADD COLUMN image TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN kind TEXT NOT NULL DEFAULT 'order'",   # order/reserve
+            "ALTER TABLE orders ADD COLUMN fixed INTEGER NOT NULL DEFAULT 0",     # 1=웹이 정한 가격 그대로
+            "ALTER TABLE orders ADD COLUMN link_sent INTEGER NOT NULL DEFAULT 0", # 예약: 출시 링크 발송됨
+            "ALTER TABLE charges ADD COLUMN admin_note TEXT NOT NULL DEFAULT ''",
+        ):
+            try:
+                c.execute(stmt)
+                c.commit()
+            except sqlite3.OperationalError:
+                pass  # 이미 컬럼 있음
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         os.makedirs(SHOPIMG_DIR, exist_ok=True)
         if get_setting("secret") is None:
@@ -592,19 +621,36 @@ def api_my_requests(req):
             "SELECT id,amount,status,created_at "
             "FROM charges WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
         orders = db().execute(
-            "SELECT id,game,price,status,result,created_at "
-            "FROM orders WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
+            "SELECT id,game,price,status,result,kind,link_sent,created_at,updated_at "
+            "FROM orders WHERE uid=? ORDER BY id DESC LIMIT 30", (s["uid"],)).fetchall()
+    products = load_shop().get("products") or {}
+    order_list = []
+    for o in orders:
+        o = dict(o)
+        o["link_ok"] = (o["status"] == "완료"
+                        and (o["kind"] != "reserve" or o["link_sent"])
+                        and now() - o["updated_at"] <= 7 * 86400
+                        and bool((products.get(o["game"]) or {}).get("link")))
+        order_list.append(o)
     return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
-                      "orders": row_dicts(orders)})
+                      "orders": order_list})
+
+
+def discount_map():
+    with db_lock:
+        rows = db().execute("SELECT game, sale_price FROM discounts").fetchall()
+    return {r["game"]: r["sale_price"] for r in rows}
 
 
 def api_shopdata(req):
-    """게임 목록 + 내 잔액. 봇이 약 1분마다 동기화."""
+    """게임 목록 + 내 잔액 + 신작 목록. 봇이 약 1분마다 동기화."""
     s = req.session()
     if not s:
         return json_resp({"error": "로그인이 필요합니다."}, 401)
     shop = load_shop()
     images = shop.get("images", {})
+    details = shop.get("details", {})
+    sales = discount_map()
     cats = {}
     order = []
     for name, info in (shop.get("products") or {}).items():
@@ -612,34 +658,40 @@ def api_shopdata(req):
         if cat not in cats:
             cats[cat] = []
             order.append(cat)
-        entry = images.get(name)
+        files = entry_files(images.get(name))
         media = None
-        if entry:
-            media = "video" if entry.get("file", "").rsplit(".", 1)[-1] in VIDEO_EXTS else "img"
-        cats[cat].append({
+        if files:
+            media = "video" if files[0].rsplit(".", 1)[-1] in VIDEO_EXTS else "img"
+        g = {
             "name": name,
             "price": info.get("price", 0),
             "is_subscription": bool(info.get("is_subscription")),
-            "img": bool(entry),
+            "img": bool(files),
             "media": media,
-        })
+        }
+        official = details.get(name, {}).get("official")
+        if official:
+            g["official"] = official
+        if name in sales:
+            g["sale_price"] = sales[name]
+        cats[cat].append(g)
+    with db_lock:
+        upc = db().execute(
+            "SELECT id,name,price,discount_price,note,image FROM upcoming ORDER BY id DESC").fetchall()
     balance = shop.get("balances", {}).get(s["uid"], 0)
     return json_resp({
         "balance": balance,
         "profile": shop.get("profiles", {}).get(s["uid"]),
         "updated_at": shop.get("updated_at", 0),
         "categories": [{"name": c, "games": cats[c]} for c in order],
+        "upcoming": [{"id": u["id"], "name": u["name"], "price": u["price"],
+                      "discount_price": u["discount_price"], "note": u["note"],
+                      "img": bool(u["image"])} for u in upc],
     })
 
 
-def api_shop_image(req):
-    """게임 소개 이미지 (로그인 필요)"""
-    if not req.session():
-        return json_resp({"error": "로그인이 필요합니다."}, 401)
-    name = (req.query().get("name") or [""])[0]
-    entry = load_shop().get("images", {}).get(name)
-    fname = (entry or {}).get("file", "")
-    if not fname or not re.match(r"^img_[0-9a-f]{16}\.(jpg|png|webp|gif|mp4|webm)$", fname):
+def _serve_media_file(fname):
+    if not fname or not re.match(r"^(img|upc)_[0-9a-f]{16}\.(jpg|png|webp|gif|mp4|webm)$", fname):
         return json_resp({"error": "이미지가 없습니다."}, 404)
     fpath = os.path.join(SHOPIMG_DIR, fname)
     if not os.path.isfile(fpath):
@@ -649,6 +701,35 @@ def api_shop_image(req):
     ext = fname.rsplit(".", 1)[1]
     return Response(data, 200, [("Content-Type", IMG_CTYPE[ext]),
                                 ("Cache-Control", "private, max-age=600")])
+
+
+def api_shop_image(req):
+    """게임 소개 이미지 (로그인 필요). ?name=게임명&i=번호"""
+    if not req.session():
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    q = req.query()
+    name = (q.get("name") or [""])[0]
+    try:
+        i = int((q.get("i") or ["0"])[0])
+    except ValueError:
+        i = 0
+    files = entry_files(load_shop().get("images", {}).get(name))
+    if not files or not (0 <= i < len(files)):
+        return json_resp({"error": "이미지가 없습니다."}, 404)
+    return _serve_media_file(files[i])
+
+
+def api_upc_image(req):
+    """신작(출시 예정) 이미지 (로그인 필요). ?id=번호"""
+    if not req.session():
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    try:
+        rid = int((req.query().get("id") or ["0"])[0])
+    except ValueError:
+        rid = 0
+    with db_lock:
+        row = db().execute("SELECT image FROM upcoming WHERE id=?", (rid,)).fetchone()
+    return _serve_media_file(row["image"] if row else "")
 
 
 def api_charge_create(req):
@@ -682,45 +763,142 @@ def api_charge_create(req):
         db().commit()
     return json_resp({"ok": True})
 
+def game_order_price(shop, game):
+    """(가격, fixed, 오류메시지). 할인 중이면 할인가+fixed=1."""
+    info = (shop.get("products") or {}).get(game)
+    if not info:
+        return 0, 0, "판매 중인 상품이 아닙니다."
+    if info.get("is_subscription"):
+        return 0, 0, "정기결제 상품은 디스코드 자판기에서 구매해주세요."
+    sale = discount_map().get(game)
+    if sale is not None:
+        return int(sale), 1, None
+    return int(info.get("price", 0) or 0), 0, None
+
+
+def _order_guards(uid, games, max_inflight=10):
+    """공통 가드. 오류메시지 or None. db_lock 안에서 호출."""
+    inflight = db().execute(
+        "SELECT COUNT(*) FROM orders WHERE uid=? AND status IN ('대기','처리중')",
+        (uid,)).fetchone()[0]
+    if inflight + len(games) > max_inflight:
+        return "처리 중인 주문이 너무 많습니다. 잠시 후 다시 시도해주세요."
+    for g in games:
+        dup = db().execute(
+            "SELECT COUNT(*) FROM orders WHERE uid=? AND game=? AND status IN ('대기','처리중')",
+            (uid, g)).fetchone()[0]
+        if dup:
+            return f"'{g}' 주문이 이미 처리 중입니다."
+    recent = db().execute(
+        "SELECT MAX(created_at) FROM orders WHERE uid=?", (uid,)).fetchone()[0]
+    if recent and now() - recent < 15:
+        return "잠시 후 다시 시도해주세요."
+    return None
+
+
 def api_order_create(req):
-    """웹 게임 구매 주문 → 봇이 가져가서 실제 결제(차감·DM 링크 발송) 처리."""
+    """웹 게임 구매 주문 (단건 또는 games 배열로 일괄) → 봇이 결제 처리."""
     s = req.session()
     if not s:
         return json_resp({"error": "로그인이 필요합니다."}, 401)
     d = req.read_json() or {}
-    game = clean(d.get("game"), 100)
-    if not game:
+    if isinstance(d.get("games"), list):
+        games = [clean(str(g), 100) for g in d["games"][:10] if clean(str(g), 100)]
+        games = list(dict.fromkeys(games))  # 중복 제거
+    else:
+        games = [clean(d.get("game"), 100)]
+    games = [g for g in games if g]
+    if not games:
         return json_resp({"error": "잘못된 요청"}, 400)
     shop = load_shop()
-    info = (shop.get("products") or {}).get(game)
-    if not info:
-        return json_resp({"error": "판매 중인 상품이 아닙니다."}, 400)
-    if info.get("is_subscription"):
-        return json_resp({"error": "정기결제 상품은 디스코드 자판기에서 구매해주세요."}, 400)
-    price = int(info.get("price", 0) or 0)
+    priced = []
+    for g in games:
+        price, fixed, err = game_order_price(shop, g)
+        if err:
+            return json_resp({"error": f"'{g}': {err}"}, 400)
+        priced.append((g, price, fixed))
+    total = sum(p for _, p, _ in priced)
+    balance = shop.get("balances", {}).get(s["uid"], 0)
+    if balance < total:
+        return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 총 {total:,}원) 충전 후 이용해주세요."}, 400)
+    with db_lock:
+        err = _order_guards(s["uid"], games)
+        if err:
+            return json_resp({"error": err}, 400)
+        for g, price, fixed in priced:
+            db().execute(
+                "INSERT INTO orders(uid,username,game,price,fixed,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (s["uid"], s["name"], g, price, fixed, now(), now()))
+        db().commit()
+    return json_resp({"ok": True, "count": len(priced), "total": total})
+
+
+def api_reserve(req):
+    """신작 예약 구매 — 예약가로 즉시 결제(봇 처리), 출시 시 링크 발송."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    d = req.read_json() or {}
+    uid_ = d.get("id")
+    if not isinstance(uid_, int):
+        return json_resp({"error": "잘못된 요청"}, 400)
+    with db_lock:
+        row = db().execute("SELECT * FROM upcoming WHERE id=?", (uid_,)).fetchone()
+    if not row:
+        return json_resp({"error": "예약 가능한 상품이 아닙니다."}, 404)
+    price = int(row["discount_price"] or row["price"])
+    shop = load_shop()
     balance = shop.get("balances", {}).get(s["uid"], 0)
     if balance < price:
-        return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 가격 {price:,}원) 충전 후 이용해주세요."}, 400)
+        return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 예약가 {price:,}원)"}, 400)
     with db_lock:
-        inflight = db().execute(
-            "SELECT COUNT(*) FROM orders WHERE uid=? AND status IN ('대기','처리중')",
-            (s["uid"],)).fetchone()[0]
-        if inflight >= 3:
-            return json_resp({"error": "처리 중인 주문이 3건 있습니다. 잠시 후 다시 시도해주세요."}, 400)
         dup = db().execute(
-            "SELECT COUNT(*) FROM orders WHERE uid=? AND game=? AND status IN ('대기','처리중')",
-            (s["uid"], game)).fetchone()[0]
+            "SELECT COUNT(*) FROM orders WHERE uid=? AND game=? AND kind='reserve' AND status!='실패'",
+            (s["uid"], row["name"])).fetchone()[0]
         if dup:
-            return json_resp({"error": "이미 같은 게임 주문이 처리 중입니다."}, 400)
-        recent = db().execute(
-            "SELECT MAX(created_at) FROM orders WHERE uid=?", (s["uid"],)).fetchone()[0]
-        if recent and now() - recent < 15:
-            return json_resp({"error": "잠시 후 다시 시도해주세요."}, 400)
+            return json_resp({"error": "이미 예약한 게임입니다."}, 400)
+        err = _order_guards(s["uid"], [row["name"]])
+        if err:
+            return json_resp({"error": err}, 400)
         db().execute(
-            "INSERT INTO orders(uid,username,game,price,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-            (s["uid"], s["name"], game, price, now(), now()))
+            "INSERT INTO orders(uid,username,game,price,kind,fixed,created_at,updated_at) "
+            "VALUES(?,?,?,?,'reserve',1,?,?)",
+            (s["uid"], s["name"], row["name"], price, now(), now()))
         db().commit()
     return json_resp({"ok": True})
+
+
+def api_notices(req):
+    if not req.session():
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    with db_lock:
+        rows = db().execute(
+            "SELECT id,title,body,created_at,updated_at FROM notices ORDER BY id DESC LIMIT 50").fetchall()
+    return json_resp({"notices": row_dicts(rows)})
+
+
+def api_my_link(req):
+    """구매한 게임의 다운로드 링크 (구매 완료 후 7일간, 본인만)"""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    try:
+        rid = int((req.query().get("id") or ["0"])[0])
+    except ValueError:
+        rid = 0
+    with db_lock:
+        row = db().execute("SELECT * FROM orders WHERE id=? AND uid=?", (rid, s["uid"])).fetchone()
+    if not row or row["status"] != "완료":
+        return json_resp({"error": "완료된 주문이 아닙니다."}, 404)
+    if row["kind"] == "reserve" and not row["link_sent"]:
+        return json_resp({"error": "아직 출시 전이에요. 출시되면 링크가 발송됩니다."}, 400)
+    if now() - row["updated_at"] > 7 * 86400:
+        return json_resp({"error": "다운로드 기간(7일)이 지났어요. 필요하면 [링크 복구] 탭에서 요청해주세요."}, 400)
+    link = ((load_shop().get("products") or {}).get(row["game"]) or {}).get("link", "")
+    if not link:
+        return json_resp({"error": "링크 정보가 아직 동기화되지 않았어요. 잠시 후 다시 시도해주세요."}, 400)
+    return json_resp({"link": link, "game": row["game"]})
 
 # ---------------------------------------------------------------- API: 봇 동기화
 
@@ -737,7 +915,7 @@ def check_sync(req, limit=MAX_SYNC_BODY):
 
 
 def api_sync_pull(req):
-    """봇: 아직 디스코드로 전달 안 된 충전 신청 가져가기."""
+    """봇: 미전달 충전 신청 + 웹에서 승인된 충전 건 가져가기."""
     d = check_sync(req)
     if d is None:
         return json_resp({"error": "인증 실패"}, 403)
@@ -745,7 +923,23 @@ def api_sync_pull(req):
         rows = db().execute(
             "SELECT id,uid,username,amount,code1,code2 FROM charges "
             "WHERE status='대기' ORDER BY id LIMIT 20").fetchall()
-    return json_resp({"charges": row_dicts(rows)})
+        approved = db().execute(
+            "SELECT id,uid,username,amount FROM charges "
+            "WHERE status='승인처리중' ORDER BY id LIMIT 20").fetchall()
+    return json_resp({"charges": row_dicts(rows), "approved": row_dicts(approved)})
+
+
+def api_sync_ack_approved(req):
+    """봇: 웹 승인 충전 잔액 반영 완료 표시."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    ids = [i for i in (d.get("ids") or []) if isinstance(i, int)][:50]
+    with db_lock:
+        for rid in ids:
+            db().execute("UPDATE charges SET status='승인' WHERE id=? AND status='승인처리중'", (rid,))
+        db().commit()
+    return json_resp({"ok": True})
 
 
 def api_sync_ack(req):
@@ -772,7 +966,8 @@ def api_sync_pull_orders(req):
             "UPDATE orders SET status='실패', result='처리 시간 초과 — 잔액이 차감됐다면 관리자에게 문의해주세요', updated_at=? "
             "WHERE status='처리중' AND updated_at<?", (now(), now() - 900))
         rows = db().execute(
-            "SELECT id,uid,username,game,price FROM orders WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
+            "SELECT id,uid,username,game,price,kind,fixed FROM orders "
+            "WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
         for r in rows:
             db().execute("UPDATE orders SET status='처리중', updated_at=? WHERE id=?", (now(), r["id"]))
         db().commit()
@@ -800,15 +995,19 @@ def api_sync_push(req):
     d = check_sync(req)
     if d is None:
         return json_resp({"error": "인증 실패"}, 403)
-    products = d.get("products")
-    balances = d.get("balances")
-    if not isinstance(products, dict) or not isinstance(balances, dict):
-        return json_resp({"error": "잘못된 데이터"}, 400)
+    updated = False
     shop = load_shop()
-    shop["products"] = products
-    shop["balances"] = {str(k): v for k, v in balances.items()}
+    if isinstance(d.get("products"), dict):
+        shop["products"] = d["products"]
+        updated = True
+    if isinstance(d.get("balances"), dict):
+        shop["balances"] = {str(k): v for k, v in d["balances"].items()}
+        updated = True
     if isinstance(d.get("profiles"), dict):
         shop["profiles"] = d["profiles"]
+        updated = True
+    if not updated:
+        return json_resp({"error": "잘못된 데이터"}, 400)
     shop["updated_at"] = now()
     save_shop(shop)
     return json_resp({"ok": True})
@@ -851,30 +1050,49 @@ def api_shop_detail(req):
     info = (shop.get("products") or {}).get(name)
     if not info:
         return json_resp({"error": "판매 중인 상품이 아닙니다."}, 404)
-    entry = shop.get("images", {}).get(name)
-    media = None
-    if entry:
-        media = "video" if entry.get("file", "").rsplit(".", 1)[-1] in VIDEO_EXTS else "img"
-    return json_resp({
+    files = entry_files(shop.get("images", {}).get(name))
+    media_list = ["video" if f.rsplit(".", 1)[-1] in VIDEO_EXTS else "img" for f in files]
+    sales = discount_map()
+    out = {
         "name": name,
         "price": info.get("price", 0),
         "category": info.get("category", "기타"),
         "is_subscription": bool(info.get("is_subscription")),
-        "img": bool(entry),
-        "media": media,
+        "img": bool(files),
+        "media": media_list[0] if media_list else None,
+        "media_list": media_list,
         "detail": shop.get("details", {}).get(name, {}),
         "balance": shop.get("balances", {}).get(s["uid"], 0),
-    })
+    }
+    if name in sales:
+        out["sale_price"] = sales[name]
+    return json_resp(out)
+
+
+def entry_files(entry):
+    """이미지 엔트리의 파일 목록 (구버전 {file} 호환)"""
+    if not entry:
+        return []
+    files = entry.get("files")
+    if isinstance(files, list) and files:
+        return files
+    return [entry["file"]] if entry.get("file") else []
 
 
 def api_sync_image(req):
-    """봇: 게임 소개 이미지 업로드/교체. {key, name, att, image: dataURL}"""
+    """봇: 게임 소개 이미지/영상 업로드. {key, name, att, idx, total, image: dataURL}
+    같은 게임의 미디어 여러 장을 idx=0..total-1 순서로 올린다. att는 변경 감지 키."""
     d = check_sync(req, limit=MAX_SYNC_IMAGE)
     if d is None:
         return json_resp({"error": "인증 실패"}, 403)
     name = clean(d.get("name"), 100)
-    att = clean(str(d.get("att", "")), 40)
-    if not name or not att or not d.get("image"):
+    att = clean(str(d.get("att", "")), 200)
+    try:
+        idx = int(d.get("idx", 0))
+        total = int(d.get("total", 1))
+    except (TypeError, ValueError):
+        return json_resp({"error": "잘못된 데이터"}, 400)
+    if not name or not att or not d.get("image") or not (0 <= idx < total <= 4):
         return json_resp({"error": "잘못된 데이터"}, 400)
     try:
         img_bytes, ext = decode_media(d["image"], limit=8 * 1024 * 1024)
@@ -882,16 +1100,23 @@ def api_sync_image(req):
         return json_resp({"error": str(e)}, 400)
     shop = load_shop()
     images = shop.setdefault("images", {})
-    old = images.get(name)
-    fname = shopimg_filename(name, ext)
+    entry = images.get(name) or {}
+    if idx == 0:  # 새 세트 시작 — 이전 파일 정리
+        for f in entry_files(entry):
+            try:
+                os.remove(os.path.join(SHOPIMG_DIR, f))
+            except OSError:
+                pass
+        entry = {"files": []}
+    fname = shopimg_filename(f"{name}#{idx}", ext)
     with open(os.path.join(SHOPIMG_DIR, fname), "wb") as f:
         f.write(img_bytes)
-    if old and old.get("file") and old["file"] != fname:
-        try:
-            os.remove(os.path.join(SHOPIMG_DIR, old["file"]))
-        except OSError:
-            pass
-    images[name] = {"att": att, "file": fname}
+    files = entry.setdefault("files", [])
+    files.append(fname)
+    entry["file"] = files[0]
+    if idx == total - 1:
+        entry["att"] = att  # 세트 완성 시에만 확정 (중단되면 다음 동기화 때 재시도)
+    images[name] = entry
     save_shop(shop)
     return json_resp({"ok": True})
 
@@ -909,9 +1134,17 @@ def api_admin_requests(req):
         rows = db().execute("SELECT * FROM requests ORDER BY id DESC LIMIT 300").fetchall()
         charges = db().execute("SELECT * FROM charges ORDER BY id DESC LIMIT 100").fetchall()
         orders = db().execute("SELECT * FROM orders ORDER BY id DESC LIMIT 100").fetchall()
+        notices = db().execute("SELECT * FROM notices ORDER BY id DESC LIMIT 50").fetchall()
+        upcoming = db().execute("SELECT * FROM upcoming ORDER BY id DESC LIMIT 50").fetchall()
+        discounts = db().execute("SELECT * FROM discounts ORDER BY id DESC LIMIT 100").fetchall()
+    shop = load_shop()
     return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
-                      "orders": row_dicts(orders),
-                      "shop_updated_at": load_shop().get("updated_at", 0)})
+                      "orders": row_dicts(orders), "notices": row_dicts(notices),
+                      "upcoming": row_dicts(upcoming), "discounts": row_dicts(discounts),
+                      "product_names": [{"name": n, "price": i.get("price", 0)}
+                                        for n, i in (shop.get("products") or {}).items()
+                                        if not i.get("is_subscription")],
+                      "shop_updated_at": shop.get("updated_at", 0)})
 
 
 def api_admin_image(req):
@@ -982,6 +1215,207 @@ def api_admin_respond(req):
     return json_resp({"ok": True})
 
 
+def api_admin_charge_action(req):
+    """충전 신청 웹 처리. {id, action: 'approve'|'reject', reason?}
+    approve → '승인처리중' (봇이 1분 내 잔액 반영+DM 후 '승인'으로 확정)
+    reject → 즉시 거절 DM + '거절'"""
+    d = req.read_json() or {}
+    rid = d.get("id")
+    action = d.get("action")
+    reason = clean(d.get("reason"), 200)
+    if not isinstance(rid, int) or action not in ("approve", "reject"):
+        return json_resp({"error": "잘못된 요청"}, 400)
+    with db_lock:
+        row = db().execute("SELECT * FROM charges WHERE id=?", (rid,)).fetchone()
+    if not row:
+        return json_resp({"error": "없는 신청입니다."}, 404)
+    if row["status"] not in ("대기", "전달됨"):
+        return json_resp({"error": "이미 처리된 신청입니다."}, 400)
+    if action == "approve":
+        with db_lock:
+            db().execute("UPDATE charges SET status='승인처리중' WHERE id=?", (rid,))
+            db().commit()
+        return json_resp({"ok": True, "msg": "승인 예약 완료 — 봇이 1분 내 잔액을 반영하고 DM을 보냅니다."})
+    # 거절
+    embed = build_embed(
+        "❌ 충전 요청 거절",
+        f"**{int(row['amount']):,}원** 충전 요청이 거절되었습니다.",
+        [("사유", reason or "코드가 유효하지 않거나 금액이 일치하지 않습니다."),
+         ("안내", "확인 후 다시 신청해주세요.")],
+        0xE74C3C)
+    err = send_dm(row["uid"], embed)
+    if err:
+        return json_resp({"error": err}, 400)
+    with db_lock:
+        db().execute("UPDATE charges SET status='거절', admin_note=? WHERE id=?", (reason, rid))
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_admin_notice(req):
+    """공지 관리. {action: add|update|delete, id?, title?, body?}"""
+    d = req.read_json() or {}
+    action = d.get("action")
+    with db_lock:
+        if action == "add":
+            title = clean(d.get("title"), 100)
+            body = clean(d.get("body"), 2000)
+            if not title:
+                return json_resp({"error": "제목을 입력하세요."}, 400)
+            db().execute("INSERT INTO notices(title,body,created_at,updated_at) VALUES(?,?,?,?)",
+                         (title, body, now(), now()))
+        elif action == "update":
+            rid = d.get("id")
+            if not isinstance(rid, int):
+                return json_resp({"error": "잘못된 요청"}, 400)
+            db().execute("UPDATE notices SET title=?, body=?, updated_at=? WHERE id=?",
+                         (clean(d.get("title"), 100), clean(d.get("body"), 2000), now(), rid))
+        elif action == "delete":
+            rid = d.get("id")
+            if not isinstance(rid, int):
+                return json_resp({"error": "잘못된 요청"}, 400)
+            db().execute("DELETE FROM notices WHERE id=?", (rid,))
+        else:
+            return json_resp({"error": "잘못된 요청"}, 400)
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_admin_upcoming(req):
+    """신작(출시 예정) 관리. {action: add|update|delete, id?, name, price, discount_price, note, image?}"""
+    d = req.read_json(limit=MAX_IMAGE_BODY) or {}
+    action = d.get("action")
+    img_bytes, img_ext = None, None
+    if d.get("image"):
+        try:
+            img_bytes, img_ext = decode_media(d["image"])
+        except ValueError as e:
+            return json_resp({"error": str(e)}, 400)
+
+    def parse_prices():
+        try:
+            price = int(str(d.get("price", "")).replace(",", "").strip())
+            dc = int(str(d.get("discount_price", "")).replace(",", "").strip() or price)
+        except ValueError:
+            return None, None
+        if price <= 0 or dc <= 0 or dc > price:
+            return None, None
+        return price, dc
+
+    with db_lock:
+        if action == "add":
+            name = clean(d.get("name"), 100)
+            price, dc = parse_prices()
+            if not name or price is None:
+                return json_resp({"error": "이름/가격을 확인하세요. (예약가는 출시가 이하)"}, 400)
+            cur = db().execute(
+                "INSERT INTO upcoming(name,price,discount_price,note,created_at) VALUES(?,?,?,?,?)",
+                (name, price, dc, clean(d.get("note"), 300), now()))
+            if img_bytes:
+                fname = "upc_" + hashlib.sha1(f"upc{cur.lastrowid}".encode()).hexdigest()[:16] + "." + img_ext
+                with open(os.path.join(SHOPIMG_DIR, fname), "wb") as f:
+                    f.write(img_bytes)
+                db().execute("UPDATE upcoming SET image=? WHERE id=?", (fname, cur.lastrowid))
+        elif action in ("update", "delete"):
+            rid = d.get("id")
+            if not isinstance(rid, int):
+                return json_resp({"error": "잘못된 요청"}, 400)
+            row = db().execute("SELECT * FROM upcoming WHERE id=?", (rid,)).fetchone()
+            if not row:
+                return json_resp({"error": "없는 항목입니다."}, 404)
+            if action == "delete":
+                if row["image"]:
+                    try:
+                        os.remove(os.path.join(SHOPIMG_DIR, row["image"]))
+                    except OSError:
+                        pass
+                db().execute("DELETE FROM upcoming WHERE id=?", (rid,))
+            else:
+                name = clean(d.get("name"), 100) or row["name"]
+                price, dc = parse_prices()
+                if price is None:
+                    return json_resp({"error": "가격을 확인하세요. (예약가는 출시가 이하)"}, 400)
+                db().execute("UPDATE upcoming SET name=?, price=?, discount_price=?, note=? WHERE id=?",
+                             (name, price, dc, clean(d.get("note"), 300), rid))
+                if img_bytes:
+                    if row["image"]:
+                        try:
+                            os.remove(os.path.join(SHOPIMG_DIR, row["image"]))
+                        except OSError:
+                            pass
+                    fname = "upc_" + hashlib.sha1(f"upc{rid}{now()}".encode()).hexdigest()[:16] + "." + img_ext
+                    with open(os.path.join(SHOPIMG_DIR, fname), "wb") as f:
+                        f.write(img_bytes)
+                    db().execute("UPDATE upcoming SET image=? WHERE id=?", (fname, rid))
+        else:
+            return json_resp({"error": "잘못된 요청"}, 400)
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_admin_discount(req):
+    """할인 관리. {action: 'set'|'unset', game, sale_price?}"""
+    d = req.read_json() or {}
+    action = d.get("action")
+    game = clean(d.get("game"), 100)
+    if not game:
+        return json_resp({"error": "게임 이름을 입력하세요."}, 400)
+    if action == "set":
+        info = (load_shop().get("products") or {}).get(game)
+        if not info:
+            return json_resp({"error": "판매 목록에 없는 게임입니다. 이름을 정확히 입력하세요."}, 400)
+        try:
+            sale = int(str(d.get("sale_price", "")).replace(",", "").strip())
+        except ValueError:
+            return json_resp({"error": "할인가는 숫자로 입력하세요."}, 400)
+        if sale <= 0 or sale >= int(info.get("price", 0) or 0):
+            return json_resp({"error": "할인가는 0보다 크고 원래 판매가보다 낮아야 합니다."}, 400)
+        with db_lock:
+            db().execute(
+                "INSERT INTO discounts(game,sale_price,created_at) VALUES(?,?,?) "
+                "ON CONFLICT(game) DO UPDATE SET sale_price=excluded.sale_price",
+                (game, sale, now()))
+            db().commit()
+    elif action == "unset":
+        with db_lock:
+            db().execute("DELETE FROM discounts WHERE game=?", (game,))
+            db().commit()
+    else:
+        return json_resp({"error": "잘못된 요청"}, 400)
+    return json_resp({"ok": True})
+
+
+def api_admin_reservation_send(req):
+    """예약 완료 건에 출시 링크 DM 발송. {id, message?}"""
+    d = req.read_json() or {}
+    rid = d.get("id")
+    message = clean(d.get("message"), 300)
+    if not isinstance(rid, int):
+        return json_resp({"error": "잘못된 요청"}, 400)
+    with db_lock:
+        row = db().execute("SELECT * FROM orders WHERE id=?", (rid,)).fetchone()
+    if not row or row["kind"] != "reserve" or row["status"] != "완료":
+        return json_resp({"error": "결제 완료된 예약 건이 아닙니다."}, 400)
+    if row["link_sent"]:
+        return json_resp({"error": "이미 링크를 발송했습니다."}, 400)
+    link = ((load_shop().get("products") or {}).get(row["game"]) or {}).get("link", "")
+    if not link:
+        return json_resp({"error": "게임이 아직 판매 목록에 없거나 링크가 동기화되지 않았어요. 게임을 먼저 등록하세요."}, 400)
+    embed = build_embed(
+        "🎉 예약하신 게임이 출시됐어요!",
+        f"예약 구매하신 **{row['game']}** 의 다운로드 링크입니다.",
+        [("다운로드 링크", link), ("안내", message),
+         ("유의사항", "링크는 일정 기간 후 만료될 수 있어요. 사이트 내 정보 탭에서도 7일간 받을 수 있습니다.")],
+        0x2ECC71)
+    err = send_dm(row["uid"], embed)
+    if err:
+        return json_resp({"error": err}, 400)
+    with db_lock:
+        db().execute("UPDATE orders SET link_sent=1, updated_at=? WHERE id=?", (now(), rid))
+        db().commit()
+    return json_resp({"ok": True})
+
+
 def api_admin_delete(req):
     d = req.read_json() or {}
     rid = d.get("id")
@@ -1007,7 +1441,10 @@ GET_ROUTES = {
     "/api/my": api_my_requests,
     "/api/shopdata": api_shopdata,
     "/api/shop/image": api_shop_image,
+    "/api/shop/upcimg": api_upc_image,
     "/api/shop/detail": api_shop_detail,
+    "/api/notices": api_notices,
+    "/api/my/link": api_my_link,
 }
 GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,
@@ -1017,7 +1454,9 @@ POST_ROUTES = {
     "/api/request": api_request_create,
     "/api/charge": api_charge_create,
     "/api/order": api_order_create,
+    "/api/reserve": api_reserve,
     "/api/sync/pull": api_sync_pull,
+    "/api/sync/ack_approved": api_sync_ack_approved,
     "/api/sync/pull_orders": api_sync_pull_orders,
     "/api/sync/order_results": api_sync_order_results,
     "/api/sync/ack": api_sync_ack,
@@ -1029,6 +1468,11 @@ POST_ROUTES = {
 POST_ADMIN_ROUTES = {
     "/api/admin/respond": api_admin_respond,
     "/api/admin/delete": api_admin_delete,
+    "/api/admin/charge_action": api_admin_charge_action,
+    "/api/admin/notice": api_admin_notice,
+    "/api/admin/upcoming": api_admin_upcoming,
+    "/api/admin/discount": api_admin_discount,
+    "/api/admin/reservation_send": api_admin_reservation_send,
 }
 
 _init_done = False

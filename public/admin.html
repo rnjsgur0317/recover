@@ -8,7 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
 </head>
 <body>
-<div class="wrap" style="max-width:760px">
+<div class="wrap" style="max-width:860px">
 
   <div class="topbar">
     <div class="brand">H Company 관리자</div>
@@ -17,30 +17,111 @@
 
   <div class="stat-grid" id="stats"></div>
 
-  <div class="card">
-    <h2>복구요청 목록</h2>
-    <p class="desc">링크를 입력하고 [DM 발송]을 누르면 봇이 해당 유저의 디스코드 DM으로 즉시 전송합니다.</p>
-    <div class="filter-bar">
-      <button class="small active" data-f="대기">대기<span id="cntPending" class="count-badge" hidden></span></button>
-      <button class="small" data-f="전체">전체</button>
-      <button class="small" data-f="완료">완료</button>
-      <button class="small" data-f="거절">거절</button>
+  <nav class="tabs">
+    <button data-tab="recover" class="active">복구요청<span id="cntPending" class="count-badge" hidden></span></button>
+    <button data-tab="charge">충전 관리<span id="cntCharge" class="count-badge" hidden></span></button>
+    <button data-tab="order">주문·예약<span id="cntReserve" class="count-badge" hidden></span></button>
+    <button data-tab="notice">공지</button>
+    <button data-tab="upcoming">신작</button>
+    <button data-tab="discount">할인</button>
+  </nav>
+
+  <!-- 복구요청 -->
+  <section class="tab-page active" id="page-recover">
+    <div class="card">
+      <h2>복구요청</h2>
+      <p class="desc">링크를 입력하고 [DM 발송]을 누르면 봇이 해당 유저의 디스코드 DM으로 즉시 전송합니다.</p>
+      <div class="filter-bar">
+        <button class="small active" data-f="대기">대기</button>
+        <button class="small" data-f="전체">전체</button>
+        <button class="small" data-f="완료">완료</button>
+        <button class="small" data-f="거절">거절</button>
+      </div>
+      <div id="list"><div class="empty">불러오는 중...</div></div>
     </div>
-    <div id="list"><div class="empty">불러오는 중...</div></div>
-  </div>
+  </section>
 
-  <div class="card">
-    <h2>웹 구매 주문 현황</h2>
-    <p class="desc">주문은 봇이 자동 처리합니다(차감·DM 발송). 여기서는 현황만 확인해요.</p>
-    <div id="orderList"><div class="empty">불러오는 중...</div></div>
-  </div>
+  <!-- 충전 관리 -->
+  <section class="tab-page" id="page-charge">
+    <div class="card">
+      <h2>충전 관리</h2>
+      <p class="desc">여기서 바로 승인/거절할 수 있어요. <b>승인</b>하면 봇이 1분 내 잔액을 반영하고 유저에게 DM을 보냅니다.
+      (디스코드 DM의 승인 버튼과 어느 쪽을 써도 됩니다 — 중복 승인만 주의!) <span id="syncInfo"></span></p>
+      <div id="chargeList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
 
-  <div class="card">
-    <h2>충전 신청 현황</h2>
-    <p class="desc">승인/거절은 디스코드 DM의 버튼으로 처리합니다. 여기서는 현황만 확인해요.
-    <span id="syncInfo"></span></p>
-    <div id="chargeList"><div class="empty">불러오는 중...</div></div>
-  </div>
+  <!-- 주문·예약 -->
+  <section class="tab-page" id="page-order">
+    <div class="card">
+      <h2>웹 구매 주문 · 신작 예약</h2>
+      <p class="desc">주문은 봇이 자동 처리합니다. <b>예약</b> 건은 게임 출시(등록) 후 [출시 링크 발송]을 눌러주세요.</p>
+      <div id="orderList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
+
+  <!-- 공지 관리 -->
+  <section class="tab-page" id="page-notice">
+    <div class="card">
+      <h2>공지 작성</h2>
+      <label>제목</label>
+      <input type="text" id="ntTitle" maxlength="100">
+      <label>내용</label>
+      <textarea id="ntBody" maxlength="2000" style="min-height:100px"></textarea>
+      <button class="primary" id="ntAdd">공지 올리기</button>
+    </div>
+    <div class="card">
+      <h2>공지 목록</h2>
+      <div id="noticeAdminList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
+
+  <!-- 신작 관리 -->
+  <section class="tab-page" id="page-upcoming">
+    <div class="card">
+      <h2>신작(출시 예정) 등록</h2>
+      <p class="desc">유저 게임 목록 맨 아래 "출시 예정" 섹션에 표시되고, 예약가로 예약 구매할 수 있습니다.</p>
+      <label>게임 이름</label>
+      <input type="text" id="upName" maxlength="100">
+      <div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label>출시가 (원)</label><input type="text" id="upPrice" maxlength="12" placeholder="5000"></div>
+        <div><label>예약가 (원, 출시가 이하)</label><input type="text" id="upDc" maxlength="12" placeholder="4500"></div>
+      </div>
+      <label>소개 (선택)</label>
+      <input type="text" id="upNote" maxlength="300" placeholder="예: 9월 중 출시 예정">
+      <label>대표 이미지 (선택)</label>
+      <div class="dropzone" id="upDrop"><span>클릭하거나 이미지를 끌어다 놓으세요</span></div>
+      <input type="file" id="upImageFile" accept="image/*" hidden>
+      <div class="image-preview" id="upPreview" hidden>
+        <img id="upPreviewImg" alt="신작 이미지 미리보기">
+        <button type="button" class="small danger" id="upRemoveImage">첨부 취소</button>
+      </div>
+      <button class="primary" id="upAdd">신작 등록</button>
+    </div>
+    <div class="card">
+      <h2>신작 목록</h2>
+      <p class="desc">출시하면: ① 로컬 관리자웹에서 게임 등록(사이트 자동 반영) ② [주문·예약] 탭에서 예약자들에게 [출시 링크 발송] ③ 여기서 신작 항목 삭제</p>
+      <div id="upcomingAdminList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
+
+  <!-- 할인 관리 -->
+  <section class="tab-page" id="page-discount">
+    <div class="card">
+      <h2>할인 시작</h2>
+      <p class="desc">할인을 걸면 유저 목록의 [🔥 할인] 카테고리에 표시되고, 할인가로 구매됩니다.</p>
+      <label>게임 이름 (판매 목록의 이름과 정확히 일치)</label>
+      <input type="text" id="dcGame" maxlength="100" list="dcGameList">
+      <datalist id="dcGameList"></datalist>
+      <label>할인가 (원)</label>
+      <input type="text" id="dcPrice" maxlength="12" placeholder="4000">
+      <button class="primary" id="dcSet">할인 시작</button>
+    </div>
+    <div class="card">
+      <h2>할인 중인 게임</h2>
+      <div id="discountAdminList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
 
   <div class="footer">H Company · 30일 지난 기록은 자동 삭제됩니다 (캡쳐 포함)</div>
 </div>
