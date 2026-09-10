@@ -491,24 +491,88 @@ function renderDiscounts() {
     }));
 }
 
-// ---- 게임 등록
+// ---- 게임 등록 (미디어 첨부)
+let rgMedia = [];   // dataURL 목록 (최대 4)
+
+function renderRgPreview() {
+  const box = $("#rgPreview");
+  box.hidden = rgMedia.length === 0;
+  $("#rgDrop").hidden = rgMedia.length >= 4;
+  box.innerHTML = rgMedia.map((du, i) => `
+    <div style="position:relative">
+      ${du.startsWith("data:video")
+        ? `<video src="${du}" muted style="height:90px;border:1px solid #d4d4d8;border-radius:8px"></video>`
+        : `<img src="${du}" style="height:90px;border:1px solid #d4d4d8;border-radius:8px">`}
+      ${i === 0 ? '<span style="position:absolute;top:4px;left:4px;background:#111;color:#fff;font-size:.62rem;font-weight:800;border-radius:5px;padding:1px 6px">대표</span>' : ""}
+      <button type="button" data-rgrm="${i}" style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.7);color:#fff;font-weight:800;cursor:pointer;line-height:1">×</button>
+    </div>`).join("");
+  box.querySelectorAll("[data-rgrm]").forEach((b) =>
+    b.addEventListener("click", () => {
+      rgMedia.splice(Number(b.dataset.rgrm), 1);
+      renderRgPreview();
+    }));
+}
+
+async function addRgFiles(files) {
+  for (const file of files) {
+    if (rgMedia.length >= 4) return toast("미디어는 최대 4개까지예요.", true);
+    if (file.type.startsWith("image/")) {
+      try {
+        rgMedia.push(await compressImage(file));
+      } catch (e) { toast(`이미지를 읽을 수 없어요: ${file.name}`, true); }
+    } else if (file.type === "video/mp4" || file.type === "video/webm") {
+      if (file.size > 8 * 1024 * 1024) { toast(`영상은 8MB 이하만 가능해요: ${file.name}`, true); continue; }
+      rgMedia.push(await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      }));
+    } else {
+      toast(`지원하지 않는 형식이에요: ${file.name}`, true);
+    }
+  }
+  renderRgPreview();
+}
+
+$("#rgDrop").addEventListener("click", () => $("#rgFiles").click());
+$("#rgFiles").addEventListener("change", (e) => { addRgFiles([...e.target.files]); e.target.value = ""; });
+["dragover", "dragleave", "drop"].forEach((evt) =>
+  $("#rgDrop").addEventListener(evt, (e) => {
+    e.preventDefault();
+    $("#rgDrop").classList.toggle("dragover", evt === "dragover");
+    if (evt === "drop") addRgFiles([...e.dataTransfer.files]);
+  }));
+
 $("#rgAdd").addEventListener("click", async () => {
   const body = {
     name: $("#rgName").value.trim(),
     category: $("#rgCat").value.trim(),
     price: $("#rgPrice").value.trim(),
+    official: $("#rgOfficial").value.trim(),
     link: $("#rgLink").value.trim(),
+    rating: $("#rgRating").value.trim(),
+    seller: $("#rgSeller").value.trim(),
+    comment: $("#rgComment").value,
+    images: rgMedia,
   };
   if (!body.name || !body.category || !body.price || !body.link) {
-    return toast("이름/카테고리/가격/링크를 모두 입력하세요.", true);
+    return toast("이름/카테고리/판매가/링크는 필수입니다.", true);
   }
-  if (!confirm(`'${body.name}'을(를) [${body.category}] ${Number(String(body.price).replace(/,/g, "")).toLocaleString("ko-KR")}원으로 등록할까요?`)) return;
+  if (!confirm(`'${body.name}'을(를) [${body.category}] ${Number(String(body.price).replace(/,/g, "")).toLocaleString("ko-KR")}원으로 등록할까요?${rgMedia.length ? `\n(미디어 ${rgMedia.length}개 + 소개글 게시 포함)` : ""}`)) return;
   try {
-    await api("/api/admin/product_reg", body);
-    ["rgName", "rgCat", "rgPrice", "rgLink"].forEach((id) => ($("#" + id).value = ""));
-    toast("등록 신청 완료! 봇이 1분 내 판매 목록에 반영합니다.");
+    $("#rgAdd").disabled = true;
+    const r = await api("/api/admin/product_reg", body);
+    ["rgName", "rgCat", "rgPrice", "rgOfficial", "rgLink", "rgRating", "rgSeller", "rgComment"].forEach((id) => ($("#" + id).value = ""));
+    rgMedia = [];
+    renderRgPreview();
+    toast("등록 신청 완료!" + (r.note ? " " + r.note : "") + " (판매 반영은 1분 내)");
     refresh();
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    $("#rgAdd").disabled = false;
+  }
 });
 
 function renderRegs() {

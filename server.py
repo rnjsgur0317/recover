@@ -1192,6 +1192,9 @@ def api_sync_push(req):
     if isinstance(d.get("passes"), dict):
         shop["passes"] = d["passes"]
         updated = True
+    if isinstance(d.get("intro"), dict):
+        shop["intro"] = d["intro"]   # 소개채널 매핑 {channels, role} — 사이트 등록 시 소개글 게시용
+        updated = True
     if not updated:
         return json_resp({"error": "잘못된 데이터"}, 400)
     shop["updated_at"] = now()
@@ -1604,25 +1607,97 @@ def api_admin_best(req):
     return json_resp({"ok": True})
 
 
+def build_intro_content(name, official, server_price, rating, seller, comments, role_id):
+    """디스코드 소개글 본문 — 관리자웹 build_intro_template 과 같은 형식."""
+    t = "**게임 정보**\n\n"
+    t += f"이름 : {name}\n"
+    if official:
+        t += f"공식가격 : ~~{official:,}원~~\n"
+    t += f"서버가격 :__{server_price:,}원__ \n"
+    if rating:
+        t += f"수위 : {rating}\n"
+    if seller:
+        t += f"\n공식 판매처 :\n[<{seller}>]\n"
+    t += "\n## 코멘트 :\n\n"
+    if comments:
+        for c in comments:
+            t += f"* {c}\n"
+    else:
+        t += "*\n*\n"
+    t += ("\n**구매 안내**\n\n"
+          "• 구매 후 **반드시 파일 백업 바랍니다.** (재지급 X)\n"
+          "• 단순 변심 환불은 불가능합니다.\n"
+          "• 다운로드 문제 발생 시 문의 바랍니다.\n")
+    if role_id:
+        t += f"|| <@&{role_id}> ||"
+    return t
+
+
+def discord_post_intro(channel_id, content, media):
+    """봇 토큰으로 소개글(텍스트+미디어) 게시. media: [(bytes, ext)]. 반환: 오류 or None"""
+    boundary = "----HCompanyBoundary" + secrets.token_hex(8)
+    payload = {"content": content[:1990], "allowed_mentions": {"parse": ["roles"]}}
+    body = (f'--{boundary}\r\nContent-Disposition: form-data; name="payload_json"\r\n\r\n'.encode()
+            + json.dumps(payload, ensure_ascii=False).encode() + b"\r\n")
+    for i, (raw, ext) in enumerate(media):
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="files[{i}]"; '
+                 f'filename="media{i}.{ext}"\r\nContent-Type: {IMG_CTYPE[ext]}\r\n\r\n'.encode()
+                 + raw + b"\r\n")
+    body += f"--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"{DISCORD_API}/channels/{channel_id}/messages", data=body,
+        headers={"Authorization": "Bot " + BOT_TOKEN,
+                 "Content-Type": f"multipart/form-data; boundary={boundary}",
+                 "User-Agent": "RecoverWeb/1.0"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as res:
+            if res.status in (200, 201):
+                return None
+            return f"디스코드 응답 {res.status}"
+    except urllib.error.HTTPError as e:
+        return f"디스코드 오류 {e.code}"
+    except Exception as e:
+        return f"게시 실패: {e}"
+
+
 def api_admin_product_reg(req):
-    """게임 등록 신청 (관리자웹의 게임 등록과 동일 항목: 이름/카테고리/가격/링크).
-    봇이 1분 내 products.json에 등록하고 사이트·디스코드에 반영된다."""
-    d = req.read_json() or {}
+    """게임 등록 신청 — 관리자웹 [게임출시]와 동일하게 등록 + 상세정보 + 이미지 + 소개글까지.
+    상품 등록은 봇이 1분 내 products.json에 반영, 상세·이미지는 사이트에 즉시 저장,
+    소개글은 소개채널에 바로 게시."""
+    d = req.read_json(limit=MAX_SYNC_IMAGE) or {}
     name = clean(d.get("name"), 100)
     category = clean(d.get("category"), 30)
     link = clean(d.get("link"), 500)
+    rating = clean(d.get("rating"), 40)
+    seller = clean(d.get("seller"), 300)
+    comments = [clean(c, 200) for c in str(d.get("comment", "")).split("\n") if clean(c, 200)][:10]
     try:
         price = int(str(d.get("price", "")).replace(",", "").strip())
     except ValueError:
         return json_resp({"error": "가격은 숫자로 입력하세요."}, 400)
+    official = 0
+    if str(d.get("official", "")).strip():
+        try:
+            official = int(str(d.get("official", "")).replace(",", "").strip())
+        except ValueError:
+            return json_resp({"error": "정가는 숫자로 입력하세요."}, 400)
     if not name or not category:
         return json_resp({"error": "이름과 카테고리를 입력하세요."}, 400)
-    if price <= 0:
+    if price <= 0 or official < 0:
         return json_resp({"error": "가격을 확인하세요."}, 400)
     if not re.match(r"^https?://", link):
         return json_resp({"error": "다운로드 링크는 http(s):// 로 시작해야 합니다."}, 400)
+    if seller and not re.match(r"^https?://", seller):
+        return json_resp({"error": "공식 판매처 링크는 http(s):// 로 시작해야 합니다."}, 400)
     if name in (load_shop().get("products") or {}):
         return json_resp({"error": "이미 판매 중인 게임입니다. 수정은 로컬 관리자웹에서 해주세요."}, 400)
+    # 미디어 디코딩 (최대 4개)
+    media = []
+    for du in (d.get("images") or [])[:4]:
+        try:
+            media.append(decode_media(du, limit=8 * 1024 * 1024))
+        except ValueError as e:
+            return json_resp({"error": str(e)}, 400)
     with db_lock:
         dup = db().execute(
             "SELECT COUNT(*) FROM product_regs WHERE name=? AND status IN ('대기','처리중')",
@@ -1633,7 +1708,50 @@ def api_admin_product_reg(req):
             "INSERT INTO product_regs(name,category,price,link,created_at,updated_at) "
             "VALUES(?,?,?,?,?,?)", (name, category, price, link, now(), now()))
         db().commit()
-    return json_resp({"ok": True})
+    # 상세정보 + 이미지 사이트에 즉시 저장
+    shop = load_shop()
+    detail = {}
+    if official:
+        detail["official"] = official
+    if rating:
+        detail["rating"] = rating
+    if seller:
+        detail["seller"] = seller
+    if comments:
+        detail["comments"] = comments
+    if detail:
+        shop.setdefault("details", {})[name] = detail
+    if media:
+        images = shop.setdefault("images", {})
+        for f in entry_files(images.get(name)):
+            try:
+                os.remove(os.path.join(SHOPIMG_DIR, f))
+            except OSError:
+                pass
+        files = []
+        for i, (raw, ext) in enumerate(media):
+            fname = shopimg_filename(f"{name}#{i}", ext)
+            with open(os.path.join(SHOPIMG_DIR, fname), "wb") as f:
+                f.write(raw)
+            files.append(fname)
+        att = "webreg-" + hashlib.sha1(b"".join(r for r, _ in media)).hexdigest()[:16]
+        images[name] = {"att": att, "file": files[0], "files": files}
+    if detail or media:
+        save_shop(shop)
+    # 디스코드 소개채널에 게시
+    note = ""
+    intro = shop.get("intro") or {}
+    ch_id = (intro.get("channels") or {}).get(category)
+    if ch_id and media:
+        content = build_intro_content(name, official, price, rating, seller, comments,
+                                      intro.get("role", 0))
+        err = discord_post_intro(ch_id, content, media)
+        note = "디스코드 소개글 게시 완료" if not err else f"소개글 게시 실패({err}) — 관리자웹에서 게시해주세요"
+    elif not ch_id:
+        note = f"'{category}' 소개채널 매핑이 없어 소개글은 생략했어요"
+    elif not media:
+        note = "이미지가 없어 소개글은 생략했어요"
+    return json_resp({"ok": True, "note": note})
 
 
 def api_admin_reservation_send(req):

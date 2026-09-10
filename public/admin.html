@@ -67,18 +67,31 @@
       <h2>새 게임 등록</h2>
       <p class="desc">관리자웹의 게임 등록과 같은 기능입니다. 등록하면 봇이 <b>1분 내</b> 판매 목록에 반영하고
       사이트·디스코드 자판기에서 바로 구매할 수 있어요. (봇이 꺼져 있으면 켜질 때 처리)</p>
-      <label>게임 이름</label>
+      <label>게임 이름 *</label>
       <input type="text" id="rgName" maxlength="100">
-      <label>카테고리</label>
+      <label>카테고리 *</label>
       <input type="text" id="rgCat" maxlength="30" list="catList" placeholder="예: 5000원이상">
       <datalist id="catList"></datalist>
-      <label>가격 (원)</label>
-      <input type="text" id="rgPrice" maxlength="12" placeholder="5000">
-      <label>다운로드 링크</label>
+      <div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label>판매가 (원) *</label><input type="text" id="rgPrice" maxlength="12" placeholder="5000"></div>
+        <div><label>정가 (원, 선택 — 할인율 표시용)</label><input type="text" id="rgOfficial" maxlength="12" placeholder="12000"></div>
+      </div>
+      <label>다운로드 링크 *</label>
       <input type="text" id="rgLink" maxlength="500" placeholder="https://...">
+      <div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label>수위 (선택)</label><input type="text" id="rgRating" maxlength="40" placeholder="예: R-18 / 19+"></div>
+        <div><label>공식 판매처 링크 (선택)</label><input type="text" id="rgSeller" maxlength="300" placeholder="https://..."></div>
+      </div>
+      <label>코멘트 (선택 · 한 줄당 하나)</label>
+      <textarea id="rgComment" maxlength="1500" style="min-height:70px" placeholder="한글패치 포함&#10;용량 2GB"></textarea>
+      <label>이미지·영상 (최대 4개 — 첫 번째가 대표 이미지)</label>
+      <div class="dropzone" id="rgDrop"><span>클릭하거나 파일을 끌어다 놓으세요 (여러 개 가능)</span></div>
+      <input type="file" id="rgFiles" accept="image/*,video/mp4,video/webm" multiple hidden>
+      <div class="image-preview" id="rgPreview" hidden style="gap:8px"></div>
       <button class="primary" id="rgAdd">등록 신청</button>
-      <p class="hint">· 사진·소개(정가/판매처/코멘트)는 로컬 관리자웹 [게임소개]로 올리면 자동 연동됩니다.<br>
-      · 디스코드 자판기 버튼 목록 갱신이 필요하면 디스코드에서 <b>!자판기설치</b>를 다시 실행하세요.<br>
+      <p class="hint">· 이미지·정가·수위·판매처·코멘트는 사이트 상세페이지에 <b>즉시</b> 반영되고,
+      이미지를 넣으면 <b>디스코드 소개채널에도 자동으로 소개글이 게시</b>됩니다.<br>
+      · 판매 등록은 봇이 1분 내 반영, 디스코드 자판기 버튼 갱신은 <b>!자판기설치</b>.<br>
       · 정기결제 상품 등록과 게임 수정·삭제는 로컬 관리자웹에서 해주세요.</p>
     </div>
     <div class="card">
