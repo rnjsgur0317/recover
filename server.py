@@ -88,6 +88,17 @@ def init_db():
         """)
         c.commit()
         c.executescript("""
+        CREATE TABLE IF NOT EXISTS product_regs (  -- 게임 등록 신청 (봇이 products.json에 반영)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            price INTEGER NOT NULL,
+            link TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT '대기',    -- 대기/처리중/완료/실패
+            result TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS charges (       -- 잔액 충전(문상) 신청
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uid TEXT NOT NULL,
@@ -229,6 +240,7 @@ def purge_old():
         db().execute("DELETE FROM requests WHERE created_at<?", (cutoff,))
         db().execute("DELETE FROM charges WHERE created_at<?", (cutoff,))
         db().execute("DELETE FROM orders WHERE created_at<?", (cutoff,))
+        db().execute("DELETE FROM product_regs WHERE created_at<?", (cutoff,))
         db().commit()
 
 
@@ -1090,6 +1102,42 @@ def api_sync_ack(req):
     return json_resp({"ok": True})
 
 
+def api_sync_pull_regs(req):
+    """봇: 게임 등록 신청 가져가기 (가져가면 처리중, 15분 초과 시 실패 처리)."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    with db_lock:
+        db().execute(
+            "UPDATE product_regs SET status='실패', result='처리 시간 초과 — 봇 상태를 확인하세요', updated_at=? "
+            "WHERE status='처리중' AND updated_at<?", (now(), now() - 900))
+        rows = db().execute(
+            "SELECT id,name,category,price,link FROM product_regs "
+            "WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
+        for r in rows:
+            db().execute("UPDATE product_regs SET status='처리중', updated_at=? WHERE id=?",
+                         (now(), r["id"]))
+        db().commit()
+    return json_resp({"regs": row_dicts(rows)})
+
+
+def api_sync_reg_results(req):
+    """봇: 게임 등록 결과 보고."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    with db_lock:
+        for res in (d.get("results") or [])[:50]:
+            if not isinstance(res, dict) or not isinstance(res.get("id"), int):
+                continue
+            db().execute(
+                "UPDATE product_regs SET status=?, result=?, updated_at=? WHERE id=? AND status='처리중'",
+                ("완료" if res.get("ok") else "실패", clean(str(res.get("msg", "")), 300),
+                 now(), res["id"]))
+        db().commit()
+    return json_resp({"ok": True})
+
+
 def api_sync_pull_orders(req):
     """봇: 대기 중인 웹 구매 주문 가져가기(가져가면 '처리중')."""
     d = check_sync(req)
@@ -1274,15 +1322,22 @@ def api_admin_requests(req):
         rows = db().execute("SELECT * FROM requests ORDER BY id DESC LIMIT 300").fetchall()
         charges = db().execute("SELECT * FROM charges ORDER BY id DESC LIMIT 100").fetchall()
         orders = db().execute("SELECT * FROM orders ORDER BY id DESC LIMIT 100").fetchall()
+        regs = db().execute("SELECT * FROM product_regs ORDER BY id DESC LIMIT 100").fetchall()
         notices = db().execute("SELECT * FROM notices ORDER BY id DESC LIMIT 50").fetchall()
         upcoming = db().execute("SELECT * FROM upcoming ORDER BY id DESC LIMIT 50").fetchall()
         discounts = db().execute("SELECT * FROM discounts ORDER BY id DESC LIMIT 100").fetchall()
         bests = db().execute("SELECT * FROM bests ORDER BY id DESC LIMIT 100").fetchall()
     shop = load_shop()
+    categories = []
+    for i in (shop.get("products") or {}).values():
+        c = i.get("category") or "기타"
+        if c not in categories:
+            categories.append(c)
     return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
                       "orders": row_dicts(orders), "notices": row_dicts(notices),
                       "upcoming": row_dicts(upcoming), "discounts": row_dicts(discounts),
-                      "bests": row_dicts(bests),
+                      "bests": row_dicts(bests), "regs": row_dicts(regs),
+                      "categories": categories,
                       "product_names": [{"name": n, "price": i.get("price", 0)}
                                         for n, i in (shop.get("products") or {}).items()
                                         if not i.get("is_subscription")],
@@ -1549,6 +1604,38 @@ def api_admin_best(req):
     return json_resp({"ok": True})
 
 
+def api_admin_product_reg(req):
+    """게임 등록 신청 (관리자웹의 게임 등록과 동일 항목: 이름/카테고리/가격/링크).
+    봇이 1분 내 products.json에 등록하고 사이트·디스코드에 반영된다."""
+    d = req.read_json() or {}
+    name = clean(d.get("name"), 100)
+    category = clean(d.get("category"), 30)
+    link = clean(d.get("link"), 500)
+    try:
+        price = int(str(d.get("price", "")).replace(",", "").strip())
+    except ValueError:
+        return json_resp({"error": "가격은 숫자로 입력하세요."}, 400)
+    if not name or not category:
+        return json_resp({"error": "이름과 카테고리를 입력하세요."}, 400)
+    if price <= 0:
+        return json_resp({"error": "가격을 확인하세요."}, 400)
+    if not re.match(r"^https?://", link):
+        return json_resp({"error": "다운로드 링크는 http(s):// 로 시작해야 합니다."}, 400)
+    if name in (load_shop().get("products") or {}):
+        return json_resp({"error": "이미 판매 중인 게임입니다. 수정은 로컬 관리자웹에서 해주세요."}, 400)
+    with db_lock:
+        dup = db().execute(
+            "SELECT COUNT(*) FROM product_regs WHERE name=? AND status IN ('대기','처리중')",
+            (name,)).fetchone()[0]
+        if dup:
+            return json_resp({"error": "이미 등록 처리 중인 이름입니다."}, 400)
+        db().execute(
+            "INSERT INTO product_regs(name,category,price,link,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?)", (name, category, price, link, now(), now()))
+        db().commit()
+    return json_resp({"ok": True})
+
+
 def api_admin_reservation_send(req):
     """예약 완료 건에 출시 링크 DM 발송. {id, message?}"""
     d = req.read_json() or {}
@@ -1625,6 +1712,8 @@ POST_ROUTES = {
     "/api/sync/ack_approved": api_sync_ack_approved,
     "/api/sync/pull_orders": api_sync_pull_orders,
     "/api/sync/order_results": api_sync_order_results,
+    "/api/sync/pull_regs": api_sync_pull_regs,
+    "/api/sync/reg_results": api_sync_reg_results,
     "/api/sync/ack": api_sync_ack,
     "/api/sync/push": api_sync_push,
     "/api/sync/images": api_sync_images,
@@ -1639,6 +1728,7 @@ POST_ADMIN_ROUTES = {
     "/api/admin/upcoming": api_admin_upcoming,
     "/api/admin/discount": api_admin_discount,
     "/api/admin/best": api_admin_best,
+    "/api/admin/product_reg": api_admin_product_reg,
     "/api/admin/reservation_send": api_admin_reservation_send,
 }
 

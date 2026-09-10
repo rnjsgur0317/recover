@@ -43,6 +43,8 @@ let noticeCache = [];
 let upcomingCache = [];
 let discountCache = [];
 let bestCache = [];
+let regCache = [];
+let categoryList = [];
 let shopUpdatedAt = 0;
 let filter = "대기";
 
@@ -69,6 +71,8 @@ async function refresh() {
   upcomingCache = data.upcoming || [];
   discountCache = data.discounts || [];
   bestCache = data.bests || [];
+  regCache = data.regs || [];
+  categoryList = data.categories || [];
   shopUpdatedAt = data.shop_updated_at || 0;
   $("#dcGameList").innerHTML = (data.product_names || [])
     .map((p) => `<option value="${esc(p.name)}">${fmtWon(p.price)}원</option>`).join("");
@@ -94,6 +98,7 @@ function render() {
   renderUpcoming();
   renderDiscounts();
   renderBests();
+  renderRegs();
 }
 
 function setBadge(sel, n) {
@@ -484,6 +489,46 @@ function renderDiscounts() {
         refresh();
       } catch (e) { toast(e.message, true); }
     }));
+}
+
+// ---- 게임 등록
+$("#rgAdd").addEventListener("click", async () => {
+  const body = {
+    name: $("#rgName").value.trim(),
+    category: $("#rgCat").value.trim(),
+    price: $("#rgPrice").value.trim(),
+    link: $("#rgLink").value.trim(),
+  };
+  if (!body.name || !body.category || !body.price || !body.link) {
+    return toast("이름/카테고리/가격/링크를 모두 입력하세요.", true);
+  }
+  if (!confirm(`'${body.name}'을(를) [${body.category}] ${Number(String(body.price).replace(/,/g, "")).toLocaleString("ko-KR")}원으로 등록할까요?`)) return;
+  try {
+    await api("/api/admin/product_reg", body);
+    ["rgName", "rgCat", "rgPrice", "rgLink"].forEach((id) => ($("#" + id).value = ""));
+    toast("등록 신청 완료! 봇이 1분 내 판매 목록에 반영합니다.");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderRegs() {
+  const dl = $("#catList");
+  dl.innerHTML = categoryList.map((c) => `<option value="${esc(c)}">`).join("");
+  const box = $("#regList");
+  box.innerHTML = regCache.length
+    ? regCache.map((r) => `
+      <div class="req-card">
+        <div class="head">
+          <div>
+            <div class="name">${esc(r.name)} · ${fmtWon(r.price)}원</div>
+            <div class="sub">[${esc(r.category)}] · ${fmtDate(r.created_at)}</div>
+            <div class="sub" style="word-break:break-all">링크: ${esc(r.link)}</div>
+            ${r.result ? `<div class="sub">${esc(r.result)}</div>` : (r.status !== "완료" ? '<div class="sub">봇이 처리 중이에요 (최대 1분)</div>' : "")}
+          </div>
+          <span class="badge ${esc(r.status)}">${esc(r.status)}</span>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">등록 신청 내역이 없어요.</div>';
 }
 
 // ---- BEST 관리
