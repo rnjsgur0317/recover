@@ -251,7 +251,8 @@ function renderGiftBanner() {
     <div class="gift-banner">
       <div class="gift-head">🎁 <b>1회 ${fmtWon(g.min_amount)}원 이상</b> 구매 시 사은품 증정!</div>
       <div class="gift-body">
-        ${g.img ? `<img class="gift-thumb" src="/api/shop/image?name=${encodeURIComponent(g.game)}" alt="">` : ""}
+        ${g.thumb === "gift" ? `<img class="gift-thumb" src="/api/shop/giftimg?id=${g.id}" alt="">`
+          : (g.thumb === "game" ? `<img class="gift-thumb" src="/api/shop/image?name=${encodeURIComponent(g.game)}" alt="">` : "")}
         <div>
           <div class="gift-name">${esc(g.game)}</div>
           ${g.value ? `<div class="gift-value"><s>${fmtWon(g.value)}원</s> → <b>무료</b></div>` : '<div class="gift-value"><b>무료 증정</b></div>'}
@@ -722,15 +723,31 @@ async function loadMy() {
                   claim: ' <span class="game-tag pass-tag">무료 수령</span>' }[o.kind] || ""}</div>
               <div class="sub">${fmtDate(o.created_at)}${o.result ? " · " + esc(o.result) : (o.status === "대기" || o.status === "처리중" ? " · 봇이 처리 중이에요 (최대 1분)" : "")}</div>
               ${o.kind === "reserve" && o.status === "완료" && !o.link_sent ? '<div class="sub">출시되면 링크가 발송돼요.</div>' : ""}
+              ${o.gift_game ? `<div class="sub" style="color:#1d4ed8">🎁 사은품: <b>${esc(o.gift_game)}</b></div>` : ""}
               <div class="link-slot" id="linkSlot${o.id}"></div>
+              <div class="link-slot" id="giftSlot${o.id}"></div>
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
               <span class="badge ${esc(o.status)}">${esc(o.status)}</span>
               ${o.link_ok ? `<button class="small good" data-getlink="${o.id}">링크 받기</button>` : ""}
+              ${o.gift_ok ? `<button class="small" data-getgift="${o.id}" style="color:#1d4ed8;border-color:#2563eb">🎁 사은품 링크</button>` : ""}
             </div>
           </div>
         </div>`).join("")
       : '<div class="empty">구매 내역이 없어요.</div>';
+    obox.querySelectorAll("[data-getgift]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        try {
+          const r = await api("/api/my/gift_link?id=" + b.dataset.getgift);
+          const slot = $("#giftSlot" + b.dataset.getgift);
+          slot.innerHTML = `<div class="link-box" style="border-color:#bfdbfe;background:#eff6ff">🎁 <a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.link)}</a>
+            <button class="small" data-copy="${esc(r.link)}">복사</button></div>`;
+          slot.querySelector("[data-copy]").addEventListener("click", async (ev) => {
+            try { await navigator.clipboard.writeText(ev.target.dataset.copy); toast("사은품 링크 복사 완료!"); }
+            catch (e) { toast("복사 실패 — 길게 눌러 복사해주세요.", true); }
+          });
+        } catch (e) { toast(e.message, true); }
+      }));
     obox.querySelectorAll("[data-getlink]").forEach((b) =>
       b.addEventListener("click", async () => {
         try {

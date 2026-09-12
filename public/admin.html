@@ -181,6 +181,13 @@
       <input type="text" id="gfGame" maxlength="100" list="dcGameList" placeholder="목록에 없는 서비스 게임도 가능">
       <label>지급할 링크</label>
       <input type="text" id="gfLink" maxlength="500" placeholder="https://...">
+      <label>사은품 이미지 (선택 — 배너에 표시)</label>
+      <div class="dropzone" id="gfDrop"><span>클릭하거나 이미지를 끌어다 놓으세요</span></div>
+      <input type="file" id="gfImageFile" accept="image/*" hidden>
+      <div class="image-preview" id="gfPreview" hidden>
+        <img id="gfPreviewImg" alt="사은품 이미지 미리보기">
+        <button type="button" class="small danger" id="gfRemoveImage">첨부 취소</button>
+      </div>
       <button class="primary" id="gfAdd" style="background:#2563eb">사은품 등록</button>
       <div id="giftAdminList" style="margin-top:16px"><div class="empty">불러오는 중...</div></div>
     </div>

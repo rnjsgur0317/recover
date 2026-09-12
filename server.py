@@ -165,6 +165,7 @@ def init_db():
             "ALTER TABLE charges ADD COLUMN admin_note TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN gift_game TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN gift_link TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE gifts ADD COLUMN image TEXT NOT NULL DEFAULT ''",
         ):
             try:
                 c.execute(stmt)
@@ -653,7 +654,8 @@ def api_my_requests(req):
             "SELECT id,amount,status,created_at "
             "FROM charges WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
         orders = db().execute(
-            "SELECT id,game,price,status,result,kind,link_sent,created_at,updated_at "
+            "SELECT id,game,price,status,result,kind,link_sent,gift_game,gift_link,"
+            "created_at,updated_at "
             "FROM orders WHERE uid=? ORDER BY id DESC LIMIT 30", (s["uid"],)).fetchall()
     products = load_shop().get("products") or {}
     order_list = []
@@ -664,6 +666,9 @@ def api_my_requests(req):
                         and (o["kind"] != "reserve" or o["link_sent"])
                         and now() - o["updated_at"] <= 7 * 86400
                         and bool((products.get(o["game"]) or {}).get("link")))
+        o["gift_ok"] = (o["status"] == "완료" and bool(o["gift_game"]) and bool(o["gift_link"])
+                        and now() - o["updated_at"] <= 7 * 86400)
+        o.pop("gift_link", None)   # 링크는 전용 API로만 수령
         order_list.append(o)
     return json_resp({"requests": row_dicts(rows), "charges": row_dicts(charges),
                       "orders": order_list})
@@ -692,12 +697,17 @@ def gift_list(shop):
     """유저 배너용 사은품 목록 (기준 금액 오름차순, 링크는 노출 안 함)."""
     with db_lock:
         rows = db().execute(
-            "SELECT game, value, min_amount FROM gifts ORDER BY min_amount, id").fetchall()
+            "SELECT id, game, value, min_amount, image FROM gifts ORDER BY min_amount, id").fetchall()
     out = []
     for r in rows:
-        has_img, media = media_flags(shop, r["game"])
-        out.append({"game": r["game"], "value": r["value"], "min_amount": r["min_amount"],
-                    "img": has_img, "media": media})
+        # 썸네일: 사은품 자체 이미지 우선, 없으면 같은 이름의 판매 게임 이미지
+        if r["image"]:
+            thumb = "gift"
+        else:
+            has_img, _media = media_flags(shop, r["game"])
+            thumb = "game" if has_img else None
+        out.append({"id": r["id"], "game": r["game"], "value": r["value"],
+                    "min_amount": r["min_amount"], "thumb": thumb})
     return out
 
 
@@ -807,7 +817,7 @@ def api_shopdata(req):
 
 
 def _serve_media_file(fname):
-    if not fname or not re.match(r"^(img|upc)_[0-9a-f]{16}\.(jpg|png|webp|gif|mp4|webm)$", fname):
+    if not fname or not re.match(r"^(img|upc|gft)_[0-9a-f]{16}\.(jpg|png|webp|gif|mp4|webm)$", fname):
         return json_resp({"error": "이미지가 없습니다."}, 404)
     fpath = os.path.join(SHOPIMG_DIR, fname)
     if not os.path.isfile(fpath):
@@ -1044,6 +1054,24 @@ def api_pass_claim(req):
             (s["uid"], s["name"], game, now(), now()))
         db().commit()
     return json_resp({"ok": True})
+
+
+def api_my_gift_link(req):
+    """받은 사은품 링크 수령 (구매 완료 후 7일간, 본인만)"""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    try:
+        rid = int((req.query().get("id") or ["0"])[0])
+    except ValueError:
+        rid = 0
+    with db_lock:
+        row = db().execute("SELECT * FROM orders WHERE id=? AND uid=?", (rid, s["uid"])).fetchone()
+    if not row or row["status"] != "완료" or not row["gift_game"] or not row["gift_link"]:
+        return json_resp({"error": "사은품이 지급된 완료 주문이 아닙니다."}, 404)
+    if now() - row["updated_at"] > 7 * 86400:
+        return json_resp({"error": "수령 기간(7일)이 지났어요. 필요하면 [링크 복구] 탭에서 요청해주세요."}, 400)
+    return json_resp({"link": row["gift_link"], "game": row["gift_game"]})
 
 
 def api_notices(req):
@@ -1618,9 +1646,15 @@ def api_admin_discount(req):
 
 
 def api_admin_gift(req):
-    """사은품 관리. {action: 'add'|'delete', id?, game, link, value, min_amount}"""
-    d = req.read_json() or {}
+    """사은품 관리. {action: 'add'|'delete', id?, game, link, value, min_amount, image?}"""
+    d = req.read_json(limit=MAX_IMAGE_BODY) or {}
     action = d.get("action")
+    img_bytes, img_ext = None, None
+    if d.get("image"):
+        try:
+            img_bytes, img_ext = decode_media(d["image"])
+        except ValueError as e:
+            return json_resp({"error": str(e)}, 400)
     with db_lock:
         if action == "add":
             game = clean(d.get("game"), 100)
@@ -1634,18 +1668,42 @@ def api_admin_gift(req):
                 return json_resp({"error": "사은품 게임/기준 금액을 확인하세요."}, 400)
             if not re.match(r"^https?://", link):
                 return json_resp({"error": "지급 링크는 http(s):// 로 시작해야 합니다."}, 400)
-            db().execute(
+            cur = db().execute(
                 "INSERT INTO gifts(game,link,value,min_amount,created_at) VALUES(?,?,?,?,?)",
                 (game, link, value, min_amount, now()))
+            if img_bytes:
+                fname = "gft_" + hashlib.sha1(f"gift{cur.lastrowid}".encode()).hexdigest()[:16] + "." + img_ext
+                with open(os.path.join(SHOPIMG_DIR, fname), "wb") as f:
+                    f.write(img_bytes)
+                db().execute("UPDATE gifts SET image=? WHERE id=?", (fname, cur.lastrowid))
         elif action == "delete":
             rid = d.get("id")
             if not isinstance(rid, int):
                 return json_resp({"error": "잘못된 요청"}, 400)
+            row = db().execute("SELECT image FROM gifts WHERE id=?", (rid,)).fetchone()
+            if row and row["image"]:
+                try:
+                    os.remove(os.path.join(SHOPIMG_DIR, row["image"]))
+                except OSError:
+                    pass
             db().execute("DELETE FROM gifts WHERE id=?", (rid,))
         else:
             return json_resp({"error": "잘못된 요청"}, 400)
         db().commit()
     return json_resp({"ok": True})
+
+
+def api_gift_image(req):
+    """사은품 이미지 (로그인 필요). ?id=번호"""
+    if not req.session():
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    try:
+        rid = int((req.query().get("id") or ["0"])[0])
+    except ValueError:
+        rid = 0
+    with db_lock:
+        row = db().execute("SELECT image FROM gifts WHERE id=?", (rid,)).fetchone()
+    return _serve_media_file(row["image"] if row else "")
 
 
 def pick_gift(total):
@@ -1886,6 +1944,8 @@ GET_ROUTES = {
     "/api/shop/detail": api_shop_detail,
     "/api/notices": api_notices,
     "/api/my/link": api_my_link,
+    "/api/my/gift_link": api_my_gift_link,
+    "/api/shop/giftimg": api_gift_image,
 }
 GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,

@@ -632,6 +632,38 @@ function renderBests() {
 }
 
 // ---- 사은품 관리
+let gfImageData = "";
+
+function clearGfImage() {
+  gfImageData = "";
+  $("#gfPreviewImg").src = "";
+  $("#gfPreview").hidden = true;
+  $("#gfDrop").hidden = false;
+  $("#gfImageFile").value = "";
+}
+
+$("#gfDrop").addEventListener("click", () => $("#gfImageFile").click());
+$("#gfImageFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file || !file.type.startsWith("image/")) return toast("이미지 파일만 첨부할 수 있어요.", true);
+  try {
+    gfImageData = await compressImage(file);
+    $("#gfPreviewImg").src = gfImageData;
+    $("#gfPreview").hidden = false;
+    $("#gfDrop").hidden = true;
+  } catch (err) { toast("이미지를 읽을 수 없어요.", true); }
+});
+$("#gfRemoveImage").addEventListener("click", clearGfImage);
+["dragover", "dragleave", "drop"].forEach((evt) =>
+  $("#gfDrop").addEventListener(evt, (e) => {
+    e.preventDefault();
+    $("#gfDrop").classList.toggle("dragover", evt === "dragover");
+    if (evt === "drop") {
+      $("#gfImageFile").files = e.dataTransfer.files;
+      $("#gfImageFile").dispatchEvent(new Event("change"));
+    }
+  }));
+
 $("#gfAdd").addEventListener("click", async () => {
   const body = {
     action: "add",
@@ -640,12 +672,14 @@ $("#gfAdd").addEventListener("click", async () => {
     game: $("#gfGame").value.trim(),
     link: $("#gfLink").value.trim(),
   };
+  if (gfImageData) body.image = gfImageData;
   if (!body.min_amount || !body.game || !body.link) {
     return toast("기준 금액/사은품 게임/링크를 입력하세요.", true);
   }
   try {
     await api("/api/admin/gift", body);
     ["gfMin", "gfValue", "gfGame", "gfLink"].forEach((id) => ($("#" + id).value = ""));
+    clearGfImage();
     toast("사은품 등록 완료! 유저 목록 상단에 파란 배너로 표시됩니다.");
     refresh();
   } catch (e) { toast(e.message, true); }
@@ -657,10 +691,13 @@ function renderGifts() {
     ? giftCache.map((g) => `
       <div class="req-card" style="border-color:#bfdbfe;background:#eff6ff">
         <div class="head">
-          <div>
+          <div style="display:flex;align-items:center;gap:12px;min-width:0">
+            ${g.image ? `<img class="req-thumb" src="/api/shop/giftimg?id=${g.id}" alt="" style="max-height:60px">` : ""}
+            <div>
             <div class="name">🎁 ${esc(g.game)}${g.value ? ` <span class="sub">(정가 ${fmtWon(g.value)}원)</span>` : ""}</div>
             <div class="sub">1회 <b>${fmtWon(g.min_amount)}원</b> 이상 구매 시 지급 · ${fmtDate(g.created_at)}</div>
             <div class="sub" style="word-break:break-all">링크: ${esc(g.link)}</div>
+            </div>
           </div>
           <button class="small danger" data-gfdel="${g.id}">삭제</button>
         </div>
