@@ -36,6 +36,15 @@ function fmtWon(n) {
   return Number(n || 0).toLocaleString("ko-KR");
 }
 
+function myPct() {
+  return (shopCache && shopCache.discount_pct) || 0;
+}
+
+function tierPrice(p) {
+  const pct = myPct();
+  return pct ? Math.floor(p * (100 - pct) / 100) : p;
+}
+
 // ---- 탭
 document.querySelectorAll(".tabs button").forEach((btn) =>
   btn.addEventListener("click", () => {
@@ -391,6 +400,7 @@ async function openDetail(name) {
   const nowPrice = d.sale_price ?? d.price;
   const base = d.sale_price != null ? d.price : (dt.official || 0);
   const off = base && base > nowPrice ? Math.round((1 - nowPrice / base) * 100) : 0;
+  const finalPrice = tierPrice(nowPrice);   // 등급 할인 적용가 (실제 결제가)
   const mediaList = d.media_list || (d.img ? [d.media || "img"] : []);
   const gallery = mediaList.length ? `
     <div class="gallery">
@@ -417,10 +427,13 @@ async function openDetail(name) {
         <div class="ttl">코멘트</div>
         <ul>${dt.comments.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
       </div>` : ""}
+    ${myPct() && !d.is_subscription ? `
+      <div class="tier-price-row">내 등급 할인 <b>-${myPct()}%</b> 적용
+        → 최종 결제가 <b>${fmtWon(finalPrice)}원</b></div>` : ""}
     ${d.is_subscription
-      ? '<button class="primary" disabled style="opacity:.5">정기결제는 디스코드 자판기에서</button>'
+      ? '<button class="primary" disabled style="opacity:.5">정기결제 상품 — 관리자 문의</button>'
       : `<div class="detail-actions">
-           <button class="primary" id="detailBuy" style="margin-top:0">${fmtWon(nowPrice)}원 바로 구매</button>
+           <button class="primary" id="detailBuy" style="margin-top:0">${fmtWon(finalPrice)}원 바로 구매</button>
            <button class="primary ghost" id="detailCart" style="margin-top:0">🛒 장바구니</button>
          </div>`}
     <p class="hint" style="text-align:center">구매 시 잔액에서 차감되고, 링크는 디스코드 DM과 [내 정보]에서 7일간 받을 수 있어요.</p>`;
@@ -448,10 +461,10 @@ async function openDetail(name) {
   const buyBtn = $("#detailBuy");
   if (buyBtn) {
     buyBtn.addEventListener("click", async () => {
-      if ((shopCache?.balance ?? 0) < nowPrice) {
+      if ((shopCache?.balance ?? 0) < finalPrice) {
         return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
       }
-      if (!confirm(`'${d.name}'을(를) ${fmtWon(nowPrice)}원에 구매할까요?`)) return;
+      if (!confirm(`'${d.name}'을(를) ${fmtWon(finalPrice)}원에 구매할까요?${myPct() ? `\n(등급 할인 -${myPct()}% 적용)` : ""}`)) return;
       try {
         buyBtn.disabled = true;
         const r = await api("/api/order", { game: d.name });
@@ -505,19 +518,22 @@ function renderCart() {
   let total = 0;
   box.innerHTML = items.map((n) => {
     const g = findGame(n);
-    const p = g.sale_price ?? g.price;
+    const p = tierPrice(g.sale_price ?? g.price);
     total += p;
+    const notes = [];
+    if (g.sale_price != null) notes.push("🔥 할인가");
+    if (myPct()) notes.push(`등급 -${myPct()}%`);
     return `
       <div class="item-row">
         <div><div class="name">${esc(n)}</div>
-        ${g.sale_price != null ? '<div class="sub">🔥 할인가 적용</div>' : ""}</div>
+        ${notes.length ? `<div class="sub">${notes.join(" · ")} 적용</div>` : ""}</div>
         <div style="display:flex;align-items:center;gap:10px">
           <span class="price">${fmtWon(p)}원</span>
           <button class="small danger" data-rm="${esc(n)}">빼기</button>
         </div>
       </div>`;
   }).join("") + `
-    <div class="cart-total">합계 <b>${fmtWon(total)}원</b> <span class="hint" style="margin:0">(내 잔액 ${fmtWon(shopCache?.balance ?? 0)}원)</span></div>
+    <div class="cart-total">합계 <b>${fmtWon(total)}원</b>${myPct() ? ` <span class="hint" style="margin:0">(등급 할인 -${myPct()}% 반영)</span>` : ""} <span class="hint" style="margin:0">(내 잔액 ${fmtWon(shopCache?.balance ?? 0)}원)</span></div>
     <button class="primary" id="cartBuyAll">일괄 구매 (${items.length}개)</button>`;
   box.querySelectorAll("[data-rm]").forEach((b) =>
     b.addEventListener("click", () => {

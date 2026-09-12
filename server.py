@@ -693,6 +693,25 @@ def media_flags(shop, name):
     return True, ("video" if files[0].rsplit(".", 1)[-1] in VIDEO_EXTS else "img")
 
 
+TIER_DISCOUNTS = ((120000, 10), (70000, 8), (40000, 5), (25000, 2))  # (누적액, 할인%)
+
+
+def user_discount_pct(shop, uid):
+    """유저의 등급 할인율(%). 봇이 push한 값 우선(Space 역할 포함), 없으면 누적액으로 계산."""
+    profile = (shop.get("profiles") or {}).get(uid) or {}
+    if isinstance(profile.get("discount_pct"), int):
+        return max(0, min(50, profile["discount_pct"]))
+    total = int(profile.get("total", 0) or 0)
+    for th, pct in TIER_DISCOUNTS:
+        if total >= th:
+            return pct
+    return 0
+
+
+def apply_tier_discount(price, pct):
+    return price * (100 - pct) // 100 if pct else price
+
+
 def gift_list(shop):
     """유저 배너용 사은품 목록 (기준 금액 오름차순, 링크는 노출 안 함)."""
     with db_lock:
@@ -813,6 +832,7 @@ def api_shopdata(req):
                       "img": bool(u["image"])} for u in upc],
         "pass": pass_info(shop, s["uid"]),
         "gifts": gift_list(shop),
+        "discount_pct": user_discount_pct(shop, s["uid"]),
     })
 
 
@@ -889,19 +909,20 @@ def api_charge_create(req):
         db().commit()
     return json_resp({"ok": True})
 
-def game_order_price(shop, game):
-    """(가격, fixed, 오류메시지). 할인 중이면 할인가+fixed=1."""
+def game_order_price(shop, game, tier_pct=0):
+    """(가격, fixed, 오류메시지). 게임 할인가 위에 등급 할인율까지 적용, 할인 있으면 fixed=1."""
     info = (shop.get("products") or {}).get(game)
     if not info:
         return 0, 0, "판매 중인 상품이 아닙니다."
     if info.get("is_game_pass"):
         return 0, 0, "게임패스는 [게임패스] 탭에서 구매해주세요."
     if info.get("is_subscription"):
-        return 0, 0, "정기결제 상품은 디스코드 자판기에서 구매해주세요."
+        return 0, 0, "정기결제 상품은 구매할 수 없습니다. 관리자에게 문의해주세요."
     sale = discount_map().get(game)
-    if sale is not None:
-        return int(sale), 1, None
-    return int(info.get("price", 0) or 0), 0, None
+    base = int(sale) if sale is not None else int(info.get("price", 0) or 0)
+    final = apply_tier_discount(base, tier_pct)
+    fixed = 1 if (sale is not None or final != base) else 0
+    return final, fixed, None
 
 
 def _order_guards(uid, games, max_inflight=10):
@@ -939,9 +960,10 @@ def api_order_create(req):
     if not games:
         return json_resp({"error": "잘못된 요청"}, 400)
     shop = load_shop()
+    tier_pct = user_discount_pct(shop, s["uid"])
     priced = []
     for g in games:
-        price, fixed, err = game_order_price(shop, g)
+        price, fixed, err = game_order_price(shop, g, tier_pct)
         if err:
             return json_resp({"error": f"'{g}': {err}"}, 400)
         priced.append((g, price, fixed))
