@@ -44,6 +44,7 @@ let upcomingCache = [];
 let discountCache = [];
 let bestCache = [];
 let regCache = [];
+let giftCache = [];
 let categoryList = [];
 let shopUpdatedAt = 0;
 let filter = "대기";
@@ -71,6 +72,7 @@ async function refresh() {
   upcomingCache = data.upcoming || [];
   discountCache = data.discounts || [];
   bestCache = data.bests || [];
+  giftCache = data.gifts || [];
   regCache = data.regs || [];
   categoryList = data.categories || [];
   shopUpdatedAt = data.shop_updated_at || 0;
@@ -99,6 +101,7 @@ function render() {
   renderDiscounts();
   renderBests();
   renderRegs();
+  renderGifts();
 }
 
 function setBadge(sel, n) {
@@ -623,6 +626,52 @@ function renderBests() {
       try {
         await api("/api/admin/best", { action: "unset", game: b.dataset.bestoff });
         toast("BEST 해제");
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    }));
+}
+
+// ---- 사은품 관리
+$("#gfAdd").addEventListener("click", async () => {
+  const body = {
+    action: "add",
+    min_amount: $("#gfMin").value.trim(),
+    value: $("#gfValue").value.trim() || "0",
+    game: $("#gfGame").value.trim(),
+    link: $("#gfLink").value.trim(),
+  };
+  if (!body.min_amount || !body.game || !body.link) {
+    return toast("기준 금액/사은품 게임/링크를 입력하세요.", true);
+  }
+  try {
+    await api("/api/admin/gift", body);
+    ["gfMin", "gfValue", "gfGame", "gfLink"].forEach((id) => ($("#" + id).value = ""));
+    toast("사은품 등록 완료! 유저 목록 상단에 파란 배너로 표시됩니다.");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderGifts() {
+  const box = $("#giftAdminList");
+  box.innerHTML = giftCache.length
+    ? giftCache.map((g) => `
+      <div class="req-card" style="border-color:#bfdbfe;background:#eff6ff">
+        <div class="head">
+          <div>
+            <div class="name">🎁 ${esc(g.game)}${g.value ? ` <span class="sub">(정가 ${fmtWon(g.value)}원)</span>` : ""}</div>
+            <div class="sub">1회 <b>${fmtWon(g.min_amount)}원</b> 이상 구매 시 지급 · ${fmtDate(g.created_at)}</div>
+            <div class="sub" style="word-break:break-all">링크: ${esc(g.link)}</div>
+          </div>
+          <button class="small danger" data-gfdel="${g.id}">삭제</button>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">등록된 사은품이 없어요.</div>';
+  box.querySelectorAll("[data-gfdel]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("이 사은품을 삭제할까요?")) return;
+      try {
+        await api("/api/admin/gift", { action: "delete", id: Number(b.dataset.gfdel) });
+        toast("삭제 완료");
         refresh();
       } catch (e) { toast(e.message, true); }
     }));

@@ -147,6 +147,14 @@ def init_db():
             game TEXT NOT NULL UNIQUE,
             created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS gifts (         -- 사은품 (1회 구매 금액 조건)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game TEXT NOT NULL,                    -- 사은품 게임 이름
+            link TEXT NOT NULL,                    -- 지급할 링크
+            value INTEGER NOT NULL DEFAULT 0,      -- 표시용 정가
+            min_amount INTEGER NOT NULL,           -- 1회 구매 기준 금액
+            created_at INTEGER NOT NULL
+        );
         """)
         c.commit()
         for stmt in (
@@ -155,6 +163,8 @@ def init_db():
             "ALTER TABLE orders ADD COLUMN fixed INTEGER NOT NULL DEFAULT 0",     # 1=웹이 정한 가격 그대로
             "ALTER TABLE orders ADD COLUMN link_sent INTEGER NOT NULL DEFAULT 0", # 예약: 출시 링크 발송됨
             "ALTER TABLE charges ADD COLUMN admin_note TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN gift_game TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN gift_link TEXT NOT NULL DEFAULT ''",
         ):
             try:
                 c.execute(stmt)
@@ -678,6 +688,19 @@ def media_flags(shop, name):
     return True, ("video" if files[0].rsplit(".", 1)[-1] in VIDEO_EXTS else "img")
 
 
+def gift_list(shop):
+    """유저 배너용 사은품 목록 (기준 금액 오름차순, 링크는 노출 안 함)."""
+    with db_lock:
+        rows = db().execute(
+            "SELECT game, value, min_amount FROM gifts ORDER BY min_amount, id").fetchall()
+    out = []
+    for r in rows:
+        has_img, media = media_flags(shop, r["game"])
+        out.append({"game": r["game"], "value": r["value"], "min_amount": r["min_amount"],
+                    "img": has_img, "media": media})
+    return out
+
+
 def pass_info(shop, uid):
     """게임패스 화면 데이터: 패스 상품 목록 + 내 패스 상태 + 무료 수령 가능 게임."""
     passes = shop.get("passes") or {}
@@ -779,6 +802,7 @@ def api_shopdata(req):
                       "discount_price": u["discount_price"], "note": u["note"],
                       "img": bool(u["image"])} for u in upc],
         "pass": pass_info(shop, s["uid"]),
+        "gifts": gift_list(shop),
     })
 
 
@@ -915,17 +939,23 @@ def api_order_create(req):
     balance = shop.get("balances", {}).get(s["uid"], 0)
     if balance < total:
         return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 총 {total:,}원) 충전 후 이용해주세요."}, 400)
+    gift_game, gift_link = pick_gift(total)   # 1회 구매 총액 기준 사은품
     with db_lock:
         err = _order_guards(s["uid"], games)
         if err:
             return json_resp({"error": err}, 400)
-        for g, price, fixed in priced:
+        for i, (g, price, fixed) in enumerate(priced):
             db().execute(
-                "INSERT INTO orders(uid,username,game,price,fixed,created_at,updated_at) "
-                "VALUES(?,?,?,?,?,?,?)",
-                (s["uid"], s["name"], g, price, fixed, now(), now()))
+                "INSERT INTO orders(uid,username,game,price,fixed,gift_game,gift_link,"
+                "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (s["uid"], s["name"], g, price, fixed,
+                 (gift_game or "") if i == 0 else "", (gift_link or "") if i == 0 else "",  # 사은품은 1건에만
+                 now(), now()))
         db().commit()
-    return json_resp({"ok": True, "count": len(priced), "total": total})
+    out = {"ok": True, "count": len(priced), "total": total}
+    if gift_game:
+        out["gift"] = gift_game
+    return json_resp(out)
 
 
 def api_reserve(req):
@@ -1149,7 +1179,7 @@ def api_sync_pull_orders(req):
             "UPDATE orders SET status='실패', result='처리 시간 초과 — 잔액이 차감됐다면 관리자에게 문의해주세요', updated_at=? "
             "WHERE status='처리중' AND updated_at<?", (now(), now() - 900))
         rows = db().execute(
-            "SELECT id,uid,username,game,price,kind,fixed FROM orders "
+            "SELECT id,uid,username,game,price,kind,fixed,gift_game,gift_link FROM orders "
             "WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
         for r in rows:
             db().execute("UPDATE orders SET status='처리중', updated_at=? WHERE id=?", (now(), r["id"]))
@@ -1326,6 +1356,7 @@ def api_admin_requests(req):
         charges = db().execute("SELECT * FROM charges ORDER BY id DESC LIMIT 100").fetchall()
         orders = db().execute("SELECT * FROM orders ORDER BY id DESC LIMIT 100").fetchall()
         regs = db().execute("SELECT * FROM product_regs ORDER BY id DESC LIMIT 100").fetchall()
+        gifts = db().execute("SELECT * FROM gifts ORDER BY min_amount, id").fetchall()
         notices = db().execute("SELECT * FROM notices ORDER BY id DESC LIMIT 50").fetchall()
         upcoming = db().execute("SELECT * FROM upcoming ORDER BY id DESC LIMIT 50").fetchall()
         discounts = db().execute("SELECT * FROM discounts ORDER BY id DESC LIMIT 100").fetchall()
@@ -1340,6 +1371,7 @@ def api_admin_requests(req):
                       "orders": row_dicts(orders), "notices": row_dicts(notices),
                       "upcoming": row_dicts(upcoming), "discounts": row_dicts(discounts),
                       "bests": row_dicts(bests), "regs": row_dicts(regs),
+                      "gifts": row_dicts(gifts),
                       "categories": categories,
                       "product_names": [{"name": n, "price": i.get("price", 0)}
                                         for n, i in (shop.get("products") or {}).items()
@@ -1583,6 +1615,46 @@ def api_admin_discount(req):
     else:
         return json_resp({"error": "잘못된 요청"}, 400)
     return json_resp({"ok": True})
+
+
+def api_admin_gift(req):
+    """사은품 관리. {action: 'add'|'delete', id?, game, link, value, min_amount}"""
+    d = req.read_json() or {}
+    action = d.get("action")
+    with db_lock:
+        if action == "add":
+            game = clean(d.get("game"), 100)
+            link = clean(d.get("link"), 500)
+            try:
+                min_amount = int(str(d.get("min_amount", "")).replace(",", "").strip())
+                value = int(str(d.get("value", "0")).replace(",", "").strip() or 0)
+            except ValueError:
+                return json_resp({"error": "금액은 숫자로 입력하세요."}, 400)
+            if not game or min_amount <= 0 or value < 0:
+                return json_resp({"error": "사은품 게임/기준 금액을 확인하세요."}, 400)
+            if not re.match(r"^https?://", link):
+                return json_resp({"error": "지급 링크는 http(s):// 로 시작해야 합니다."}, 400)
+            db().execute(
+                "INSERT INTO gifts(game,link,value,min_amount,created_at) VALUES(?,?,?,?,?)",
+                (game, link, value, min_amount, now()))
+        elif action == "delete":
+            rid = d.get("id")
+            if not isinstance(rid, int):
+                return json_resp({"error": "잘못된 요청"}, 400)
+            db().execute("DELETE FROM gifts WHERE id=?", (rid,))
+        else:
+            return json_resp({"error": "잘못된 요청"}, 400)
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def pick_gift(total):
+    """1회 구매 총액으로 지급할 사은품 선택 (기준 금액이 가장 높은 것 하나)."""
+    with db_lock:
+        row = db().execute(
+            "SELECT game, link FROM gifts WHERE min_amount<=? "
+            "ORDER BY min_amount DESC, id DESC LIMIT 1", (total,)).fetchone()
+    return (row["game"], row["link"]) if row else (None, None)
 
 
 def api_admin_best(req):
@@ -1847,6 +1919,7 @@ POST_ADMIN_ROUTES = {
     "/api/admin/discount": api_admin_discount,
     "/api/admin/best": api_admin_best,
     "/api/admin/product_reg": api_admin_product_reg,
+    "/api/admin/gift": api_admin_gift,
     "/api/admin/reservation_send": api_admin_reservation_send,
 }
 

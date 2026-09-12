@@ -169,6 +169,21 @@
       <button class="primary" id="bestSet">BEST 지정</button>
       <div id="bestAdminList" style="margin-top:16px"><div class="empty">불러오는 중...</div></div>
     </div>
+    <div class="card" style="border-color:#2563eb">
+      <h2 style="color:#1d4ed8">🎁 사은품</h2>
+      <p class="desc">1회 구매(장바구니 합계 포함) 금액이 기준 이상이면 구매 완료 DM에 사은품 링크가 함께 지급되고,
+      유저 게임 목록 상단에 <b style="color:#1d4ed8">파란 배너</b>로 안내됩니다.</p>
+      <div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label>기준 금액 (원, 1회 구매)</label><input type="text" id="gfMin" maxlength="12" placeholder="20000"></div>
+        <div><label>사은품 표시 정가 (원, 선택)</label><input type="text" id="gfValue" maxlength="12" placeholder="5000"></div>
+      </div>
+      <label>사은품 게임 이름</label>
+      <input type="text" id="gfGame" maxlength="100" list="dcGameList" placeholder="목록에 없는 서비스 게임도 가능">
+      <label>지급할 링크</label>
+      <input type="text" id="gfLink" maxlength="500" placeholder="https://...">
+      <button class="primary" id="gfAdd" style="background:#2563eb">사은품 등록</button>
+      <div id="giftAdminList" style="margin-top:16px"><div class="empty">불러오는 중...</div></div>
+    </div>
   </section>
 
   <div class="footer">H Company · 30일 지난 기록은 자동 삭제됩니다 (캡쳐 포함)</div>

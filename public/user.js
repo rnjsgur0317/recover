@@ -61,6 +61,7 @@ async function loadShop() {
       ? `목록·잔액은 봇과 자동 동기화됩니다. (마지막 동기화: ${fmtDate(shopCache.updated_at)})`
       : "아직 봇과 동기화 전입니다. 잠시 후 새로고침해주세요.";
     renderCatSide();
+    renderGiftBanner();
     renderShop();
     renderProfile();
   } catch (e) {
@@ -239,6 +240,25 @@ function renderUpcomingInto(box, q) {
         b.disabled = false;
       }
     }));
+}
+
+// ---- 사은품 배너 (파란 테두리)
+function renderGiftBanner() {
+  const box = $("#giftBanner");
+  const gifts = shopCache.gifts || [];
+  if (!gifts.length) { box.innerHTML = ""; return; }
+  box.innerHTML = gifts.map((g) => `
+    <div class="gift-banner">
+      <div class="gift-head">🎁 <b>1회 ${fmtWon(g.min_amount)}원 이상</b> 구매 시 사은품 증정!</div>
+      <div class="gift-body">
+        ${g.img ? `<img class="gift-thumb" src="/api/shop/image?name=${encodeURIComponent(g.game)}" alt="">` : ""}
+        <div>
+          <div class="gift-name">${esc(g.game)}</div>
+          ${g.value ? `<div class="gift-value"><s>${fmtWon(g.value)}원</s> → <b>무료</b></div>` : '<div class="gift-value"><b>무료 증정</b></div>'}
+          <div class="hint" style="margin:2px 0 0">장바구니 일괄 구매 합계도 포함! 구매 완료 DM으로 함께 지급됩니다.</div>
+        </div>
+      </div>
+    </div>`).join("");
 }
 
 // ---- 게임패스
@@ -433,9 +453,9 @@ async function openDetail(name) {
       if (!confirm(`'${d.name}'을(를) ${fmtWon(nowPrice)}원에 구매할까요?`)) return;
       try {
         buyBtn.disabled = true;
-        await api("/api/order", { game: d.name });
+        const r = await api("/api/order", { game: d.name });
         closeDetail();
-        toast("주문 완료! 봇이 곧 처리하고 디스코드 DM으로 링크를 보내드려요. (최대 1분)");
+        toast(`주문 완료!${r.gift ? ` 🎁 사은품 '${r.gift}' 포함!` : ""} 봇이 곧 처리하고 DM으로 링크를 보내드려요. (최대 1분)`);
         loadMy();
       } catch (e) {
         toast(e.message, true);
@@ -510,10 +530,10 @@ function renderCart() {
     if (!confirm(`${items.length}개 게임을 총 ${fmtWon(total)}원에 일괄 구매할까요?\n\n각 게임의 링크가 디스코드 DM으로 발송됩니다.`)) return;
     try {
       $("#cartBuyAll").disabled = true;
-      await api("/api/order", { games: items });
+      const r = await api("/api/order", { games: items });
       setCart([]);
       $("#cartOverlay").hidden = true;
-      toast("일괄 주문 완료! 봇이 곧 처리하고 게임마다 DM으로 링크를 보내드려요.");
+      toast(`일괄 주문 완료!${r.gift ? ` 🎁 사은품 '${r.gift}' 포함!` : ""} 봇이 곧 처리하고 게임마다 DM으로 링크를 보내드려요.`);
       loadMy();
     } catch (e) {
       toast(e.message, true);

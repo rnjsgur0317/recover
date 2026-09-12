@@ -205,6 +205,26 @@ button.small.danger:hover { color: #111; }
 }
 .game-tag.best-tag { background: var(--best); vertical-align: 3px; }
 
+/* 사은품 배너 — 파랑 포인트 */
+:root { --gift: #2563eb; }
+.gift-banner {
+  border: 2px solid var(--gift);
+  background: #eff6ff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.gift-head { font-size: .95rem; color: #1d4ed8; }
+.gift-head b { font-weight: 800; }
+.gift-body { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.gift-thumb {
+  width: 84px; height: 48px; object-fit: cover; flex: none;
+  border-radius: 8px; border: 1px solid #bfdbfe;
+}
+.gift-name { font-weight: 800; font-size: .95rem; }
+.gift-value { font-size: .84rem; color: #1d4ed8; margin-top: 2px; }
+.gift-value s { color: #93a6c8; }
+
 /* 게임패스 — 보라 포인트 */
 :root { --pass: #8b5cf6; }
 .game-tag.pass-tag, .off-chip.pass-chip { background: var(--pass); }
