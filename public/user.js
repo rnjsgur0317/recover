@@ -547,6 +547,39 @@ $("#cartClose").addEventListener("click", () => { $("#cartOverlay").hidden = tru
 $("#cartOverlay").addEventListener("click", (e) => { if (e.target === $("#cartOverlay")) $("#cartOverlay").hidden = true; });
 setCart(getCart());
 
+// ---- 구매 등급 (역할 이름·혜택 안내)
+const TIER_INFO = [
+  { label: "1회 구매",       name: "일반",   benefit: "-",    cond: "첫 구매 시" },
+  { label: "25,000원 이상",  name: "VIP",    benefit: "2%",   cond: "누적 25,000원 이상" },
+  { label: "40,000원 이상",  name: "VVIP",   benefit: "5%",   cond: "누적 40,000원 이상" },
+  { label: "70,000원 이상",  name: "Sky",    benefit: "8%",   cond: "누적 70,000원 이상" },
+  { label: "120,000원 이상", name: "Heaven", benefit: "10%",  cond: "누적 120,000원 이상" },
+  { label: null,             name: "Space",  benefit: "15%",  cond: "특별 등급 (관리자 부여)" },
+];
+
+function tierName(label) {
+  const t = TIER_INFO.find((x) => x.label === label);
+  return t ? t.name : label;
+}
+
+function renderTierTable(currentLabel) {
+  $("#tierTable").innerHTML = TIER_INFO.map((t) => `
+    <div class="tier-row${t.label === currentLabel ? " me" : ""}">
+      <div>
+        <div class="tier-row-name">${esc(t.name)}${t.label === currentLabel ? ' <span class="game-tag">내 등급</span>' : ""}</div>
+        <div class="tier-row-cond">${esc(t.cond)}</div>
+      </div>
+      <div class="tier-row-benefit">${esc(t.benefit)}</div>
+    </div>`).join("");
+}
+
+$("#tierInfoBtn").addEventListener("click", () => {
+  renderTierTable(shopCache?.profile?.tier || null);
+  $("#tierOverlay").hidden = false;
+});
+$("#tierClose").addEventListener("click", () => { $("#tierOverlay").hidden = true; });
+$("#tierOverlay").addEventListener("click", (e) => { if (e.target === $("#tierOverlay")) $("#tierOverlay").hidden = true; });
+
 // ---- 구매자 정보 (봇 데이터)
 function renderProfile() {
   const p = shopCache && shopCache.profile;
@@ -559,7 +592,7 @@ function renderProfile() {
   $("#profileCard").hidden = false;
   $("#profileStats").innerHTML = `
     <div class="stat"><div class="num">${fmtWon(p.total)}원</div><div class="lbl">누적 구매액</div></div>
-    <div class="stat"><div class="num" style="font-size:1.05rem;padding-top:6px">${esc(p.tier)}</div><div class="lbl">현재 등급</div></div>
+    <div class="stat"><div class="num" style="font-size:1.15rem;padding-top:4px">${esc(tierName(p.tier))}</div><div class="lbl">현재 등급${TIER_INFO.some((t) => t.label === p.tier && t.label) ? ` · ${esc(p.tier)}` : ""}</div></div>
     <div class="stat"><div class="num">${fmtWon(p.purchase_count)}</div><div class="lbl">총 구매 횟수</div></div>
     <div class="stat"><div class="num">${fmtWon(p.point)}p</div><div class="lbl">보유 포인트</div></div>`;
 
@@ -568,7 +601,7 @@ function renderProfile() {
     $("#tierProgress").innerHTML = `
       <div class="tier-bar-wrap">
         <div class="tier-bar-label">
-          <span>다음 등급 <b>${esc(p.next_tier)}</b>까지 <b>${fmtWon(p.remaining)}원</b> 남음</span>
+          <span>다음 등급 <b>${esc(tierName(p.next_tier))}</b> (${esc(p.next_tier)})까지 <b>${fmtWon(p.remaining)}원</b> 남음</span>
           <span>${pct}%</span>
         </div>
         <div class="tier-bar"><div class="tier-bar-fill" style="width:${pct}%"></div></div>
