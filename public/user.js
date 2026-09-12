@@ -549,12 +549,12 @@ setCart(getCart());
 
 // ---- 구매 등급 (역할 이름·혜택 안내)
 const TIER_INFO = [
-  { label: "1회 구매",       name: "일반",   benefit: "-",    cond: "첫 구매 시" },
-  { label: "25,000원 이상",  name: "VIP",    benefit: "2%",   cond: "누적 25,000원 이상" },
-  { label: "40,000원 이상",  name: "VVIP",   benefit: "5%",   cond: "누적 40,000원 이상" },
-  { label: "70,000원 이상",  name: "Sky",    benefit: "8%",   cond: "누적 70,000원 이상" },
-  { label: "120,000원 이상", name: "Heaven", benefit: "10%",  cond: "누적 120,000원 이상" },
-  { label: null,             name: "Space",  benefit: "15%",  cond: "특별 등급 (관리자 부여)" },
+  { label: "1회 구매",       name: "일반",   benefit: "-",        cond: "첫 구매 시" },
+  { label: "25,000원 이상",  name: "VIP",    benefit: "2% 할인",  cond: "누적 25,000원 이상" },
+  { label: "40,000원 이상",  name: "VVIP",   benefit: "5% 할인",  cond: "누적 40,000원 이상" },
+  { label: "70,000원 이상",  name: "Sky",    benefit: "8% 할인",  cond: "누적 70,000원 이상" },
+  { label: "120,000원 이상", name: "Heaven", benefit: "10% 할인", cond: "누적 120,000원 이상" },
+  { label: null,             name: "Space",  benefit: "15% 할인", cond: "특별 등급 (관리자 부여)" },
 ];
 
 function tierName(label) {
