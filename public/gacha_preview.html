@@ -3,373 +3,340 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>가챠 연출 프로토타입 v2</title>
+<title>뽑기 상자 프로토타입 v4</title>
 <style>
+:root { --rare: #8b8f98; }
 * { box-sizing: border-box; }
 body {
-  margin: 0; min-height: 100vh;
-  background: radial-gradient(circle at 50% 0%, #ffffff, #ededf0 70%);
-  color: #18181b;
-  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
-  display: flex; flex-direction: column; align-items: center; padding: 26px 8px 60px;
+  margin: 0; background: #f4f4f5; color: #18181b;
+  font-family: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  padding: 28px 16px 60px;
 }
-h1 { font-size: 1.2rem; letter-spacing: -.02em; margin: 0 0 20px; }
-.row { display: flex; flex-wrap: nowrap; gap: 46px; justify-content: center; }
-.machine-wrap { text-align: center; width: 320px; flex: none; }
-.machine-title { font-weight: 800; font-size: 1.12rem; }
-.machine-sub { color: #71717a; font-size: .82rem; margin: 3px 0 10px; }
-.stage { position: relative; width: 320px; height: 470px; }
-svg { overflow: visible; display: block; }
+h1 { text-align: center; font-size: 1.35rem; margin: 0 0 18px; letter-spacing: -.02em; }
+.wrap { max-width: 760px; margin: 0 auto; }
 
-/* ── 머신 애니메이션 ── */
-.machine { transform-origin: 160px 420px; }
-.idle .machine { animation: breathe 4s ease-in-out infinite; }
-@keyframes breathe { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-.shaking .machine { animation: shake .5s ease-in-out 2; }
+/* ── 상자 선택 탭 ── */
+.tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 22px; }
+.tabs button {
+  border: 1.5px solid #e4e4e7; background: #fff; color: #52525b; border-radius: 999px;
+  padding: 9px 18px; font-size: .9rem; font-weight: 700; cursor: pointer;
+}
+.tabs button.on { background: #18181b; color: #fff; border-color: #18181b; }
+.tabs button.on.prem { background: linear-gradient(180deg, #f3d271, #c89b2a 60%, #a87e14); color: #2a1e00; border-color: #c89b2a; }
+
+/* ── 스테이지 ── */
+.stage { position: relative; }
+.glow-bg {
+  position: absolute; left: 50%; top: 60px; width: 420px; height: 420px; margin-left: -210px;
+  border-radius: 50%; pointer-events: none; opacity: 0; z-index: 0;
+  background: radial-gradient(circle, var(--rare) 0%, transparent 65%);
+  transition: opacity .8s;
+}
+.open .glow-bg { opacity: .45; }
+
+/* ── 상자 (3D) ── */
+.box-area { position: relative; height: 230px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; perspective: 900px; }
+.box { position: relative; width: 220px; height: 140px; transform-style: preserve-3d; }
+.shake .box { animation: shake .55s ease-in-out; }
 @keyframes shake {
-  0%,100% { transform: rotate(0); }
-  20% { transform: rotate(-1.4deg); } 40% { transform: rotate(1.4deg); }
-  60% { transform: rotate(-1deg); } 80% { transform: rotate(1deg); }
+  0%,100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(-7px) rotate(-3deg); }
+  40% { transform: translateX(7px) rotate(3deg); }
+  60% { transform: translateX(-5px) rotate(-2deg); }
+  80% { transform: translateX(5px) rotate(2deg); }
 }
-.knob-rot { transform-origin: 160px 330px; transition: transform 1.1s cubic-bezier(.55,0,.45,1); }
-.cranking .knob-rot { transform: rotate(360deg); }
-.pile { transform-origin: 160px 170px; }
-.shaking .pile { animation: jiggle .28s ease-in-out 4; }
-@keyframes jiggle { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-/* 코인: 투입구 위에서 나타나 구멍 안으로 쏙 (투입구 위쪽만 보이게 클립) */
-.coin-in {
-  opacity: 0; transform: translateY(-34px);
-  transform-box: view-box; transform-origin: 222px 262px;
-  transition: opacity .2s, transform .55s cubic-bezier(.4,0,.8,1);
+.body {
+  position: absolute; inset: 0; border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #e9e9ee); border: 2.5px solid #18181b;
+  box-shadow: 0 18px 30px rgba(0,0,0,.18), inset 0 -14px 0 rgba(0,0,0,.06);
+  display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px;
 }
-.coined .coin-in { opacity: 1; transform: translateY(46px) scaleX(.3); }
+.body .lock { width: 30px; height: 30px; border-radius: 50%; border: 3px solid #18181b; position: relative; background: #fff; }
+.body .lock::after { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 10px; margin: -3px 0 0 -2.5px; background: #18181b; border-radius: 2px; }
+.body .name { font-size: .78rem; font-weight: 800; letter-spacing: .18em; color: #18181b; }
+.lid {
+  position: absolute; left: -6px; right: -6px; top: -26px; height: 40px; border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff, #e2e2e8); border: 2.5px solid #18181b;
+  transform-origin: 50% 0%; transition: transform .7s cubic-bezier(.3,1.4,.5,1);
+  box-shadow: 0 6px 14px rgba(0,0,0,.15);
+}
+.open .lid { transform: rotateX(-118deg); }
+.beam {
+  position: absolute; left: 50%; bottom: 100%; width: 120px; height: 0; margin-left: -60px;
+  background: linear-gradient(180deg, transparent, var(--rare)); opacity: .55;
+  clip-path: polygon(20% 100%, 80% 100%, 100% 0, 0 0); transition: height .6s ease-out .15s;
+}
+.open .beam { height: 180px; }
+.inside {
+  position: absolute; left: 10px; right: 10px; top: 8px; height: 40px; border-radius: 8px;
+  background: radial-gradient(ellipse at 50% 100%, var(--rare), transparent 70%); opacity: 0; transition: opacity .5s .2s;
+}
+.open .inside { opacity: .8; }
 
-/* ── 배출구 공간 (뚜껑 없음) — 캡슐이 이 안으로 내려옴 ── */
-.chute {
-  position: absolute; left: 92px; top: 372px; width: 76px; height: 48px;
-  overflow: hidden; border-radius: 11px; z-index: 6;
-}
-.opened .chute { overflow: visible; }
-.out-capsule {
-  position: absolute; left: 50%; top: 50%; width: 46px; height: 46px;
-  margin: -23px 0 0 -23px; opacity: 0; cursor: pointer;
-  filter: drop-shadow(0 3px 4px rgba(0,0,0,.35));
-}
-.dropping .out-capsule { animation: slide-in .9s cubic-bezier(.35,0,.3,1.35) forwards; }
-@keyframes slide-in {
-  0%   { opacity: 0; transform: translateY(-58px) rotate(-30deg); }
-  30%  { opacity: 1; }
-  60%  { transform: translateY(6px) rotate(8deg); }
-  80%  { transform: translateY(-5px) rotate(-3deg); }
-  100% { opacity: 1; transform: translateY(0) rotate(0); }
-}
-.pulse .out-capsule { animation: pulse 1s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }
-/* 개봉: 캡슐이 배출구에서 튀어나와 중앙으로 커지고 → 반으로 갈라짐 */
-.opened .out-capsule {
-  cursor: default; animation: none;
-  transform: translate(30px, -100px) scale(2); opacity: 1;
-  transition: transform .55s cubic-bezier(.2,1.3,.4,1);
-}
-.cap-top, .cap-bot { transition: transform .5s cubic-bezier(.6,-.25,.4,1.25), opacity .45s; }
-.split .cap-top { transform: translate(-16px,-40px) rotate(-34deg); opacity: 0; }
-.split .cap-bot { transform: translate(16px,30px) rotate(28deg); opacity: 0; }
+/* 고급 상자 */
+.prem .body { background: linear-gradient(180deg, #2a2723, #0f0d0b); border-color: #d9ab3c; box-shadow: 0 18px 30px rgba(0,0,0,.35), inset 0 -14px 0 rgba(255,255,255,.04); }
+.prem .body .lock { border-color: #f3d271; background: #1a1714; }
+.prem .body .lock::after { background: #f3d271; }
+.prem .body .name { color: #f3d271; }
+.prem .lid { background: linear-gradient(180deg, #f3d271, #c89b2a 60%, #a87e14); border-color: #7a5a0e; }
 
-/* ── 상품 공개 ── */
-.prize {
-  position: absolute; left: 50%; top: 256px; transform: translateX(-50%) scale(0);
-  background: #fff; border: 2.5px solid var(--rare,#d4d4d8); border-radius: 16px;
-  padding: 15px 24px 14px; min-width: 185px; z-index: 7;
-  box-shadow: 0 14px 40px rgba(0,0,0,.22);
-  transition: transform .55s cubic-bezier(.2,1.7,.4,1);
+/* ── 룰렛 ── */
+.stack { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; position: relative; z-index: 1; }
+.roulette-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s ease; }
+.roulette-wrap.show { grid-template-rows: 1fr; }
+.roulette-wrap > div { overflow: hidden; }
+.roulette-label { font-size: .74rem; font-weight: 700; color: #71717a; letter-spacing: .08em; margin: 2px 0 6px 4px; }
+.roulette {
+  position: relative; height: 104px; background: #fff; border: 2px solid #18181b; border-radius: 14px; overflow: hidden;
 }
-.split .prize { transform: translateX(-50%) scale(1); }
-.prize .tier {
-  display: inline-block; font-size: .68rem; font-weight: 800; letter-spacing: .14em;
-  color: #fff; background: var(--rare); border-radius: 999px; padding: 2px 11px;
+.roulette::before, .roulette::after {
+  content: ""; position: absolute; left: 50%; margin-left: -9px; border: 9px solid transparent; z-index: 3;
 }
-.prize .name { font-weight: 800; font-size: 1.06rem; margin-top: 7px; }
-.glow {
-  position: absolute; left: 50%; top: 201px; width: 190px; height: 190px;
-  margin-left: -95px; border-radius: 50%; opacity: 0; z-index: 5; pointer-events: none;
-  background: radial-gradient(circle, var(--rare) 0%, transparent 62%);
+.roulette::before { top: -2px; border-top: 12px solid #18181b; }
+.roulette::after { bottom: -2px; border-bottom: 12px solid #18181b; }
+.roulette .line { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #18181b; opacity: .35; z-index: 2; }
+.roulette .fade { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(90deg, #fff 0%, transparent 18%, transparent 82%, #fff 100%); }
+.strip { display: flex; height: 100%; padding: 8px 0; will-change: transform; }
+.tile {
+  flex: 0 0 116px; margin: 0 4px; border-radius: 10px; color: #fff; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px; font-weight: 800; font-size: .95rem; letter-spacing: .04em;
+  background: var(--c); box-shadow: inset 0 -6px 0 rgba(0,0,0,.18); transition: transform .35s, filter .35s;
 }
-.split .glow { animation: burst 1.1s ease-out; }
-@keyframes burst {
-  0% { opacity: 0; transform: scale(.25); }
-  28% { opacity: .9; }
-  100% { opacity: 0; transform: scale(2.3); }
+.tile small { font-size: .68rem; font-weight: 600; opacity: .85; letter-spacing: 0; }
+.landed .tile { filter: saturate(.4) brightness(.92); }
+.landed .tile.hit { filter: none; transform: scale(1.1); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--c), 0 8px 22px rgba(0,0,0,.25); }
+
+.prem .roulette { background: #141210; border-color: #d9ab3c; }
+.prem .roulette::before { border-top-color: #f3d271; } .prem .roulette::after { border-bottom-color: #f3d271; }
+.prem .roulette .line { background: #f3d271; }
+.prem .roulette .fade { background: linear-gradient(90deg, #141210 0%, transparent 18%, transparent 82%, #141210 100%); }
+.prem .landed .tile.hit { box-shadow: 0 0 0 3px #141210, 0 0 0 5px var(--c), 0 8px 22px rgba(0,0,0,.5); }
+
+/* ── 결과 카드 ── */
+.result {
+  margin: 22px auto 0; max-width: 360px; background: #fff; border: 2.5px solid var(--rare); border-radius: 18px;
+  padding: 18px 22px; text-align: center; transform: scale(0); transition: transform .55s cubic-bezier(.2,1.7,.4,1);
+  box-shadow: 0 14px 40px rgba(0,0,0,.18);
 }
-.spark { position: absolute; z-index: 5; pointer-events: none; font-size: 18px; opacity: 0; }
-.split .spark { animation: fly 1s ease-out forwards; }
+.result.show { transform: scale(1); }
+.result .tier { display: inline-block; background: var(--rare); color: #fff; border-radius: 999px; padding: 3px 12px; font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
+.result .name { font-size: 1.25rem; font-weight: 900; margin-top: 8px; }
+.result .sub { font-size: .78rem; color: #71717a; margin-top: 4px; }
+
+/* ── 버튼 ── */
+.ctrl { text-align: center; margin-top: 22px; }
+button.pull {
+  border: 0; background: #18181b; color: #fff; border-radius: 12px; padding: 14px 42px; font-size: 1rem; font-weight: 800;
+  cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.2); transition: transform .12s;
+}
+button.pull:active { transform: scale(.96); }
+button.pull:disabled { opacity: .45; cursor: default; }
+.prem button.pull { background: linear-gradient(180deg, #f3d271, #c89b2a 60%, #a87e14); color: #2a1e00; box-shadow: 0 6px 18px rgba(200,155,42,.45); }
+.hint { color: #a1a1aa; font-size: .76rem; margin-top: 10px; }
+
+/* 확률표 */
+.odds { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+.odds span { font-size: .72rem; font-weight: 700; padding: 4px 10px; border-radius: 999px; color: #fff; background: var(--c); }
+
+.spark { position: absolute; z-index: 5; pointer-events: none; font-size: 20px; opacity: 0; left: 50%; top: 120px; }
+.spark.fly { animation: fly 1.1s ease-out forwards; }
 @keyframes fly {
   0% { opacity: 1; transform: translate(0,0) scale(.5); }
-  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.2); }
-}
-
-button.pull {
-  margin-top: 6px; width: 82%;
-  border: none; border-radius: 12px; padding: 14px;
-  font-size: .98rem; font-weight: 800; font-family: inherit; cursor: pointer;
-  background: linear-gradient(180deg, #2c2c30, #111113);
-  color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.25), inset 0 1px 0 #ffffff22;
-}
-button.pull:active { transform: translateY(1px); }
-button.pull:disabled { opacity: .45; }
-.premium button.pull {
-  background: linear-gradient(180deg, #f3d271, #c89b2a 60%, #a87e14);
-  color: #2a1e00; box-shadow: 0 4px 16px rgba(200,155,42,.45), inset 0 1px 0 #ffffff88;
-}
-.hint { color: #a1a1aa; font-size: .76rem; margin-top: 9px; }
-
-@media (max-width: 700px) {
-  .row { gap: 0; }
-  .machine-wrap { width: 175px; }
-  .stage { transform: scale(.54); transform-origin: top center; height: 264px; width: 320px; margin-left: -72px; }
-  button.pull { width: 96%; font-size: .82rem; padding: 11px; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.3); }
 }
 </style>
 </head>
 <body>
-<h1>🎰 뽑기</h1>
-<div class="row">
-
-  <div class="machine-wrap" id="wrapNormal">
-    <div class="machine-title">일반 뽑기</div>
-    <div class="machine-sub">1회 200P · 마일리지로 뽑기</div>
-    <div class="stage idle" id="stageNormal"></div>
-    <button class="pull" onclick="pull('Normal')">🪙 200P 뽑기</button>
-    <div class="hint">캡슐이 나오면 눌러서 열어보세요</div>
+<h1>🎁 뽑기 상자</h1>
+<div class="wrap">
+  <div class="tabs">
+    <button id="tabNormal" class="on" onclick="selectBox('Normal')">일반 상자 · 200P</button>
+    <button id="tabPremium" onclick="selectBox('Premium')">고급 상자 · 1,000원</button>
   </div>
 
-  <div class="machine-wrap premium" id="wrapPremium">
-    <div class="machine-title">✨ 고급 뽑기</div>
-    <div class="machine-sub">1회 1,000원 · 현금으로 뽑기</div>
-    <div class="stage idle" id="stagePremium"></div>
-    <button class="pull" onclick="pull('Premium')">💰 1,000원 뽑기</button>
-    <div class="hint">캡슐이 나오면 눌러서 열어보세요</div>
-  </div>
+  <div id="stage" class="stage">
+    <div class="glow-bg"></div>
+    <div class="box-area">
+      <div class="box">
+        <div class="beam"></div>
+        <div class="body"><div class="lock"></div><div class="name" id="boxName">NORMAL BOX</div></div>
+        <div class="inside"></div>
+        <div class="lid"></div>
+      </div>
+    </div>
 
+    <div class="stack">
+      <!-- 2차 뽑기(내용물) — 등급 룰렛 위에 나타남 -->
+      <div class="roulette-wrap" id="wrap2"><div>
+        <div class="roulette-label">2차 · 내용물</div>
+        <div class="roulette"><div class="line"></div><div class="fade"></div><div class="strip" id="strip2"></div></div>
+      </div></div>
+      <!-- 1차 뽑기(등급) -->
+      <div class="roulette-wrap" id="wrap1"><div>
+        <div class="roulette-label">1차 · 등급</div>
+        <div class="roulette"><div class="line"></div><div class="fade"></div><div class="strip" id="strip1"></div></div>
+      </div></div>
+    </div>
+
+    <div class="result" id="result"></div>
+
+    <div class="ctrl">
+      <button class="pull" id="btn" onclick="pull()">🎁 200P 뽑기</button>
+      <div class="hint">뽑기를 누르면 상자가 열리고 룰렛이 돌아갑니다</div>
+      <div class="odds" id="odds"></div>
+    </div>
+  </div>
 </div>
 
 <script>
-"use strict";
+/* ── 프로토타입 데이터 (확률·내용물은 임시값, 실제 구현 시 관리자에서 설정) ── */
+const BOXES = {
+  Normal: {
+    name: "NORMAL BOX", cost: "200P", prem: false,
+    tiers: [
+      { label: "노말",   p: 60, color: "#8b8f98", items: [{ n: "100P" }, { n: "200P" }, { n: "50P" }] },
+      { label: "레어",   p: 25, color: "#3b82f6", items: [{ n: "500P" }, { n: "잔액 1,000원" }] },
+      { label: "에픽",   p: 12, color: "#8b5cf6", items: [{ n: "게임패스 1일권" }, { n: "잔액 3,000원" }] },
+      { label: "레전드", p: 3,  color: "#f59e0b", items: [{ n: "잔액 10,000원" }, { n: "게임 1종 (1만원 이하)" }] },
+    ],
+  },
+  Premium: {
+    name: "PREMIUM BOX", cost: "1,000원", prem: true,
+    tiers: [
+      { label: "노말",   p: 45, color: "#8b8f98", items: [{ n: "300P" }, { n: "잔액 500원" }] },
+      { label: "레어",   p: 30, color: "#3b82f6", items: [{ n: "잔액 1,500원" }, { n: "1,000P" }] },
+      { label: "에픽",   p: 18, color: "#8b5cf6", items: [{ n: "게임패스 3일권" }, { n: "잔액 5,000원" }] },
+      { label: "레전드", p: 7,  color: "#f59e0b", items: [{ n: "게임 1종 (2만원 이하)" }, { n: "잔액 20,000원" }, { n: "게임패스 7일권" }] },
+    ],
+  },
+};
 
-const CAP_COLORS = ["#ff6b81","#4fa8ff","#5fd07a","#ffc94d","#b07df0","#ff9c5f","#4ed6c9"];
+let cur = "Normal";
+let busy = false;
+const stage = document.getElementById("stage");
 
-function machineSVG(prem) {
-  const id = prem ? "P" : "N";
-  // 팔레트
-  const bodyA   = prem ? "#3a3430" : "#ffffff";
-  const bodyB   = prem ? "#171412" : "#d9dbe2";
-  const trim    = prem ? "#d9ab3c" : "#26262b";
-  const trimHi  = prem ? "#f6dd8d" : "#5c5c66";
-  const faceA   = prem ? "#26211d" : "#f6f7fa";
-  const faceB   = prem ? "#0f0d0b" : "#c9ccd6";
-  const domeTint= prem ? "#fff3cf" : "#eaf3ff";
+function selectBox(k) {
+  if (busy) return;
+  cur = k;
+  const b = BOXES[k];
+  document.getElementById("tabNormal").className = k === "Normal" ? "on" : "";
+  document.getElementById("tabPremium").className = k === "Premium" ? "on prem" : "";
+  stage.classList.toggle("prem", b.prem);
+  document.getElementById("boxName").textContent = b.name;
+  document.getElementById("btn").textContent = "🎁 " + b.cost + " 뽑기";
+  document.getElementById("odds").innerHTML = b.tiers.map((t) =>
+    `<span style="--c:${t.color}">${t.label} ${t.p}%</span>`).join("");
+  reset();
+}
 
-  // 캡슐 무더기 (뒤쪽 어둡게 → 앞쪽 밝게, 겹겹이)
-  let pile = "";
-  const rows = [ {y:196, n:6, r:17, dim:.55}, {y:172, n:5, r:18, dim:.75}, {y:146, n:4, r:19, dim:1} ];
-  let ci = 0;
-  for (const row of rows) {
-    const w = (row.n - 1) * (row.r * 1.75);
-    for (let i = 0; i < row.n; i++) {
-      const x = 160 - w / 2 + i * (row.r * 1.75) + (Math.sin(ci * 7) * 4);
-      const c = CAP_COLORS[ci++ % CAP_COLORS.length];
-      pile += `
-      <g opacity="${row.dim}">
-        <circle cx="${x}" cy="${row.y}" r="${row.r}" fill="url(#capG${id}${ci})"/>
-        <path d="M ${x-row.r} ${row.y} a ${row.r} ${row.r} 0 0 0 ${row.r*2} 0 z" fill="#ffffff" opacity=".92"/>
-        <circle cx="${x}" cy="${row.y}" r="${row.r}" fill="none" stroke="#00000022"/>
-        <ellipse cx="${x-row.r*.35}" cy="${row.y-row.r*.45}" rx="${row.r*.3}" ry="${row.r*.18}" fill="#fff" opacity=".8" transform="rotate(-25 ${x} ${row.y})"/>
-      </g>
-      <defs><radialGradient id="capG${id}${ci}" cx=".35" cy=".3" r="1">
-        <stop offset="0%" stop-color="${c}" stop-opacity=".65"/>
-        <stop offset="60%" stop-color="${c}"/>
-        <stop offset="100%" stop-color="${c}" stop-opacity=".8"/>
-      </radialGradient></defs>`;
-    }
+function reset() {
+  stage.classList.remove("open", "shake");
+  stage.style.setProperty("--rare", "#8b8f98");
+  for (const id of ["wrap1", "wrap2"]) document.getElementById(id).classList.remove("show");
+  for (const id of ["strip1", "strip2"]) {
+    const s = document.getElementById(id);
+    s.style.transition = "none"; s.style.transform = "translateX(0)"; s.innerHTML = "";
+    s.parentElement.classList.remove("landed");
   }
-
-  const sparkles = prem ? `
-    <text x="52" y="120" font-size="15" fill="#f6dd8d" opacity=".9">✦</text>
-    <text x="262" y="96" font-size="11" fill="#f6dd8d" opacity=".7">✦</text>
-    <text x="248" y="248" font-size="13" fill="#f6dd8d" opacity=".8">✦</text>` : "";
-
-  return `
-  <svg width="320" height="470" viewBox="0 0 320 470">
-    <defs>
-      <linearGradient id="body${id}" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stop-color="${bodyB}"/><stop offset="18%" stop-color="${bodyA}"/>
-        <stop offset="55%" stop-color="${bodyA}"/><stop offset="100%" stop-color="${bodyB}"/>
-      </linearGradient>
-      <linearGradient id="face${id}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${faceA}"/><stop offset="100%" stop-color="${faceB}"/>
-      </linearGradient>
-      <linearGradient id="trim${id}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${trimHi}"/><stop offset="50%" stop-color="${trim}"/>
-        <stop offset="100%" stop-color="${trimHi}"/>
-      </linearGradient>
-      <radialGradient id="glass${id}" cx=".38" cy=".28" r="1">
-        <stop offset="0%" stop-color="#ffffff" stop-opacity=".95"/>
-        <stop offset="35%" stop-color="${domeTint}" stop-opacity=".35"/>
-        <stop offset="100%" stop-color="${domeTint}" stop-opacity=".15"/>
-      </radialGradient>
-      <clipPath id="globe${id}"><circle cx="160" cy="150" r="92"/></clipPath>
-      <radialGradient id="knob${id}" cx=".4" cy=".35" r="1">
-        <stop offset="0%" stop-color="${trimHi}"/><stop offset="100%" stop-color="${trim}"/>
-      </radialGradient>
-    </defs>
-
-    <!-- 바닥 그림자 -->
-    <ellipse cx="160" cy="452" rx="118" ry="14" fill="#000" opacity=".16"/>
-
-    <g class="machine">
-      <!-- 받침대 -->
-      <rect x="66" y="424" width="188" height="24" rx="10" fill="url(#trim${id})"/>
-      <rect x="80" y="440" width="26" height="12" rx="5" fill="${trim}"/>
-      <rect x="214" y="440" width="26" height="12" rx="5" fill="${trim}"/>
-
-      <!-- 본체 -->
-      <rect x="72" y="252" width="176" height="180" rx="22" fill="url(#body${id})" stroke="${trim}" stroke-width="4"/>
-      <rect x="88" y="266" width="144" height="152" rx="14" fill="url(#face${id})" stroke="${trim}" stroke-width="2.5" opacity=".96"/>
-      <!-- 본체 광택 -->
-      <rect x="78" y="258" width="10" height="168" rx="5" fill="#fff" opacity="${prem ? .10 : .55}"/>
-
-      <!-- 유리 글로브 -->
-      <g class="pile" clip-path="url(#globe${id})">
-        <circle cx="160" cy="150" r="92" fill="${prem ? "#14100c" : "#f2f6ff"}"/>
-        ${pile}
-      </g>
-      <circle cx="160" cy="150" r="92" fill="url(#glass${id})"/>
-      <circle cx="160" cy="150" r="92" fill="none" stroke="url(#trim${id})" stroke-width="7"/>
-      <!-- 유리 하이라이트 -->
-      <path d="M 96 122 a 74 74 0 0 1 42 -54" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" opacity=".75"/>
-      <circle cx="212" cy="92" r="5" fill="#fff" opacity=".8"/>
-      <!-- 꼭대기 장식 -->
-      <rect x="138" y="42" width="44" height="14" rx="7" fill="url(#trim${id})"/>
-
-      <!-- 글로브-본체 연결 칼라 -->
-      <rect x="92" y="238" width="136" height="20" rx="8" fill="url(#trim${id})"/>
-
-      <!-- 코인 투입구 -->
-      <g class="coin-in"><circle cx="222" cy="262" r="12" fill="#f3d271" stroke="#a87e14" stroke-width="3"/><rect x="219" y="255" width="6" height="14" rx="3" fill="#a87e14" opacity=".5"/></g>
-      <rect x="204" y="276" width="36" height="50" rx="8" fill="url(#face${id})" stroke="${trim}" stroke-width="3"/>
-      <rect x="219" y="286" width="7" height="30" rx="3.5" fill="${trim}"/>
-
-      <!-- 손잡이 -->
-      <circle cx="160" cy="330" r="37" fill="url(#face${id})" stroke="${trim}" stroke-width="4"/>
-      <g class="knob-rot">
-        <circle cx="160" cy="330" r="28" fill="url(#knob${id})"/>
-        <rect x="151" y="300" width="18" height="60" rx="9" fill="${prem ? "#0f0d0b" : "#ffffff"}" stroke="${trim}" stroke-width="3"/>
-      </g>
-      <circle cx="160" cy="330" r="6" fill="${trim}"/>
-
-      <!-- 배출구: 뚜껑 없는 빈 공간 (캡슐이 위에서 이 안으로 내려옴) -->
-      <rect x="92" y="372" width="76" height="48" rx="11" fill="#000" opacity="${prem ? .82 : .9}" stroke="url(#trim${id})" stroke-width="4"/>
-      <rect x="96" y="376" width="68" height="10" rx="5" fill="#000" opacity=".6"/>
-
-      <!-- 명판 -->
-      <rect x="186" y="384" width="50" height="24" rx="7" fill="url(#trim${id})"/>
-      <text x="211" y="401" font-size="12" text-anchor="middle" fill="${prem ? "#2a1e00" : "#ffffff"}" font-weight="800">${prem ? "VIP" : "PLAY"}</text>
-      ${sparkles}
-    </g>
-  </svg>`;
+  document.getElementById("result").className = "result";
+  stage.querySelectorAll(".spark").forEach((e) => e.remove());
 }
 
-function capsuleSVG(color) {
-  return `
-  <svg viewBox="0 0 86 86" style="width:100%;height:100%;display:block;overflow:visible">
-    <defs>
-      <radialGradient id="oc" cx=".35" cy=".3" r="1">
-        <stop offset="0%" stop-color="${color}" stop-opacity=".55"/>
-        <stop offset="65%" stop-color="${color}"/>
-        <stop offset="100%" stop-color="${color}" stop-opacity=".85"/>
-      </radialGradient>
-    </defs>
-    <g class="cap-bot">
-      <path d="M 6 43 a 37 37 0 0 0 74 0 z" fill="#ffffff" stroke="#00000022" stroke-width="2"/>
-      <path d="M 6 43 a 37 37 0 0 0 12 27 l 0 -27 z" fill="#e7e7ec"/>
-    </g>
-    <g class="cap-top">
-      <path d="M 6 43 a 37 37 0 0 1 74 0 z" fill="url(#oc)" stroke="#00000022" stroke-width="2"/>
-      <ellipse cx="29" cy="24" rx="11" ry="6" fill="#fff" opacity=".75" transform="rotate(-28 29 24)"/>
-    </g>
-    <rect x="4" y="41.4" width="78" height="3.2" rx="1.6" fill="#00000018"/>
-  </svg>`;
+/* 가중치 추첨 */
+function weightedPick(list, w) {
+  const total = list.reduce((a, x, i) => a + w(x, i), 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < list.length; i++) { r -= w(list[i], i); if (r < 0) return i; }
+  return list.length - 1;
 }
 
-const PRIZES = [
-  { tier: "NORMAL",    name: "위로 포인트 500P", color: "#8b8f98" },
-  { tier: "RARE",      name: "잔액 2,000원",     color: "#3b82f6" },
-  { tier: "EPIC",      name: "게임패스 1일권",   color: "#8b5cf6" },
-  { tier: "LEGENDARY", name: "🎮 풀게임 1종!",   color: "#f59e0b" },
-];
-
-for (const k of ["Normal", "Premium"]) {
-  document.getElementById("stage" + k).innerHTML = machineSVG(k === "Premium");
+/* 룰렛 채우기 + 회전. entries[resultIdx]가 화살표에 걸리도록 */
+const TILE = 124, TOTAL = 64, TARGET = 52;
+function spin(stripId, entries, weight, resultIdx, duration) {
+  const strip = document.getElementById(stripId);
+  const wrap = strip.parentElement;
+  wrap.classList.remove("landed");
+  strip.innerHTML = "";
+  const tiles = [];
+  for (let i = 0; i < TOTAL; i++) {
+    let e = entries[weightedPick(entries, weight)];
+    if (i === TARGET) e = entries[resultIdx];
+    else if (i === TARGET - 1 || i === TARGET + 1) {              // 바로 옆칸은 결과와 다르게 (아슬아슬 연출)
+      let guard = 0;
+      while (e === entries[resultIdx] && guard++ < 10) e = entries[weightedPick(entries, weight)];
+    }
+    tiles.push(e);
+    const d = document.createElement("div");
+    d.className = "tile"; d.style.setProperty("--c", e.color);
+    d.innerHTML = `${e.label}${e.sub ? `<small>${e.sub}</small>` : ""}`;
+    strip.append(d);
+  }
+  const box = wrap.getBoundingClientRect();
+  const offset = (Math.random() - .5) * (TILE - 30);                // 칸 안에서 랜덤 위치에 멈춤
+  const target = TARGET * TILE + TILE / 2 - box.width / 2 + offset;
+  strip.style.transition = "none";
+  strip.style.transform = "translateX(0)";
+  void strip.offsetWidth;
+  strip.style.transition = `transform ${duration}ms cubic-bezier(.1,.75,.1,1)`;
+  strip.style.transform = `translateX(${-target}px)`;
+  return new Promise((res) => setTimeout(() => {
+    wrap.classList.add("landed");
+    strip.children[TARGET].classList.add("hit");
+    res();
+  }, duration + 80));
 }
 
-const busy = {};
-function pull(k) {
-  if (busy[k]) return;
-  busy[k] = true;
-  const stage = document.getElementById("stage" + k);
-  const btn = document.querySelector("#wrap" + k + " .pull");
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function pull() {
+  if (busy) return;
+  busy = true;
+  const btn = document.getElementById("btn");
   btn.disabled = true;
-  stage.classList.remove("dropping", "opened", "split", "pulse");
-  for (const sel of [".chute", ".prize", ".glow", ".spark"]) {
-    stage.querySelectorAll(sel).forEach((el) => el.remove());
+  reset();
+  const b = BOXES[cur];
+
+  // 1) 상자 흔들림 → 뚜껑 열림
+  stage.classList.add("shake");
+  await wait(600);
+  stage.classList.add("open");
+  await wait(700);
+
+  // 2) 1차 룰렛: 등급 (확률 추첨은 먼저, 룰렛은 그 결과에 맞춰 멈춤)
+  const tierIdx = weightedPick(b.tiers, (t) => t.p);
+  const tier = b.tiers[tierIdx];
+  document.getElementById("wrap1").classList.add("show");
+  await wait(550);
+  await spin("strip1", b.tiers, (t) => t.p, tierIdx, 5200);
+  stage.style.setProperty("--rare", tier.color);
+  await wait(700);
+
+  // 3) 2차 룰렛: 그 등급의 내용물 (등급 룰렛 위에 나타남)
+  const items = tier.items.map((it) => ({ label: it.n, color: tier.color, sub: tier.label }));
+  const itemIdx = weightedPick(items, (it) => it.w || 1);
+  document.getElementById("wrap2").classList.add("show");
+  await wait(550);
+  await spin("strip2", items, (it) => it.w || 1, itemIdx, 3600);
+  await wait(300);
+
+  // 4) 결과
+  const r = document.getElementById("result");
+  r.innerHTML = `<span class="tier">${tier.label.toUpperCase()}</span><div class="name">${items[itemIdx].label}</div><div class="sub">${b.name} · ${b.cost}</div>`;
+  r.classList.add("show");
+  for (let i = 0; i < 10; i++) {
+    const s = document.createElement("div");
+    s.className = "spark fly"; s.textContent = "✦"; s.style.color = tier.color;
+    s.style.setProperty("--dx", (Math.cos(i / 10 * 6.283) * 150) + "px");
+    s.style.setProperty("--dy", (Math.sin(i / 10 * 6.283) * 110) + "px");
+    stage.append(s);
   }
-  stage.classList.remove("idle");
-
-  stage.classList.add("coined");                                        // 1) 코인
-  setTimeout(() => stage.classList.add("cranking", "shaking"), 480);    // 2) 손잡이+흔들림
-  setTimeout(() => {                                                    // 3) 캡슐 배출
-    stage.classList.remove("coined", "cranking", "shaking");
-    const roll = Math.random();
-    const prize = PRIZES[roll > .93 ? 3 : roll > .75 ? 2 : roll > .45 ? 1 : 0];
-    const capColor = CAP_COLORS[Math.floor(Math.random() * CAP_COLORS.length)];
-
-    const chute = document.createElement("div");
-    chute.className = "chute";
-    const cap = document.createElement("div");
-    cap.className = "out-capsule";
-    cap.innerHTML = capsuleSVG(capColor);
-    chute.append(cap);
-    const glow = document.createElement("div");
-    glow.className = "glow";
-    const card = document.createElement("div");
-    card.className = "prize";
-    card.innerHTML = `<span class="tier">${prize.tier}</span><div class="name">${prize.name}</div>`;
-    stage.append(glow, chute, card);
-    // 반짝이 파편
-    for (let i = 0; i < 8; i++) {
-      const s = document.createElement("div");
-      s.className = "spark";
-      s.textContent = "✦";
-      s.style.color = prize.color;
-      s.style.left = "50%"; s.style.top = "290px";
-      s.style.setProperty("--dx", (Math.cos(i / 8 * 6.283) * 95) + "px");
-      s.style.setProperty("--dy", (-Math.sin(i / 8 * 6.283) * 95 - 30) + "px");
-      stage.append(s);
-    }
-    stage.style.setProperty("--rare", prize.color);
-    stage.classList.add("dropping");
-    setTimeout(() => stage.classList.add("pulse"), 1100);               // 캡슐 두근두근
-
-    const open = () => {                                                // 4) 개봉
-      if (stage.classList.contains("opened")) return;
-      stage.classList.remove("pulse");
-      stage.classList.add("opened");                                    // 배출구에서 튀어나와 중앙으로
-      setTimeout(() => stage.classList.add("split"), 520);              // 반으로 갈라짐 + 광채 + 카드
-      setTimeout(() => { btn.disabled = false; busy[k] = false; stage.classList.add("idle"); }, 1600);
-    };
-    cap.addEventListener("click", open);
-    setTimeout(open, 2600);
-  }, 1750);
+  await wait(900);
+  btn.disabled = false;
+  busy = false;
 }
+
+selectBox("Normal");
 </script>
 </body>
 </html>
