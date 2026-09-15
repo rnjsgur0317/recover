@@ -35,8 +35,9 @@ h1 { text-align: center; font-size: 1.35rem; margin: 0 0 18px; letter-spacing: -
 .open .glow-bg { opacity: .45; }
 
 /* ── 상자 (3D) ── */
-.box-area { position: relative; height: 230px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; perspective: 900px; }
-.box { position: relative; width: 220px; height: 140px; transform-style: preserve-3d; }
+.box-area { position: relative; height: 230px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; perspective: 650px; }
+/* 상자 좌표계: 원점 = 앞면 윗변, y 아래, z 앞(화면 쪽). 깊이 D=72 */
+.box { position: relative; width: 220px; height: 110px; margin-bottom: 14px; transform-style: preserve-3d; }
 .shake .box { animation: shake .55s ease-in-out; }
 @keyframes shake {
   0%,100% { transform: translateX(0) rotate(0); }
@@ -45,40 +46,77 @@ h1 { text-align: center; font-size: 1.35rem; margin: 0 0 18px; letter-spacing: -
   60% { transform: translateX(-5px) rotate(-2deg); }
   80% { transform: translateX(5px) rotate(2deg); }
 }
-.body {
-  position: absolute; inset: 0; border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff, #e9e9ee); border: 2.5px solid #18181b;
-  box-shadow: 0 18px 30px rgba(0,0,0,.18), inset 0 -14px 0 rgba(0,0,0,.06);
+.box3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(-18deg) rotateY(-22deg); }  /* 살짝 위·옆에서 본 3/4 뷰 */
+.face { position: absolute; left: 0; top: 0; width: 220px; backface-visibility: visible; }
+/* 앞면 */
+.front {
+  height: 110px; border-radius: 0 0 12px 12px; border: 2.5px solid #18181b; border-top: 0;
+  background: linear-gradient(180deg, #ffffff, #e6e6eb);
+  box-shadow: inset 0 -14px 0 rgba(0,0,0,.06);
   display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px;
 }
-.body .lock { width: 30px; height: 30px; border-radius: 50%; border: 3px solid #18181b; position: relative; background: #fff; }
-.body .lock::after { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 10px; margin: -3px 0 0 -2.5px; background: #18181b; border-radius: 2px; }
-.body .name { font-size: .78rem; font-weight: 800; letter-spacing: .18em; color: #18181b; }
+.front .lock { width: 30px; height: 30px; border-radius: 50%; border: 3px solid #18181b; position: relative; background: #fff; }
+.front .lock::after { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 10px; margin: -3px 0 0 -2.5px; background: #18181b; border-radius: 2px; }
+.front .name { font-size: .78rem; font-weight: 800; letter-spacing: .18em; color: #18181b; }
+/* 상자 속(윗구멍): 윗변에서 뒤쪽으로 눕힘 */
+.hole {
+  height: 72px; transform-origin: 50% 0; transform: rotateX(-90deg);
+  background: radial-gradient(ellipse at 50% 60%, #52525b, #1f1f23 70%); border: 2.5px solid #18181b; border-bottom: 0;
+}
+.hole::after {
+  content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .5s .25s;
+  background: radial-gradient(ellipse at 50% 60%, var(--rare), transparent 72%);
+}
+.open .hole::after { opacity: .9; }
+/* 양 옆면 */
+.side { width: 72px; height: 110px; transform-origin: 0 0; background: linear-gradient(180deg, #e2e2e8, #cfcfd6); border: 2.5px solid #18181b; }
+.side.l { transform: rotateY(90deg); }                        /* 모서리에서 뒤쪽으로 */
+.side.r { left: 220px; transform: rotateY(90deg); }
+/* 그림자 */
+.shadow { position: absolute; left: -10px; right: -10px; bottom: -22px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.28); filter: blur(10px); transform: translateZ(-40px) rotateX(90deg); }
+/* 뚜껑: 경첩 = 뒷변(z=-72). 윗판(뒤→앞으로 눕힘) + 앞 덮개 */
 .lid {
-  position: absolute; left: -6px; right: -6px; top: -26px; height: 40px; border-radius: 10px;
-  background: linear-gradient(180deg, #ffffff, #e2e2e8); border: 2.5px solid #18181b;
-  transform-origin: 50% 0%; transition: transform .7s cubic-bezier(.3,1.4,.5,1);
-  box-shadow: 0 6px 14px rgba(0,0,0,.15);
+  position: absolute; left: 0; top: 0; width: 220px; height: 0; transform-style: preserve-3d;
+  transform-origin: 50% 0; transform: translateZ(-72px) rotateX(0deg);
+  transition: transform .9s cubic-bezier(.34,1.35,.4,1);
 }
-.open .lid { transform: rotateX(-118deg); }
+.open .lid { transform: translateZ(-72px) rotateX(104deg); }
+.lid-top, .lid-under {
+  position: absolute; left: -5px; top: 0; width: 230px; height: 78px; backface-visibility: hidden;
+  border: 2.5px solid #18181b; border-radius: 6px 6px 3px 3px;
+}
+.lid-top { transform-origin: 50% 0; transform: rotateX(90deg); background: linear-gradient(180deg, #f6f6f8, #e2e2e8); }
+.lid-under {                                                   /* 같은 평면, 아래를 향한 안쪽 면 (열리면 보임) */
+  transform-origin: 50% 100%; transform: translateY(-78px) rotateX(-90deg);
+  background: linear-gradient(0deg, #d4d4d8, #b7b7c0);
+}
+.lid-front {
+  position: absolute; left: -5px; top: 0; width: 230px; height: 26px; transform: translateZ(78px);
+  background: linear-gradient(180deg, #ffffff, #dedee4); border: 2.5px solid #18181b; border-top: 0; border-radius: 0 0 8px 8px;
+  box-shadow: 0 4px 10px rgba(0,0,0,.18);
+}
+.lid-front::before { content: ""; position: absolute; left: 50%; bottom: -3px; width: 22px; height: 12px; margin-left: -11px; background: #18181b; border-radius: 0 0 6px 6px; }
+/* 빛기둥: 상자 속에서 위로 */
 .beam {
-  position: absolute; left: 50%; bottom: 100%; width: 120px; height: 0; margin-left: -60px;
-  background: linear-gradient(180deg, transparent, var(--rare)); opacity: .55;
-  clip-path: polygon(20% 100%, 80% 100%, 100% 0, 0 0); transition: height .6s ease-out .15s;
+  position: absolute; left: 50%; top: 0; width: 130px; height: 0; margin-left: -65px;
+  background: linear-gradient(0deg, var(--rare), transparent); opacity: .6;
+  clip-path: polygon(22% 100%, 78% 100%, 100% 0, 0 0);
+  transform-origin: 50% 100%; transform: translateZ(-36px) translateY(-100%);
+  transition: height .7s ease-out .3s;
 }
-.open .beam { height: 180px; }
-.inside {
-  position: absolute; left: 10px; right: 10px; top: 8px; height: 40px; border-radius: 8px;
-  background: radial-gradient(ellipse at 50% 100%, var(--rare), transparent 70%); opacity: 0; transition: opacity .5s .2s;
-}
-.open .inside { opacity: .8; }
+.open .beam { height: 200px; }
 
 /* 고급 상자 */
-.prem .body { background: linear-gradient(180deg, #2a2723, #0f0d0b); border-color: #d9ab3c; box-shadow: 0 18px 30px rgba(0,0,0,.35), inset 0 -14px 0 rgba(255,255,255,.04); }
-.prem .body .lock { border-color: #f3d271; background: #1a1714; }
-.prem .body .lock::after { background: #f3d271; }
-.prem .body .name { color: #f3d271; }
-.prem .lid { background: linear-gradient(180deg, #f3d271, #c89b2a 60%, #a87e14); border-color: #7a5a0e; }
+.prem .front { background: linear-gradient(180deg, #2a2723, #0f0d0b); border-color: #d9ab3c; box-shadow: inset 0 -14px 0 rgba(255,255,255,.04); }
+.prem .front .lock { border-color: #f3d271; background: #1a1714; }
+.prem .front .lock::after { background: #f3d271; }
+.prem .front .name { color: #f3d271; }
+.prem .side { background: linear-gradient(180deg, #1c1917, #0a0908); border-color: #d9ab3c; }
+.prem .hole { border-color: #d9ab3c; background: radial-gradient(ellipse at 50% 60%, #3a3128, #0f0d0b 70%); }
+.prem .lid-top { background: linear-gradient(180deg, #f6dc8a, #c89b2a 60%, #a87e14); border-color: #7a5a0e; }
+.prem .lid-under { background: linear-gradient(0deg, #8a6a1a, #5c460f); border-color: #7a5a0e; }
+.prem .lid-front { background: linear-gradient(180deg, #f3d271, #b98d20); border-color: #7a5a0e; }
+.prem .lid-front::before { background: #3a2a05; }
 
 /* ── 룰렛 ── */
 .stack { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; position: relative; z-index: 1; }
@@ -158,12 +196,19 @@ button.pull:disabled { opacity: .45; cursor: default; }
   <div id="stage" class="stage">
     <div class="glow-bg"></div>
     <div class="box-area">
-      <div class="box">
+      <div class="box"><div class="box3d">
+        <div class="shadow"></div>
+        <div class="face side l"></div>
+        <div class="face side r"></div>
+        <div class="face hole"></div>
         <div class="beam"></div>
-        <div class="body"><div class="lock"></div><div class="name" id="boxName">NORMAL BOX</div></div>
-        <div class="inside"></div>
-        <div class="lid"></div>
-      </div>
+        <div class="face front"><div class="lock"></div><div class="name" id="boxName">NORMAL BOX</div></div>
+        <div class="lid">
+          <div class="lid-top"></div>
+          <div class="lid-under"></div>
+          <div class="lid-front"></div>
+        </div>
+      </div></div>
     </div>
 
     <div class="stack">
