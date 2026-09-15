@@ -3,172 +3,295 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>가챠 연출 프로토타입</title>
+<title>가챠 연출 프로토타입 v2</title>
 <style>
 * { box-sizing: border-box; }
 body {
-  margin: 0; background: #fafafa; color: #18181b;
+  margin: 0; min-height: 100vh;
+  background: radial-gradient(circle at 50% 0%, #ffffff, #ededf0 70%);
+  color: #18181b;
   font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
-  display: flex; gap: 40px; justify-content: center; align-items: flex-start;
-  padding: 40px 16px; flex-wrap: wrap;
+  display: flex; flex-direction: column; align-items: center; padding: 26px 8px 60px;
 }
-.machine-wrap { text-align: center; width: 300px; }
-.machine-title { font-weight: 800; font-size: 1.1rem; margin-bottom: 4px; }
-.machine-sub { color: #71717a; font-size: .82rem; margin-bottom: 14px; }
-.stage { position: relative; width: 300px; height: 400px; }
-svg { overflow: visible; }
+h1 { font-size: 1.2rem; letter-spacing: -.02em; margin: 0 0 20px; }
+.row { display: flex; flex-wrap: nowrap; gap: 46px; justify-content: center; }
+.machine-wrap { text-align: center; width: 320px; flex: none; }
+.machine-title { font-weight: 800; font-size: 1.12rem; }
+.machine-sub { color: #71717a; font-size: .82rem; margin: 3px 0 10px; }
+.stage { position: relative; width: 320px; height: 470px; }
+svg { overflow: visible; display: block; }
 
 /* ── 머신 애니메이션 ── */
-.machine { transform-origin: 150px 340px; }
-.shaking .machine { animation: shake .55s ease-in-out 2; }
+.machine { transform-origin: 160px 420px; }
+.idle .machine { animation: breathe 4s ease-in-out infinite; }
+@keyframes breathe { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.shaking .machine { animation: shake .5s ease-in-out 2; }
 @keyframes shake {
   0%,100% { transform: rotate(0); }
-  20% { transform: rotate(-1.6deg); } 40% { transform: rotate(1.6deg); }
-  60% { transform: rotate(-1.2deg); } 80% { transform: rotate(1.2deg); }
+  20% { transform: rotate(-1.4deg); } 40% { transform: rotate(1.4deg); }
+  60% { transform: rotate(-1deg); } 80% { transform: rotate(1deg); }
 }
-.knob { transform-origin: 150px 296px; transition: transform 1s cubic-bezier(.5,0,.5,1); }
-.cranking .knob { transform: rotate(360deg); }
-.dome-cap { transform-origin: center; }
-.shaking .dome-cap { animation: jiggle .3s ease-in-out 4; }
-@keyframes jiggle {
-  0%,100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
-}
-.coin { opacity: 0; transform: translateY(-36px); transition: all .45s ease-in; }
-.coined .coin { opacity: 1; transform: translateY(0); }
+.knob-rot { transform-origin: 160px 330px; transition: transform 1.1s cubic-bezier(.55,0,.45,1); }
+.cranking .knob-rot { transform: rotate(360deg); }
+.pile { transform-origin: 160px 170px; }
+.shaking .pile { animation: jiggle .28s ease-in-out 4; }
+@keyframes jiggle { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.coin-in { opacity: 0; transform: translateY(-40px); transition: all .45s ease-in; }
+.coined .coin-in { opacity: 1; transform: translateY(0); }
+.flap { transform-origin: 106px 384px; transition: transform .3s; }
+.dropping .flap { transform: rotate(-38deg); }
 
 /* ── 배출 캡슐 ── */
 .out-capsule {
-  position: absolute; left: 50%; bottom: 26px; width: 74px; height: 74px;
-  margin-left: -37px; opacity: 0; cursor: pointer; z-index: 5;
+  position: absolute; left: 50%; bottom: 34px; width: 86px; height: 86px;
+  margin-left: -43px; opacity: 0; cursor: pointer; z-index: 6;
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,.28));
 }
-.dropping .out-capsule { animation: drop .9s cubic-bezier(.3,0,.4,1.4) forwards; }
+.dropping .out-capsule { animation: drop 1s cubic-bezier(.32,0,.35,1.45) forwards; }
 @keyframes drop {
-  0%   { opacity: 0; transform: translateY(-120px) scale(.6) rotate(-30deg); }
-  55%  { opacity: 1; transform: translateY(10px) scale(1) rotate(10deg); }
-  75%  { transform: translateY(-14px) rotate(-6deg); }
+  0%   { opacity: 0; transform: translateY(-130px) scale(.55) rotate(-40deg); }
+  50%  { opacity: 1; transform: translateY(12px) scale(1) rotate(12deg); }
+  72%  { transform: translateY(-18px) rotate(-7deg); }
+  86%  { transform: translateY(4px) rotate(3deg); }
   100% { opacity: 1; transform: translateY(0) rotate(0); }
 }
-.opened .out-capsule { cursor: default; }
-.cap-top, .cap-bot { transition: transform .45s cubic-bezier(.6,-0.3,.4,1.3), opacity .4s; }
-.opened .cap-top { transform: translate(-16px, -46px) rotate(-30deg); opacity: 0; }
-.opened .cap-bot { transform: translate(16px, 34px) rotate(24deg); opacity: 0; }
+.pulse .out-capsule { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.opened .out-capsule { cursor: default; animation: none; }
+.cap-top, .cap-bot { transition: transform .5s cubic-bezier(.6,-.25,.4,1.25), opacity .45s; }
+.opened .cap-top { transform: translate(-20px,-56px) rotate(-34deg); opacity: 0; }
+.opened .cap-bot { transform: translate(20px,40px) rotate(28deg); opacity: 0; }
 
 /* ── 상품 공개 ── */
 .prize {
-  position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%) scale(0);
-  background: #fff; border: 2px solid var(--rare, #d4d4d8); border-radius: 14px;
-  padding: 14px 20px; min-width: 170px; z-index: 6;
-  box-shadow: 0 10px 34px rgba(0,0,0,.18);
-  transition: transform .5s cubic-bezier(.2,1.6,.4,1);
+  position: absolute; left: 50%; bottom: 86px; transform: translateX(-50%) scale(0);
+  background: #fff; border: 2.5px solid var(--rare,#d4d4d8); border-radius: 16px;
+  padding: 15px 24px 14px; min-width: 185px; z-index: 7;
+  box-shadow: 0 14px 40px rgba(0,0,0,.22);
+  transition: transform .55s cubic-bezier(.2,1.7,.4,1);
 }
 .opened .prize { transform: translateX(-50%) scale(1); }
-.prize .tier { font-size: .7rem; font-weight: 800; letter-spacing: .1em; color: var(--rare); }
-.prize .name { font-weight: 800; font-size: 1.05rem; margin-top: 2px; }
+.prize .tier {
+  display: inline-block; font-size: .68rem; font-weight: 800; letter-spacing: .14em;
+  color: #fff; background: var(--rare); border-radius: 999px; padding: 2px 11px;
+}
+.prize .name { font-weight: 800; font-size: 1.06rem; margin-top: 7px; }
 .glow {
-  position: absolute; left: 50%; bottom: 30px; width: 150px; height: 150px;
-  margin-left: -75px; border-radius: 50%; opacity: 0; z-index: 4; pointer-events: none;
-  background: radial-gradient(circle, var(--rare) 0%, transparent 65%);
+  position: absolute; left: 50%; bottom: 40px; width: 190px; height: 190px;
+  margin-left: -95px; border-radius: 50%; opacity: 0; z-index: 5; pointer-events: none;
+  background: radial-gradient(circle, var(--rare) 0%, transparent 62%);
 }
-.opened .glow { animation: burst 1s ease-out; }
+.opened .glow { animation: burst 1.1s ease-out; }
 @keyframes burst {
-  0% { opacity: 0; transform: scale(.3); }
-  30% { opacity: .8; }
-  100% { opacity: 0; transform: scale(2.1); }
+  0% { opacity: 0; transform: scale(.25); }
+  28% { opacity: .9; }
+  100% { opacity: 0; transform: scale(2.3); }
 }
+.spark { position: absolute; z-index: 5; pointer-events: none; font-size: 18px; opacity: 0; }
+.opened .spark { animation: fly 1s ease-out forwards; }
+@keyframes fly {
+  0% { opacity: 1; transform: translate(0,0) scale(.5); }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.2); }
+}
+
 button.pull {
-  margin-top: 14px; width: 100%;
-  border: none; border-radius: 10px; padding: 13px;
-  font-size: .95rem; font-weight: 800; font-family: inherit; cursor: pointer;
-  background: #111; color: #fff;
+  margin-top: 6px; width: 82%;
+  border: none; border-radius: 12px; padding: 14px;
+  font-size: .98rem; font-weight: 800; font-family: inherit; cursor: pointer;
+  background: linear-gradient(180deg, #2c2c30, #111113);
+  color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.25), inset 0 1px 0 #ffffff22;
 }
-button.pull:disabled { opacity: .5; }
-.premium button.pull { background: linear-gradient(135deg, #b48811, #e8c356); color: #241a00; }
-.hint { color: #a1a1aa; font-size: .76rem; margin-top: 8px; }
+button.pull:active { transform: translateY(1px); }
+button.pull:disabled { opacity: .45; }
+.premium button.pull {
+  background: linear-gradient(180deg, #f3d271, #c89b2a 60%, #a87e14);
+  color: #2a1e00; box-shadow: 0 4px 16px rgba(200,155,42,.45), inset 0 1px 0 #ffffff88;
+}
+.hint { color: #a1a1aa; font-size: .76rem; margin-top: 9px; }
+
+@media (max-width: 700px) {
+  .row { gap: 0; }
+  .machine-wrap { width: 175px; }
+  .stage { transform: scale(.54); transform-origin: top center; height: 264px; width: 320px; margin-left: -72px; }
+  button.pull { width: 96%; font-size: .82rem; padding: 11px; }
+}
 </style>
 </head>
 <body>
+<h1>🎰 뽑기</h1>
+<div class="row">
 
-<div class="machine-wrap" id="wrapNormal">
-  <div class="machine-title">일반 뽑기</div>
-  <div class="machine-sub">1회 5,000P · 포인트로 뽑기</div>
-  <div class="stage" id="stageNormal"></div>
-  <button class="pull" onclick="pull('Normal')">🪙 5,000P 뽑기</button>
-  <div class="hint">캡슐이 나오면 눌러서 열기</div>
-</div>
+  <div class="machine-wrap" id="wrapNormal">
+    <div class="machine-title">일반 뽑기</div>
+    <div class="machine-sub">1회 5,000P · 포인트로 뽑기</div>
+    <div class="stage idle" id="stageNormal"></div>
+    <button class="pull" onclick="pull('Normal')">🪙 5,000P 뽑기</button>
+    <div class="hint">캡슐이 나오면 눌러서 열어보세요</div>
+  </div>
 
-<div class="machine-wrap premium" id="wrapPremium">
-  <div class="machine-title">✨ 고급 뽑기</div>
-  <div class="machine-sub">1회 3,000원 · 현금으로 뽑기</div>
-  <div class="stage" id="stagePremium"></div>
-  <button class="pull" onclick="pull('Premium')">💰 3,000원 뽑기</button>
-  <div class="hint">캡슐이 나오면 눌러서 열기</div>
+  <div class="machine-wrap premium" id="wrapPremium">
+    <div class="machine-title">✨ 고급 뽑기</div>
+    <div class="machine-sub">1회 3,000원 · 현금으로 뽑기</div>
+    <div class="stage idle" id="stagePremium"></div>
+    <button class="pull" onclick="pull('Premium')">💰 3,000원 뽑기</button>
+    <div class="hint">캡슐이 나오면 눌러서 열어보세요</div>
+  </div>
+
 </div>
 
 <script>
 "use strict";
 
-const CAPSULE_COLORS = [["#ef6a6a","#fff"],["#58a6e8","#fff"],["#67c576","#fff"],["#e8c356","#fff"],["#a678e0","#fff"],["#f0975f","#fff"]];
+const CAP_COLORS = ["#ff6b81","#4fa8ff","#5fd07a","#ffc94d","#b07df0","#ff9c5f","#4ed6c9"];
 
-function machineSVG(premium) {
-  const body = premium ? "#1c1917" : "#ffffff";
-  const line = premium ? "#b48811" : "#111111";
-  const accent = premium ? "#e8c356" : "#111111";
-  const capsules = Array.from({length: 14}, (_, i) => {
-    const [c1] = CAPSULE_COLORS[i % CAPSULE_COLORS.length];
-    const x = 78 + (i % 5) * 30 + (Math.floor(i / 5) % 2) * 12;
-    const y = 150 - Math.floor(i / 5) * 26 + (i % 3) * 4;
-    return `<g><circle cx="${x}" cy="${y}" r="15" fill="${c1}"/>
-      <path d="M ${x-15} ${y} a 15 15 0 0 1 30 0 z" fill="#fff" opacity=".85"/>
-      <circle cx="${x}" cy="${y}" r="15" fill="none" stroke="#0003"/></g>`;
-  }).join("");
+function machineSVG(prem) {
+  const id = prem ? "P" : "N";
+  // 팔레트
+  const bodyA   = prem ? "#3a3430" : "#ffffff";
+  const bodyB   = prem ? "#171412" : "#d9dbe2";
+  const trim    = prem ? "#d9ab3c" : "#26262b";
+  const trimHi  = prem ? "#f6dd8d" : "#5c5c66";
+  const faceA   = prem ? "#26211d" : "#f6f7fa";
+  const faceB   = prem ? "#0f0d0b" : "#c9ccd6";
+  const domeTint= prem ? "#fff3cf" : "#eaf3ff";
+
+  // 캡슐 무더기 (뒤쪽 어둡게 → 앞쪽 밝게, 겹겹이)
+  let pile = "";
+  const rows = [ {y:196, n:6, r:17, dim:.55}, {y:172, n:5, r:18, dim:.75}, {y:146, n:4, r:19, dim:1} ];
+  let ci = 0;
+  for (const row of rows) {
+    const w = (row.n - 1) * (row.r * 1.75);
+    for (let i = 0; i < row.n; i++) {
+      const x = 160 - w / 2 + i * (row.r * 1.75) + (Math.sin(ci * 7) * 4);
+      const c = CAP_COLORS[ci++ % CAP_COLORS.length];
+      pile += `
+      <g opacity="${row.dim}">
+        <circle cx="${x}" cy="${row.y}" r="${row.r}" fill="url(#capG${id}${ci})"/>
+        <path d="M ${x-row.r} ${row.y} a ${row.r} ${row.r} 0 0 0 ${row.r*2} 0 z" fill="#ffffff" opacity=".92"/>
+        <circle cx="${x}" cy="${row.y}" r="${row.r}" fill="none" stroke="#00000022"/>
+        <ellipse cx="${x-row.r*.35}" cy="${row.y-row.r*.45}" rx="${row.r*.3}" ry="${row.r*.18}" fill="#fff" opacity=".8" transform="rotate(-25 ${x} ${row.y})"/>
+      </g>
+      <defs><radialGradient id="capG${id}${ci}" cx=".35" cy=".3" r="1">
+        <stop offset="0%" stop-color="${c}" stop-opacity=".65"/>
+        <stop offset="60%" stop-color="${c}"/>
+        <stop offset="100%" stop-color="${c}" stop-opacity=".8"/>
+      </radialGradient></defs>`;
+    }
+  }
+
+  const sparkles = prem ? `
+    <text x="52" y="120" font-size="15" fill="#f6dd8d" opacity=".9">✦</text>
+    <text x="262" y="96" font-size="11" fill="#f6dd8d" opacity=".7">✦</text>
+    <text x="248" y="248" font-size="13" fill="#f6dd8d" opacity=".8">✦</text>` : "";
+
   return `
-  <svg width="300" height="400" viewBox="0 0 300 400">
+  <svg width="320" height="470" viewBox="0 0 320 470">
+    <defs>
+      <linearGradient id="body${id}" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="${bodyB}"/><stop offset="18%" stop-color="${bodyA}"/>
+        <stop offset="55%" stop-color="${bodyA}"/><stop offset="100%" stop-color="${bodyB}"/>
+      </linearGradient>
+      <linearGradient id="face${id}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${faceA}"/><stop offset="100%" stop-color="${faceB}"/>
+      </linearGradient>
+      <linearGradient id="trim${id}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${trimHi}"/><stop offset="50%" stop-color="${trim}"/>
+        <stop offset="100%" stop-color="${trimHi}"/>
+      </linearGradient>
+      <radialGradient id="glass${id}" cx=".38" cy=".28" r="1">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity=".95"/>
+        <stop offset="35%" stop-color="${domeTint}" stop-opacity=".35"/>
+        <stop offset="100%" stop-color="${domeTint}" stop-opacity=".15"/>
+      </radialGradient>
+      <clipPath id="globe${id}"><circle cx="160" cy="150" r="92"/></clipPath>
+      <radialGradient id="knob${id}" cx=".4" cy=".35" r="1">
+        <stop offset="0%" stop-color="${trimHi}"/><stop offset="100%" stop-color="${trim}"/>
+      </radialGradient>
+    </defs>
+
+    <!-- 바닥 그림자 -->
+    <ellipse cx="160" cy="452" rx="118" ry="14" fill="#000" opacity=".16"/>
+
     <g class="machine">
-      <!-- 다리 -->
-      <rect x="70" y="368" width="34" height="22" rx="6" fill="${line}"/>
-      <rect x="196" y="368" width="34" height="22" rx="6" fill="${line}"/>
+      <!-- 받침대 -->
+      <rect x="66" y="424" width="188" height="24" rx="10" fill="url(#trim${id})"/>
+      <rect x="80" y="440" width="26" height="12" rx="5" fill="${trim}"/>
+      <rect x="214" y="440" width="26" height="12" rx="5" fill="${trim}"/>
+
       <!-- 본체 -->
-      <rect x="52" y="196" width="196" height="182" rx="20" fill="${body}" stroke="${line}" stroke-width="5"/>
-      <!-- 유리돔 -->
-      <g class="dome-cap">
-        <path d="M 62 196 a 88 88 0 0 1 176 0 z" fill="${premium ? "#2a2622" : "#f4f6ff"}" stroke="${line}" stroke-width="5"/>
-        <clipPath id="dome${premium ? "P" : "N"}"><path d="M 66 194 a 84 84 0 0 1 168 0 z"/></clipPath>
-        <g clip-path="url(#dome${premium ? "P" : "N"})">${capsules}</g>
-        <path d="M 84 176 a 66 66 0 0 1 36 -56" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".5"/>
-        <rect x="132" y="106" width="36" height="12" rx="6" fill="${accent}"/>
+      <rect x="72" y="252" width="176" height="180" rx="22" fill="url(#body${id})" stroke="${trim}" stroke-width="4"/>
+      <rect x="88" y="266" width="144" height="152" rx="14" fill="url(#face${id})" stroke="${trim}" stroke-width="2.5" opacity=".96"/>
+      <!-- 본체 광택 -->
+      <rect x="78" y="258" width="10" height="168" rx="5" fill="#fff" opacity="${prem ? .10 : .55}"/>
+
+      <!-- 유리 글로브 -->
+      <g class="pile" clip-path="url(#globe${id})">
+        <circle cx="160" cy="150" r="92" fill="${prem ? "#14100c" : "#f2f6ff"}"/>
+        ${pile}
       </g>
+      <circle cx="160" cy="150" r="92" fill="url(#glass${id})"/>
+      <circle cx="160" cy="150" r="92" fill="none" stroke="url(#trim${id})" stroke-width="7"/>
+      <!-- 유리 하이라이트 -->
+      <path d="M 96 122 a 74 74 0 0 1 42 -54" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" opacity=".75"/>
+      <circle cx="212" cy="92" r="5" fill="#fff" opacity=".8"/>
+      <!-- 꼭대기 장식 -->
+      <rect x="138" y="42" width="44" height="14" rx="7" fill="url(#trim${id})"/>
+
+      <!-- 글로브-본체 연결 칼라 -->
+      <rect x="92" y="238" width="136" height="20" rx="8" fill="url(#trim${id})"/>
+
       <!-- 코인 투입구 -->
-      <rect x="196" y="222" width="30" height="42" rx="6" fill="${premium ? "#0c0a09" : "#f4f4f5"}" stroke="${line}" stroke-width="3"/>
-      <rect x="208" y="230" width="6" height="26" rx="3" fill="${line}"/>
-      <g class="coin"><circle cx="211" cy="214" r="11" fill="#e8c356" stroke="#b48811" stroke-width="3"/></g>
+      <g class="coin-in"><circle cx="222" cy="262" r="12" fill="#f3d271" stroke="#a87e14" stroke-width="3"/><rect x="219" y="255" width="6" height="14" rx="3" fill="#a87e14" opacity=".5"/></g>
+      <rect x="204" y="276" width="36" height="50" rx="8" fill="url(#face${id})" stroke="${trim}" stroke-width="3"/>
+      <rect x="219" y="286" width="7" height="30" rx="3.5" fill="${trim}"/>
+
       <!-- 손잡이 -->
-      <g class="knob">
-        <circle cx="150" cy="296" r="30" fill="${premium ? "#0c0a09" : "#f4f4f5"}" stroke="${line}" stroke-width="5"/>
-        <rect x="143" y="272" width="14" height="48" rx="7" fill="${accent}"/>
+      <circle cx="160" cy="330" r="37" fill="url(#face${id})" stroke="${trim}" stroke-width="4"/>
+      <g class="knob-rot">
+        <circle cx="160" cy="330" r="28" fill="url(#knob${id})"/>
+        <rect x="151" y="300" width="18" height="60" rx="9" fill="${prem ? "#0f0d0b" : "#ffffff"}" stroke="${trim}" stroke-width="3"/>
       </g>
-      <circle cx="150" cy="296" r="6" fill="${line}"/>
+      <circle cx="160" cy="330" r="6" fill="${trim}"/>
+
       <!-- 배출구 -->
-      <rect x="74" y="326" width="64" height="40" rx="9" fill="#0008" stroke="${line}" stroke-width="4"/>
-      <text x="230" y="352" font-size="15" text-anchor="middle" fill="${premium ? "#e8c356" : "#111"}" font-weight="800">${premium ? "✦" : "●"}</text>
+      <rect x="92" y="372" width="76" height="48" rx="11" fill="#000" opacity="${prem ? .78 : .88}" stroke="url(#trim${id})" stroke-width="4"/>
+      <rect class="flap" x="98" y="380" width="64" height="34" rx="8" fill="${prem ? "#2a241f" : "#3a3a42"}"/>
+
+      <!-- 명판 -->
+      <rect x="186" y="384" width="50" height="24" rx="7" fill="url(#trim${id})"/>
+      <text x="211" y="401" font-size="12" text-anchor="middle" fill="${prem ? "#2a1e00" : "#ffffff"}" font-weight="800">${prem ? "VIP" : "PLAY"}</text>
+      ${sparkles}
     </g>
   </svg>`;
 }
 
 function capsuleSVG(color) {
   return `
-  <svg width="74" height="74" viewBox="0 0 74 74">
-    <g class="cap-bot"><path d="M 5 37 a 32 32 0 0 0 64 0 z" fill="#fff" stroke="#0002" stroke-width="2"/></g>
-    <g class="cap-top"><path d="M 5 37 a 32 32 0 0 1 64 0 z" fill="${color}" stroke="#0002" stroke-width="2"/>
-      <ellipse cx="26" cy="22" rx="9" ry="5" fill="#fff" opacity=".6" transform="rotate(-28 26 22)"/></g>
+  <svg width="86" height="86" viewBox="0 0 86 86">
+    <defs>
+      <radialGradient id="oc" cx=".35" cy=".3" r="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity=".55"/>
+        <stop offset="65%" stop-color="${color}"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity=".85"/>
+      </radialGradient>
+    </defs>
+    <g class="cap-bot">
+      <path d="M 6 43 a 37 37 0 0 0 74 0 z" fill="#ffffff" stroke="#00000022" stroke-width="2"/>
+      <path d="M 6 43 a 37 37 0 0 0 12 27 l 0 -27 z" fill="#e7e7ec"/>
+    </g>
+    <g class="cap-top">
+      <path d="M 6 43 a 37 37 0 0 1 74 0 z" fill="url(#oc)" stroke="#00000022" stroke-width="2"/>
+      <ellipse cx="29" cy="24" rx="11" ry="6" fill="#fff" opacity=".75" transform="rotate(-28 29 24)"/>
+    </g>
+    <rect x="4" y="41.4" width="78" height="3.2" rx="1.6" fill="#00000018"/>
   </svg>`;
 }
 
 const PRIZES = [
-  { tier: "일반", name: "위로 포인트 500P", color: "#9ca3af" },
-  { tier: "레어", name: "잔액 2,000원", color: "#3b82f6" },
-  { tier: "에픽", name: "게임패스 1일권", color: "#8b5cf6" },
-  { tier: "전설", name: "🎮 풀게임 1종!", color: "#f59e0b" },
+  { tier: "NORMAL",    name: "위로 포인트 500P", color: "#8b8f98" },
+  { tier: "RARE",      name: "잔액 2,000원",     color: "#3b82f6" },
+  { tier: "EPIC",      name: "게임패스 1일권",   color: "#8b5cf6" },
+  { tier: "LEGENDARY", name: "🎮 풀게임 1종!",   color: "#f59e0b" },
 ];
 
 for (const k of ["Normal", "Premium"]) {
@@ -182,21 +305,20 @@ function pull(k) {
   const stage = document.getElementById("stage" + k);
   const btn = document.querySelector("#wrap" + k + " .pull");
   btn.disabled = true;
-  stage.classList.remove("dropping", "opened");
-  stage.querySelector(".out-capsule")?.remove();
-  stage.querySelector(".prize")?.remove();
-  stage.querySelector(".glow")?.remove();
+  stage.classList.remove("dropping", "opened", "pulse");
+  for (const sel of [".out-capsule", ".prize", ".glow", ".spark"]) {
+    stage.querySelectorAll(sel).forEach((el) => el.remove());
+  }
+  stage.classList.remove("idle");
 
-  // 1) 코인 투입
-  stage.classList.add("coined");
-  // 2) 손잡이 회전 + 흔들림
-  setTimeout(() => { stage.classList.add("cranking", "shaking"); }, 450);
-  // 3) 캡슐 배출
-  setTimeout(() => {
+  stage.classList.add("coined");                                        // 1) 코인
+  setTimeout(() => stage.classList.add("cranking", "shaking"), 480);    // 2) 손잡이+흔들림
+  setTimeout(() => {                                                    // 3) 캡슐 배출
     stage.classList.remove("coined", "cranking", "shaking");
     const roll = Math.random();
-    const prize = PRIZES[roll > 0.93 ? 3 : roll > 0.75 ? 2 : roll > 0.45 ? 1 : 0];
-    const [capColor] = CAPSULE_COLORS[Math.floor(Math.random() * CAPSULE_COLORS.length)];
+    const prize = PRIZES[roll > .93 ? 3 : roll > .75 ? 2 : roll > .45 ? 1 : 0];
+    const capColor = CAP_COLORS[Math.floor(Math.random() * CAP_COLORS.length)];
+
     const cap = document.createElement("div");
     cap.className = "out-capsule";
     cap.innerHTML = capsuleSVG(capColor);
@@ -204,19 +326,32 @@ function pull(k) {
     glow.className = "glow";
     const card = document.createElement("div");
     card.className = "prize";
-    card.innerHTML = `<div class="tier">${prize.tier}</div><div class="name">${prize.name}</div>`;
-    for (const el of [glow, cap, card]) stage.appendChild(el);
+    card.innerHTML = `<span class="tier">${prize.tier}</span><div class="name">${prize.name}</div>`;
+    stage.append(glow, cap, card);
+    // 반짝이 파편
+    for (let i = 0; i < 8; i++) {
+      const s = document.createElement("div");
+      s.className = "spark";
+      s.textContent = "✦";
+      s.style.color = prize.color;
+      s.style.left = "50%"; s.style.bottom = "70px";
+      s.style.setProperty("--dx", (Math.cos(i / 8 * 6.283) * 95) + "px");
+      s.style.setProperty("--dy", (-Math.sin(i / 8 * 6.283) * 95 - 30) + "px");
+      stage.append(s);
+    }
     stage.style.setProperty("--rare", prize.color);
     stage.classList.add("dropping");
-    // 4) 캡슐 클릭(또는 2.2초 후 자동)으로 개봉
-    const open = () => {
+    setTimeout(() => stage.classList.add("pulse"), 1100);               // 캡슐 두근두근
+
+    const open = () => {                                                // 4) 개봉
       if (stage.classList.contains("opened")) return;
+      stage.classList.remove("pulse");
       stage.classList.add("opened");
-      setTimeout(() => { btn.disabled = false; busy[k] = false; }, 900);
+      setTimeout(() => { btn.disabled = false; busy[k] = false; stage.classList.add("idle"); }, 1000);
     };
     cap.addEventListener("click", open);
-    setTimeout(open, 2200);
-  }, 1600);
+    setTimeout(open, 2600);
+  }, 1750);
 }
 </script>
 </body>
