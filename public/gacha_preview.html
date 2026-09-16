@@ -16,7 +16,7 @@ h1 { text-align: center; font-size: 1.35rem; margin: 0 0 18px; letter-spacing: -
 .wrap { max-width: 760px; margin: 0 auto; }
 
 /* ── 상자 선택 탭 ── */
-.tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 22px; }
+.tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 22px; position: relative; z-index: 10; }
 .tabs button {
   border: 1.5px solid #e4e4e7; background: #fff; color: #52525b; border-radius: 999px;
   padding: 9px 18px; font-size: .9rem; font-weight: 700; cursor: pointer;
@@ -35,7 +35,7 @@ h1 { text-align: center; font-size: 1.35rem; margin: 0 0 18px; letter-spacing: -
 .open .glow-bg { opacity: .45; }
 
 /* ── 상자 (3D) ── */
-.box-area { position: relative; height: 230px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; perspective: 650px; }
+.box-area { position: relative; height: 230px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; perspective: 650px; pointer-events: none; }  /* 장식 — 뚜껑·빛기둥이 탭을 가리지 않게 */
 /* 상자 좌표계: 원점 = 앞면 윗변, y 아래, z 앞(화면 쪽). 깊이 D=72 */
 .box { position: relative; width: 220px; height: 110px; margin-bottom: 14px; transform-style: preserve-3d; }
 .shake .box { animation: shake .55s ease-in-out; }
