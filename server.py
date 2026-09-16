@@ -2035,7 +2035,7 @@ GACHA_MAX_INFLIGHT = 5   # 봇 처리 대기 중인 뽑기 최대 건수
 # 확정 보상표(2026-09-16). 관리자 페이지에서 수정하면 shop["gacha"]에 저장되어 이 기본값 대신 쓰임.
 GACHA_DEFAULT = {
     "normal": {
-        "name": "일반 상자", "cost_kind": "point", "cost": 200, "daily_limit": 0,
+        "name": "일반 상자", "cost_kind": "point", "cost": 200, "daily_limit": 5,   # 1인 하루 5회
         "tiers": [
             {"label": "노말", "p": 80, "items": [
                 {"n": "300P", "w": 10}, {"n": "200P", "w": 15}, {"n": "100P", "w": 25}, {"n": "50P", "w": 25}, {"n": "꽝", "w": 25}]},
@@ -2053,7 +2053,7 @@ GACHA_DEFAULT = {
         ],
     },
     "premium": {
-        "name": "고급 상자", "cost_kind": "cash", "cost": 1000, "daily_limit": 0,
+        "name": "고급 상자", "cost_kind": "cash", "cost": 1000, "daily_limit": 0,   # 무제한
         "tiers": [
             {"label": "노말", "p": 45, "items": [
                 {"n": "100P", "w": 1}, {"n": "200P", "w": 1}, {"n": "300P", "w": 1}, {"n": "잔액 200원", "w": 1},
