@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import os
+import random
 import re
 import secrets
 import socketserver
@@ -147,6 +148,33 @@ def init_db():
             game TEXT NOT NULL UNIQUE,
             created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS gacha_pulls (   -- 뽑기 기록 (서버가 추첨, 봇이 차감·지급)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT NOT NULL,
+            username TEXT NOT NULL,
+            box TEXT NOT NULL,                     -- normal / premium
+            box_name TEXT NOT NULL,
+            cost_kind TEXT NOT NULL,               -- point / cash
+            cost INTEGER NOT NULL,
+            tier TEXT NOT NULL,
+            item TEXT NOT NULL,                    -- 보상 라벨
+            rtype TEXT NOT NULL,                   -- point / cash / pass / coupon / none
+            rvalue INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT '대기',    -- 대기/처리중/완료/실패
+            result TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS coupons (       -- 게임 할인쿠폰 (뽑기 보상)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT NOT NULL,
+            pct INTEGER NOT NULL,
+            pull_id INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            used_at INTEGER NOT NULL DEFAULT 0,
+            order_id INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS gifts (         -- 사은품 (1회 구매 금액 조건)
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             game TEXT NOT NULL,                    -- 사은품 게임 이름
@@ -166,6 +194,7 @@ def init_db():
             "ALTER TABLE orders ADD COLUMN gift_game TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN gift_link TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE gifts ADD COLUMN image TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN coupon_pct INTEGER NOT NULL DEFAULT 0",  # 할인쿠폰 적용률
         ):
             try:
                 c.execute(stmt)
@@ -252,6 +281,8 @@ def purge_old():
         db().execute("DELETE FROM charges WHERE created_at<?", (cutoff,))
         db().execute("DELETE FROM orders WHERE created_at<?", (cutoff,))
         db().execute("DELETE FROM product_regs WHERE created_at<?", (cutoff,))
+        db().execute("DELETE FROM gacha_pulls WHERE created_at<?", (cutoff,))
+        db().execute("DELETE FROM coupons WHERE expires_at<? AND used_at=0", (cutoff,))
         db().commit()
 
 
@@ -654,7 +685,7 @@ def api_my_requests(req):
             "SELECT id,amount,status,created_at "
             "FROM charges WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
         orders = db().execute(
-            "SELECT id,game,price,status,result,kind,link_sent,gift_game,gift_link,"
+            "SELECT id,game,price,status,result,kind,link_sent,gift_game,gift_link,coupon_pct,"
             "created_at,updated_at "
             "FROM orders WHERE uid=? ORDER BY id DESC LIMIT 30", (s["uid"],)).fetchall()
     products = load_shop().get("products") or {}
@@ -833,6 +864,7 @@ def api_shopdata(req):
         "pass": pass_info(shop, s["uid"]),
         "gifts": gift_list(shop),
         "discount_pct": user_discount_pct(shop, s["uid"]),
+        "coupons": [c for c in my_coupons(s["uid"]) if c["ready"]],
     })
 
 
@@ -909,19 +941,27 @@ def api_charge_create(req):
         db().commit()
     return json_resp({"ok": True})
 
-def game_order_price(shop, game, tier_pct=0):
-    """(가격, fixed, 오류메시지). 게임 할인가 위에 등급 할인율까지 적용, 할인 있으면 fixed=1."""
+def game_base_price(shop, game):
+    """(기본가, 세일여부, 오류메시지). 기본가 = 세일가 있으면 세일가, 없으면 판매가."""
     info = (shop.get("products") or {}).get(game)
     if not info:
-        return 0, 0, "판매 중인 상품이 아닙니다."
+        return 0, False, "판매 중인 상품이 아닙니다."
     if info.get("is_game_pass"):
-        return 0, 0, "게임패스는 [게임패스] 탭에서 구매해주세요."
+        return 0, False, "게임패스는 [게임패스] 탭에서 구매해주세요."
     if info.get("is_subscription"):
-        return 0, 0, "정기결제 상품은 구매할 수 없습니다. 관리자에게 문의해주세요."
+        return 0, False, "정기결제 상품은 구매할 수 없습니다. 관리자에게 문의해주세요."
     sale = discount_map().get(game)
     base = int(sale) if sale is not None else int(info.get("price", 0) or 0)
-    final = apply_tier_discount(base, tier_pct)
-    fixed = 1 if (sale is not None or final != base) else 0
+    return base, sale is not None, None
+
+
+def game_order_price(shop, game, tier_pct=0, coupon_pct=0):
+    """(가격, fixed, 오류메시지). 기본가 위에 등급 할인율 또는 쿠폰 할인율 중 큰 쪽 적용(중첩 없음)."""
+    base, on_sale, err = game_base_price(shop, game)
+    if err:
+        return 0, 0, err
+    final = apply_tier_discount(base, max(tier_pct, coupon_pct))
+    fixed = 1 if (on_sale or final != base) else 0
     return final, fixed, None
 
 
@@ -961,13 +1001,29 @@ def api_order_create(req):
         return json_resp({"error": "잘못된 요청"}, 400)
     shop = load_shop()
     tier_pct = user_discount_pct(shop, s["uid"])
+    coupon = None
+    if d.get("coupon_id"):
+        coupon = usable_coupon(s["uid"], d.get("coupon_id"))
+        if not coupon:
+            return json_resp({"error": "사용할 수 없는 할인쿠폰입니다. (만료·사용됨·지급 처리 중)"}, 400)
+    # 쿠폰은 가장 비싼 게임 1개에만 적용
+    coupon_game = None
+    if coupon:
+        best = -1
+        for g in games:
+            base, _on_sale, err = game_base_price(shop, g)
+            if err:
+                return json_resp({"error": f"'{g}': {err}"}, 400)
+            if base > best:
+                best, coupon_game = base, g
     priced = []
     for g in games:
-        price, fixed, err = game_order_price(shop, g, tier_pct)
+        cpct = coupon["pct"] if (coupon and g == coupon_game) else 0
+        price, fixed, err = game_order_price(shop, g, tier_pct, cpct)
         if err:
             return json_resp({"error": f"'{g}': {err}"}, 400)
-        priced.append((g, price, fixed))
-    total = sum(p for _, p, _ in priced)
+        priced.append((g, price, fixed, cpct))
+    total = sum(p for _, p, _, _ in priced)
     balance = shop.get("balances", {}).get(s["uid"], 0)
     if balance < total:
         return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 총 {total:,}원) 충전 후 이용해주세요."}, 400)
@@ -976,17 +1032,28 @@ def api_order_create(req):
         err = _order_guards(s["uid"], games)
         if err:
             return json_resp({"error": err}, 400)
-        for i, (g, price, fixed) in enumerate(priced):
-            db().execute(
-                "INSERT INTO orders(uid,username,game,price,fixed,gift_game,gift_link,"
-                "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        if coupon:
+            # 동시 요청으로 같은 쿠폰이 두 번 쓰이지 않게 여기서 다시 확인
+            fresh = db().execute(
+                "SELECT id FROM coupons WHERE id=? AND uid=? AND used_at=0", (coupon["id"], s["uid"])).fetchone()
+            if not fresh:
+                return json_resp({"error": "이미 사용된 할인쿠폰입니다."}, 400)
+        for i, (g, price, fixed, cpct) in enumerate(priced):
+            cur = db().execute(
+                "INSERT INTO orders(uid,username,game,price,fixed,gift_game,gift_link,coupon_pct,"
+                "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (s["uid"], s["name"], g, price, fixed,
                  (gift_game or "") if i == 0 else "", (gift_link or "") if i == 0 else "",  # 사은품은 1건에만
-                 now(), now()))
+                 cpct, now(), now()))
+            if cpct:
+                db().execute("UPDATE coupons SET used_at=?, order_id=? WHERE id=?",
+                             (now(), cur.lastrowid, coupon["id"]))
         db().commit()
     out = {"ok": True, "count": len(priced), "total": total}
     if gift_game:
         out["gift"] = gift_game
+    if coupon:
+        out["coupon"] = {"pct": coupon["pct"], "game": coupon_game}
     return json_resp(out)
 
 
@@ -1225,11 +1292,15 @@ def api_sync_pull_orders(req):
         return json_resp({"error": "인증 실패"}, 403)
     with db_lock:
         # 15분 넘게 결과가 안 온 '처리중' → 실패 처리 (봇 중단 등)
-        db().execute(
-            "UPDATE orders SET status='실패', result='처리 시간 초과 — 잔액이 차감됐다면 관리자에게 문의해주세요', updated_at=? "
-            "WHERE status='처리중' AND updated_at<?", (now(), now() - 900))
+        stale = [r["id"] for r in db().execute(
+            "SELECT id FROM orders WHERE status='처리중' AND updated_at<?", (now() - 900,)).fetchall()]
+        for oid in stale:
+            db().execute(
+                "UPDATE orders SET status='실패', result='처리 시간 초과 — 잔액이 차감됐다면 관리자에게 문의해주세요', updated_at=? "
+                "WHERE id=?", (now(), oid))
+            restore_coupon(oid)
         rows = db().execute(
-            "SELECT id,uid,username,game,price,kind,fixed,gift_game,gift_link FROM orders "
+            "SELECT id,uid,username,game,price,kind,fixed,gift_game,gift_link,coupon_pct FROM orders "
             "WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
         for r in rows:
             db().execute("UPDATE orders SET status='처리중', updated_at=? WHERE id=?", (now(), r["id"]))
@@ -1249,6 +1320,8 @@ def api_sync_order_results(req):
             db().execute(
                 "UPDATE orders SET status=?, result=?, updated_at=? WHERE id=? AND status='처리중'",
                 ("완료" if res.get("ok") else "실패", clean(str(res.get("msg", "")), 300), now(), res["id"]))
+            if not res.get("ok"):
+                restore_coupon(res["id"])
         db().commit()
     return json_resp({"ok": True})
 
@@ -1952,6 +2025,372 @@ def api_admin_delete(req):
 
 # ---------------------------------------------------------------- 라우팅
 
+# ---------------------------------------------------------------- 뽑기(상자) · 할인쿠폰
+
+GACHA_COLORS = {"노말": "#8b8f98", "희귀": "#3b82f6", "에픽": "#8b5cf6", "레전드": "#f59e0b", "히든": "#e11d48"}
+COUPON_DAYS = 7          # 할인쿠폰 유효기간
+GACHA_COOLDOWN = 3       # 같은 유저 연속 뽑기 최소 간격(초)
+GACHA_MAX_INFLIGHT = 5   # 봇 처리 대기 중인 뽑기 최대 건수
+
+# 확정 보상표(2026-09-16). 관리자 페이지에서 수정하면 shop["gacha"]에 저장되어 이 기본값 대신 쓰임.
+GACHA_DEFAULT = {
+    "normal": {
+        "name": "일반 상자", "cost_kind": "point", "cost": 200, "daily_limit": 0,
+        "tiers": [
+            {"label": "노말", "p": 80, "items": [
+                {"n": "300P", "w": 10}, {"n": "200P", "w": 15}, {"n": "100P", "w": 25}, {"n": "50P", "w": 25}, {"n": "꽝", "w": 25}]},
+            {"label": "희귀", "p": 15, "items": [
+                {"n": "잔액 100원", "w": 15}, {"n": "잔액 300원", "w": 15}, {"n": "300P", "w": 15}, {"n": "400P", "w": 15},
+                {"n": "게임 5% 할인쿠폰", "w": 10}, {"n": "꽝", "w": 30}]},
+            {"label": "에픽", "p": 4, "items": [
+                {"n": "잔액 500원", "w": 20}, {"n": "잔액 1,000원", "w": 5}, {"n": "500P", "w": 20}, {"n": "600P", "w": 20},
+                {"n": "게임 10% 할인쿠폰", "w": 15}, {"n": "꽝", "w": 20}]},
+            {"label": "레전드", "p": 0.8, "items": [
+                {"n": "잔액 3,000원", "w": 1}, {"n": "잔액 5,000원", "w": 1}, {"n": "1,000P", "w": 1}, {"n": "1,500P", "w": 1},
+                {"n": "게임 20% 할인쿠폰", "w": 1}]},
+            {"label": "히든", "p": 0.2, "items": [
+                {"n": "잔액 30,000원", "w": 1}, {"n": "게임패스 30일권", "w": 1}, {"n": "게임 50% 할인쿠폰", "w": 1}]},
+        ],
+    },
+    "premium": {
+        "name": "고급 상자", "cost_kind": "cash", "cost": 1000, "daily_limit": 0,
+        "tiers": [
+            {"label": "노말", "p": 45, "items": [
+                {"n": "100P", "w": 1}, {"n": "200P", "w": 1}, {"n": "300P", "w": 1}, {"n": "잔액 200원", "w": 1},
+                {"n": "잔액 300원", "w": 1}, {"n": "게임 5% 할인쿠폰", "w": 1}]},
+            {"label": "희귀", "p": 32, "items": [
+                {"n": "잔액 500원", "w": 1}, {"n": "잔액 700원", "w": 1}, {"n": "500P", "w": 1}, {"n": "800P", "w": 1},
+                {"n": "게임 10% 할인쿠폰", "w": 1}]},
+            {"label": "에픽", "p": 15, "items": [
+                {"n": "잔액 1,000원", "w": 30}, {"n": "잔액 1,500원", "w": 25}, {"n": "잔액 2,000원", "w": 10}, {"n": "1,000P", "w": 20},
+                {"n": "게임 15% 할인쿠폰", "w": 15}]},
+            {"label": "레전드", "p": 6.5, "items": [
+                {"n": "잔액 3,000원", "w": 25}, {"n": "잔액 5,000원", "w": 25}, {"n": "잔액 10,000원", "w": 5}, {"n": "게임패스 7일권", "w": 20},
+                {"n": "2,000P", "w": 10}, {"n": "게임 30% 할인쿠폰", "w": 15}]},
+            {"label": "히든", "p": 1.5, "items": [
+                {"n": "게임패스 30일권", "w": 60}, {"n": "잔액 30,000원", "w": 20}, {"n": "잔액 50,000원", "w": 10},
+                {"n": "게임 50% 할인쿠폰", "w": 10}]},
+        ],
+    },
+}
+
+_rng = random.SystemRandom()
+
+
+def parse_reward(label):
+    """보상 라벨 → (종류, 값). 종류: point/cash/pass/coupon/none. 형식이 아니면 None."""
+    t = re.sub(r"\s+", "", str(label or ""))
+    if t == "꽝":
+        return "none", 0
+    m = re.fullmatch(r"([\d,]+)[Pp]", t)
+    if m:
+        return "point", int(m.group(1).replace(",", ""))
+    m = re.fullmatch(r"잔액([\d,]+)원", t)
+    if m:
+        return "cash", int(m.group(1).replace(",", ""))
+    m = re.fullmatch(r"게임패스(7|30)일권", t)
+    if m:
+        return "pass", int(m.group(1))
+    m = re.fullmatch(r"게임(\d{1,2})%할인쿠폰", t)
+    if m and 0 < int(m.group(1)) <= 90:
+        return "coupon", int(m.group(1))
+    return None
+
+
+def validate_gacha_config(raw):
+    """관리자 저장용 검증. (정규화된 설정, None) 또는 (None, 오류 메시지)."""
+    if not isinstance(raw, dict):
+        return None, "잘못된 형식"
+    out = {}
+    for key in ("normal", "premium"):
+        b = raw.get(key)
+        if not isinstance(b, dict):
+            return None, f"{key} 상자 설정이 없습니다."
+        try:
+            cost = int(b.get("cost", 0))
+            daily = int(b.get("daily_limit", 0) or 0)
+        except (TypeError, ValueError):
+            return None, "가격/횟수 제한은 숫자여야 합니다."
+        kind = b.get("cost_kind")
+        if kind not in ("point", "cash") or cost <= 0 or daily < 0:
+            return None, f"{key} 상자의 결제 수단/가격이 잘못됐습니다."
+        tiers = b.get("tiers")
+        if not isinstance(tiers, list) or not 1 <= len(tiers) <= 8:
+            return None, "등급은 1~8개여야 합니다."
+        norm_tiers, psum = [], 0.0
+        for t in tiers:
+            label = clean((t or {}).get("label"), 10)
+            try:
+                p = float(t.get("p", 0))
+            except (TypeError, ValueError):
+                return None, f"'{label}' 등급 확률이 숫자가 아닙니다."
+            if not label or p <= 0:
+                return None, "등급 이름이 비었거나 확률이 0 이하입니다."
+            items = t.get("items")
+            if not isinstance(items, list) or not 1 <= len(items) <= 12:
+                return None, f"'{label}' 등급 보상은 1~12개여야 합니다."
+            norm_items = []
+            for it in items:
+                n = clean((it or {}).get("n"), 40)
+                try:
+                    w = float(it.get("w", 1) or 1)
+                except (TypeError, ValueError):
+                    return None, f"'{n}' 가중치가 숫자가 아닙니다."
+                if not n or w <= 0 or parse_reward(n) is None:
+                    return None, (f"'{n}' 은(는) 인식할 수 없는 보상입니다. "
+                                  "형식: 300P / 잔액 1,000원 / 게임패스 7일권 / 게임 10% 할인쿠폰 / 꽝")
+                norm_items.append({"n": n, "w": w})
+            psum += p
+            norm_tiers.append({"label": label, "p": p, "items": norm_items})
+        if abs(psum - 100) > 0.05:
+            return None, f"{b.get('name', key)} 등급 확률 합이 {psum:g}% 입니다. 100%로 맞춰주세요."
+        out[key] = {"name": clean(b.get("name"), 20) or key, "cost_kind": kind, "cost": cost,
+                    "daily_limit": daily, "tiers": norm_tiers}
+    return out, None
+
+
+def gacha_config(shop=None):
+    shop = shop if shop is not None else load_shop()
+    cfg, err = validate_gacha_config(shop.get("gacha"))
+    return cfg if cfg and not err else json.loads(json.dumps(GACHA_DEFAULT))
+
+
+def weighted_pick(items, weight):
+    total = sum(weight(x) for x in items)
+    r = _rng.random() * total
+    for x in items:
+        r -= weight(x)
+        if r < 0:
+            return x
+    return items[-1]
+
+
+def kst_day_start(ts):
+    """한국 시간 기준 그 날 00:00 의 epoch."""
+    return ((ts + 9 * 3600) // 86400) * 86400 - 9 * 3600
+
+
+def my_coupons(uid):
+    """보유 쿠폰(미사용·미만료). ready=False 는 뽑기 지급 처리가 아직 안 끝난 것."""
+    with db_lock:
+        rows = db().execute(
+            "SELECT c.id, c.pct, c.expires_at, c.pull_id, COALESCE(p.status, '완료') AS pstatus "
+            "FROM coupons c LEFT JOIN gacha_pulls p ON p.id=c.pull_id "
+            "WHERE c.uid=? AND c.used_at=0 AND c.expires_at>? ORDER BY c.pct DESC, c.expires_at",
+            (uid, now())).fetchall()
+    return [{"id": r["id"], "pct": r["pct"], "expires_at": r["expires_at"],
+             "ready": r["pstatus"] == "완료"} for r in rows if r["pstatus"] != "실패"]
+
+
+def usable_coupon(uid, coupon_id):
+    if not isinstance(coupon_id, int):
+        return None
+    return next((c for c in my_coupons(uid) if c["id"] == coupon_id and c["ready"]), None)
+
+
+def restore_coupon(order_id):
+    """주문 실패 시 그 주문에 쓴 쿠폰 되돌리기. db_lock 안에서 호출."""
+    db().execute("UPDATE coupons SET used_at=0, order_id=0 WHERE order_id=?", (order_id,))
+
+
+def gacha_wallet(shop, uid):
+    """뽑기용 유효 잔액/포인트 = 봇 동기화값 − 아직 봇이 처리 안 한 주문·뽑기 비용."""
+    balances = shop.get("balances") or {}
+    profiles = shop.get("profiles") or {}
+    profile = profiles.get(uid) or {}
+    registered = uid in balances or uid in profiles
+    cash = int(balances.get(uid, 0) or 0)
+    point = int(profile.get("point", 0) or 0)
+    with db_lock:
+        pend_orders = db().execute(
+            "SELECT COALESCE(SUM(price),0) FROM orders WHERE uid=? AND status IN ('대기','처리중')",
+            (uid,)).fetchone()[0]
+        rows = db().execute(
+            "SELECT cost_kind, COALESCE(SUM(cost),0) AS c FROM gacha_pulls "
+            "WHERE uid=? AND status IN ('대기','처리중') GROUP BY cost_kind", (uid,)).fetchall()
+    pend = {r["cost_kind"]: r["c"] for r in rows}
+    return {"cash": cash - int(pend_orders) - pend.get("cash", 0),
+            "point": point - pend.get("point", 0), "registered": registered}
+
+
+def gacha_today_count(uid, box):
+    with db_lock:
+        return db().execute(
+            "SELECT COUNT(*) FROM gacha_pulls WHERE uid=? AND box=? AND created_at>=? AND status!='실패'",
+            (uid, box, kst_day_start(now()))).fetchone()[0]
+
+
+def reward_desc(rtype):
+    return {"coupon": f"{COUPON_DAYS}일 내 게임 1개 구매 시 선택 적용 · 1회용",
+            "pass": "봇이 곧 게임패스를 적용해요 (최대 1분)",
+            "point": "봇이 곧 포인트를 지급해요 (최대 1분)",
+            "cash": "봇이 곧 잔액을 지급해요 (최대 1분)",
+            "none": "다음 기회에…"}.get(rtype, "")
+
+
+def _public_boxes(cfg, uid):
+    """유저 화면용 상자 정보 — 확률(p, w)은 절대 포함하지 않는다."""
+    boxes = []
+    for key in ("normal", "premium"):
+        b = cfg[key]
+        boxes.append({
+            "key": key, "name": b["name"], "cost_kind": b["cost_kind"], "cost": b["cost"],
+            "daily_limit": b["daily_limit"], "today": gacha_today_count(uid, key),
+            "tiers": [{"label": t["label"], "color": GACHA_COLORS.get(t["label"], "#8b8f98"),
+                       "items": [it["n"] for it in t["items"] if parse_reward(it["n"])[0] != "none"]}
+                      for t in b["tiers"]],
+        })
+    return boxes
+
+
+def api_gacha(req):
+    """뽑기 화면 데이터: 상자·보상 목록(확률 제외) + 내 잔액/포인트 + 쿠폰 + 최근 결과."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    shop = load_shop()
+    cfg = gacha_config(shop)
+    with db_lock:
+        recent = db().execute(
+            "SELECT id,box_name,tier,item,rtype,status,result,created_at FROM gacha_pulls "
+            "WHERE uid=? ORDER BY id DESC LIMIT 15", (s["uid"],)).fetchall()
+    rec = []
+    for r in recent:
+        r = dict(r)
+        r["color"] = GACHA_COLORS.get(r["tier"], "#8b8f98")
+        rec.append(r)
+    return json_resp({"boxes": _public_boxes(cfg, s["uid"]), "wallet": gacha_wallet(shop, s["uid"]),
+                      "coupons": my_coupons(s["uid"]), "recent": rec, "coupon_days": COUPON_DAYS})
+
+
+def api_gacha_pull(req):
+    """뽑기 1회: 서버가 즉시 추첨·기록 → 봇이 1분 내 비용 차감 + 보상 지급."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    d = req.read_json() or {}
+    key = d.get("box")
+    if key not in ("normal", "premium"):
+        return json_resp({"error": "잘못된 요청"}, 400)
+    shop = load_shop()
+    box = gacha_config(shop)[key]
+    wallet = gacha_wallet(shop, s["uid"])
+    if not wallet["registered"]:
+        return json_resp({"error": "구매자 정보가 없어요. 디스코드 서버에서 !가입 후 이용해주세요."}, 400)
+    have = wallet[box["cost_kind"]]
+    unit = "P" if box["cost_kind"] == "point" else "원"
+    if have < box["cost"]:
+        return json_resp({"error": f"{'포인트' if box['cost_kind'] == 'point' else '잔액'}가 부족해요. "
+                                   f"(보유 {have:,}{unit} / 1회 {box['cost']:,}{unit})"}, 400)
+    if box["daily_limit"] and gacha_today_count(s["uid"], key) >= box["daily_limit"]:
+        return json_resp({"error": f"{box['name']}는 하루 {box['daily_limit']}회까지만 뽑을 수 있어요."}, 400)
+    with db_lock:
+        inflight = db().execute(
+            "SELECT COUNT(*) FROM gacha_pulls WHERE uid=? AND status IN ('대기','처리중')",
+            (s["uid"],)).fetchone()[0]
+        if inflight >= GACHA_MAX_INFLIGHT:
+            return json_resp({"error": "봇이 처리 중인 뽑기가 많아요. 잠시 후 다시 시도해주세요."}, 400)
+        last = db().execute("SELECT MAX(created_at) FROM gacha_pulls WHERE uid=?", (s["uid"],)).fetchone()[0]
+        if last and now() - last < GACHA_COOLDOWN:
+            return json_resp({"error": "잠시 후 다시 시도해주세요."}, 400)
+        tier = weighted_pick(box["tiers"], lambda t: t["p"])
+        item = weighted_pick(tier["items"], lambda it: it["w"])
+        rtype, rvalue = parse_reward(item["n"])
+        cur = db().execute(
+            "INSERT INTO gacha_pulls(uid,username,box,box_name,cost_kind,cost,tier,item,rtype,rvalue,"
+            "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (s["uid"], s["name"], key, box["name"], box["cost_kind"], box["cost"],
+             tier["label"], item["n"], rtype, rvalue, now(), now()))
+        pull_id = cur.lastrowid
+        if rtype == "coupon":
+            db().execute(
+                "INSERT INTO coupons(uid,pct,pull_id,created_at,expires_at) VALUES(?,?,?,?,?)",
+                (s["uid"], rvalue, pull_id, now(), now() + COUPON_DAYS * 86400))
+        db().commit()
+    wallet[box["cost_kind"]] -= box["cost"]
+    return json_resp({"ok": True,
+                      "pull": {"id": pull_id, "tier": tier["label"],
+                               "color": GACHA_COLORS.get(tier["label"], "#8b8f98"),
+                               "item": item["n"], "rtype": rtype, "rvalue": rvalue,
+                               "desc": reward_desc(rtype)},
+                      "wallet": wallet, "today": gacha_today_count(s["uid"], key)})
+
+
+def api_sync_pull_gacha(req):
+    """봇: 대기 중인 뽑기 가져가기(가져가면 '처리중') — 비용 차감·보상 지급용."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    with db_lock:
+        stale = [r["id"] for r in db().execute(
+            "SELECT id FROM gacha_pulls WHERE status='처리중' AND updated_at<?", (now() - 900,)).fetchall()]
+        for pid in stale:
+            db().execute("UPDATE gacha_pulls SET status='실패', result='처리 시간 초과 — 관리자에게 문의해주세요', updated_at=? WHERE id=?",
+                         (now(), pid))
+            db().execute("DELETE FROM coupons WHERE pull_id=? AND used_at=0", (pid,))
+        rows = db().execute(
+            "SELECT id,uid,username,box,box_name,cost_kind,cost,tier,item,rtype,rvalue FROM gacha_pulls "
+            "WHERE status='대기' ORDER BY id LIMIT 20").fetchall()
+        for r in rows:
+            db().execute("UPDATE gacha_pulls SET status='처리중', updated_at=? WHERE id=?", (now(), r["id"]))
+        db().commit()
+    return json_resp({"pulls": row_dicts(rows)})
+
+
+def api_sync_gacha_results(req):
+    """봇: 뽑기 처리 결과. 실패하면 그 뽑기의 쿠폰은 회수."""
+    d = check_sync(req)
+    if d is None:
+        return json_resp({"error": "인증 실패"}, 403)
+    with db_lock:
+        for res in (d.get("results") or [])[:50]:
+            if not isinstance(res, dict) or not isinstance(res.get("id"), int):
+                continue
+            ok = bool(res.get("ok"))
+            db().execute(
+                "UPDATE gacha_pulls SET status=?, result=?, updated_at=? WHERE id=? AND status='처리중'",
+                ("완료" if ok else "실패", clean(str(res.get("msg", "")), 300), now(), res["id"]))
+            if not ok:
+                db().execute("DELETE FROM coupons WHERE pull_id=? AND used_at=0", (res["id"],))
+        db().commit()
+    return json_resp({"ok": True})
+
+
+def api_admin_gacha_get(req):
+    """관리자: 보상표(확률 포함) + 최근 뽑기 기록 + 오늘 통계."""
+    shop = load_shop()
+    with db_lock:
+        rows = db().execute(
+            "SELECT id,uid,username,box_name,cost_kind,cost,tier,item,status,result,created_at "
+            "FROM gacha_pulls ORDER BY id DESC LIMIT 60").fetchall()
+        day = kst_day_start(now())
+        stats = db().execute(
+            "SELECT box_name, COUNT(*) AS n, SUM(cost) AS spent FROM gacha_pulls "
+            "WHERE created_at>=? AND status!='실패' GROUP BY box_name", (day,)).fetchall()
+        tiers = db().execute(
+            "SELECT tier, COUNT(*) AS n FROM gacha_pulls WHERE created_at>=? AND status!='실패' GROUP BY tier",
+            (day,)).fetchall()
+    return json_resp({"config": gacha_config(shop), "custom": bool(shop.get("gacha")),
+                      "colors": GACHA_COLORS, "pulls": row_dicts(rows),
+                      "today": row_dicts(stats), "today_tiers": row_dicts(tiers)})
+
+
+def api_admin_gacha(req):
+    """관리자: 보상표 저장(set) / 기본값으로 되돌리기(reset)."""
+    d = req.read_json(limit=256 * 1024) or {}
+    shop = load_shop()
+    if d.get("action") == "reset":
+        shop.pop("gacha", None)
+        save_shop(shop)
+        return json_resp({"ok": True, "config": gacha_config(shop)})
+    cfg, err = validate_gacha_config(d.get("boxes"))
+    if err:
+        return json_resp({"error": err}, 400)
+    shop["gacha"] = cfg
+    save_shop(shop)
+    return json_resp({"ok": True, "config": cfg})
+
+
 GET_ROUTES = {
     "/login": route_login,
     "/callback": route_callback,
@@ -1968,10 +2407,12 @@ GET_ROUTES = {
     "/api/my/link": api_my_link,
     "/api/my/gift_link": api_my_gift_link,
     "/api/shop/giftimg": api_gift_image,
+    "/api/gacha": api_gacha,
 }
 GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,
     "/api/admin/image": api_admin_image,
+    "/api/admin/gacha": api_admin_gacha_get,
 }
 POST_ROUTES = {
     "/api/request": api_request_create,
@@ -1991,6 +2432,9 @@ POST_ROUTES = {
     "/api/sync/images": api_sync_images,
     "/api/sync/image": api_sync_image,
     "/api/sync/details": api_sync_details,
+    "/api/gacha/pull": api_gacha_pull,
+    "/api/sync/pull_gacha": api_sync_pull_gacha,
+    "/api/sync/gacha_results": api_sync_gacha_results,
 }
 POST_ADMIN_ROUTES = {
     "/api/admin/respond": api_admin_respond,
@@ -2003,6 +2447,7 @@ POST_ADMIN_ROUTES = {
     "/api/admin/product_reg": api_admin_product_reg,
     "/api/admin/gift": api_admin_gift,
     "/api/admin/reservation_send": api_admin_reservation_send,
+    "/api/admin/gacha": api_admin_gacha,
 }
 
 _init_done = False

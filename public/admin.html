@@ -25,6 +25,7 @@
     <button data-tab="notice">공지</button>
     <button data-tab="upcoming">신작</button>
     <button data-tab="discount">할인·BEST</button>
+    <button data-tab="gacha">뽑기</button>
   </nav>
 
   <!-- 복구요청 -->
@@ -190,6 +191,28 @@
       </div>
       <button class="primary" id="gfAdd" style="background:#2563eb">사은품 등록</button>
       <div id="giftAdminList" style="margin-top:16px"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
+
+  <!-- 뽑기 -->
+  <section class="tab-page" id="page-gacha">
+    <div class="card">
+      <h2>🎁 뽑기 보상표</h2>
+      <p class="desc">유저에게는 <b>보상 목록만</b> 보이고 확률은 공개되지 않습니다. 등급 확률 합은 100%여야 하고,
+      보상은 한 줄에 하나씩 <b>이름 | 가중치</b> 형식으로 적습니다 (가중치 생략 시 동일 확률).<br>
+      인식되는 보상: <code>300P</code> · <code>잔액 1,000원</code> · <code>게임패스 7일권</code> / <code>30일권</code> · <code>게임 10% 할인쿠폰</code> · <code>꽝</code></p>
+      <div class="stat-grid" id="gaStats"></div>
+      <div id="gaEditor"><div class="empty">불러오는 중...</div></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="primary" id="gaSave" style="margin-top:0">보상표 저장</button>
+        <button class="primary ghost" id="gaReset" style="margin-top:0;background:#fff;color:#111;border:1px solid #111">기본값으로 되돌리기</button>
+      </div>
+      <p class="hint" id="gaStatus"></p>
+    </div>
+    <div class="card">
+      <h2>최근 뽑기 기록</h2>
+      <p class="desc">비용 차감과 보상 지급은 봇이 1분 안에 처리합니다. <b>실패</b>는 잔액/포인트 부족 등으로 지급되지 않은 건입니다.</p>
+      <div id="gaLog"><div class="empty">불러오는 중...</div></div>
     </div>
   </section>
 

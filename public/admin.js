@@ -717,3 +717,111 @@ function renderGifts() {
 api("/api/me").then((me) => { $("#who").textContent = `${me.name} 님`; }).catch(() => {});
 refresh().catch((e) => toast(e.message, true));
 setInterval(() => refresh().catch(() => {}), 30000);
+
+
+// ---- 뽑기 보상표 / 기록
+let gaConfig = null;
+let gaColors = {};
+
+async function loadGachaAdmin() {
+  try {
+    const d = await api("/api/admin/gacha");
+    gaConfig = d.config;
+    gaColors = d.colors || {};
+    renderGachaEditor(d.custom);
+    renderGachaLog(d);
+  } catch (e) {
+    $("#gaEditor").innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+function renderGachaEditor(custom) {
+  $("#gaStatus").textContent = custom ? "현재: 관리자가 수정한 보상표 사용 중" : "현재: 기본 보상표 사용 중";
+  $("#gaEditor").innerHTML = ["normal", "premium"].map((key) => {
+    const b = gaConfig[key];
+    return `
+      <div class="ga-box" data-box="${key}">
+        <h3>${key === "normal" ? "일반 상자" : "고급 상자"}</h3>
+        <div class="ga-row3">
+          <div><label>표시 이름</label><input type="text" data-f="name" value="${esc(b.name)}" maxlength="20"></div>
+          <div><label>1회 비용 (${b.cost_kind === "point" ? "포인트" : "원"})</label><input type="text" data-f="cost" value="${b.cost}" maxlength="8"></div>
+          <div><label>1인 하루 제한 (0 = 무제한)</label><input type="text" data-f="daily_limit" value="${b.daily_limit || 0}" maxlength="4"></div>
+        </div>
+        <div class="ga-tier" style="margin-top:12px;font-size:.78rem;color:var(--text-dim);font-weight:600"><span>등급</span><span>확률 %</span><span>보상 (이름 | 가중치, 한 줄에 하나)</span></div>
+        ${b.tiers.map((t) => `
+          <div class="ga-tier" data-tier>
+            <input type="text" data-f="label" value="${esc(t.label)}" maxlength="10" style="border-left:5px solid ${gaColors[t.label] || "#8b8f98"}">
+            <input type="text" data-f="p" value="${t.p}" maxlength="6">
+            <textarea data-f="items">${esc(t.items.map((it) => it.w === 1 && t.items.every((x) => x.w === 1) ? it.n : `${it.n} | ${it.w}`).join("\n"))}</textarea>
+          </div>`).join("")}
+      </div>`;
+  }).join("");
+}
+
+function collectGachaConfig() {
+  const boxes = {};
+  document.querySelectorAll("#gaEditor .ga-box").forEach((box) => {
+    const key = box.dataset.box;
+    const base = gaConfig[key];
+    const val = (f) => box.querySelector(`[data-f="${f}"]`).value.trim();
+    boxes[key] = {
+      name: val("name"), cost_kind: base.cost_kind,
+      cost: Number(val("cost").replace(/,/g, "")), daily_limit: Number(val("daily_limit") || 0),
+      tiers: [...box.querySelectorAll("[data-tier]")].map((row) => ({
+        label: row.querySelector('[data-f="label"]').value.trim(),
+        p: Number(row.querySelector('[data-f="p"]').value.trim()),
+        items: row.querySelector('[data-f="items"]').value.split("\n").map((l) => l.trim()).filter(Boolean)
+          .map((l) => {
+            const [n, w] = l.split("|").map((x) => x.trim());
+            return { n, w: w ? Number(w) : 1 };
+          }),
+      })),
+    };
+  });
+  return boxes;
+}
+
+$("#gaSave").addEventListener("click", async () => {
+  try {
+    $("#gaSave").disabled = true;
+    const r = await api("/api/admin/gacha", { action: "set", boxes: collectGachaConfig() });
+    gaConfig = r.config;
+    renderGachaEditor(true);
+    toast("보상표 저장 완료 — 유저 화면에 바로 반영됩니다.");
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    $("#gaSave").disabled = false;
+  }
+});
+$("#gaReset").addEventListener("click", async () => {
+  if (!confirm("기본 보상표로 되돌릴까요? (수정한 내용은 사라집니다)")) return;
+  try {
+    const r = await api("/api/admin/gacha", { action: "reset" });
+    gaConfig = r.config;
+    renderGachaEditor(false);
+    toast("기본 보상표로 되돌렸어요.");
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderGachaLog(d) {
+  const today = d.today || [];
+  const tiers = d.today_tiers || [];
+  $("#gaStats").innerHTML = today.length
+    ? today.map((t) => `<div class="stat"><div class="num">${fmtWon(t.n)}회</div><div class="lbl">오늘 ${esc(t.box_name)} · ${fmtWon(t.spent)}${t.box_name.includes("일반") ? "P" : "원"} 소모</div></div>`).join("")
+      + `<div class="stat"><div class="num" style="font-size:.95rem;padding-top:6px">${tiers.map((t) => `${esc(t.tier)} ${t.n}`).join(" · ") || "-"}</div><div class="lbl">오늘 등급 분포</div></div>`
+    : '<div class="stat"><div class="num">0회</div><div class="lbl">오늘 뽑기</div></div>';
+  const rows = d.pulls || [];
+  $("#gaLog").innerHTML = rows.length
+    ? rows.map((p) => `
+      <div class="item-row">
+        <div><div class="name"><span class="gc-tier-chip" style="--c:${gaColors[p.tier] || "#8b8f98"}">${esc(p.tier)}</span> ${esc(p.item)}
+          <span class="hint" style="margin:0">— ${esc(p.username)} (${esc(p.uid)})</span></div>
+          <div class="sub">${esc(p.box_name)} ${fmtWon(p.cost)}${p.cost_kind === "point" ? "P" : "원"} · ${fmtDate(p.created_at)}${p.result ? " · " + esc(p.result) : ""}</div></div>
+        <span class="badge ${esc(p.status)}">${esc(p.status)}</span>
+      </div>`).join("")
+    : '<div class="empty">아직 뽑기 기록이 없어요.</div>';
+}
+
+loadGachaAdmin();
+setInterval(loadGachaAdmin, 60000);

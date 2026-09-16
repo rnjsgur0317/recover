@@ -40,9 +40,26 @@ function myPct() {
   return (shopCache && shopCache.discount_pct) || 0;
 }
 
-function tierPrice(p) {
-  const pct = myPct();
+function tierPrice(p, couponPct) {
+  const pct = Math.max(myPct(), couponPct || 0);   // 등급 할인과 쿠폰은 중첩 없이 큰 쪽 하나
   return pct ? Math.floor(p * (100 - pct) / 100) : p;
+}
+
+function myCoupons() {
+  return (shopCache && shopCache.coupons) || [];
+}
+
+function couponSelectHTML(id) {
+  const cs = myCoupons();
+  if (!cs.length) return "";
+  return `<div class="coupon-row">🎟️ 할인쿠폰
+    <select id="${id}"><option value="">사용 안 함</option>${cs.map((c) =>
+      `<option value="${c.id}">게임 ${c.pct}% 할인쿠폰 (${fmtDate(c.expires_at)}까지)</option>`).join("")}</select></div>`;
+}
+
+function couponPctOf(id) {
+  const c = myCoupons().find((x) => String(x.id) === String(id));
+  return c ? c.pct : 0;
 }
 
 // ---- 탭
@@ -400,7 +417,8 @@ async function openDetail(name) {
   const nowPrice = d.sale_price ?? d.price;
   const base = d.sale_price != null ? d.price : (dt.official || 0);
   const off = base && base > nowPrice ? Math.round((1 - nowPrice / base) * 100) : 0;
-  const finalPrice = tierPrice(nowPrice);   // 등급 할인 적용가 (실제 결제가)
+  let couponId = "";
+  let finalPrice = tierPrice(nowPrice);     // 등급 할인 적용가 (실제 결제가) — 쿠폰 선택 시 갱신
   const mediaList = d.media_list || (d.img ? [d.media || "img"] : []);
   const gallery = mediaList.length ? `
     <div class="gallery">
@@ -427,9 +445,10 @@ async function openDetail(name) {
         <div class="ttl">코멘트</div>
         <ul>${dt.comments.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
       </div>` : ""}
-    ${myPct() && !d.is_subscription ? `
+    ${!d.is_subscription ? couponSelectHTML("detailCoupon") : ""}
+    <div id="detailPriceRow">${myPct() && !d.is_subscription ? `
       <div class="tier-price-row">내 등급 할인 <b>-${myPct()}%</b> 적용
-        → 최종 결제가 <b>${fmtWon(finalPrice)}원</b></div>` : ""}
+        → 최종 결제가 <b>${fmtWon(finalPrice)}원</b></div>` : ""}</div>
     ${d.is_subscription
       ? '<button class="primary" disabled style="opacity:.5">정기결제 상품 — 관리자 문의</button>'
       : `<div class="detail-actions">
@@ -459,17 +478,34 @@ async function openDetail(name) {
   }
 
   const buyBtn = $("#detailBuy");
+  const couponSel = $("#detailCoupon");
+  if (couponSel) {
+    couponSel.addEventListener("change", () => {
+      couponId = couponSel.value;
+      const cpct = couponPctOf(couponId);
+      finalPrice = tierPrice(nowPrice, cpct);
+      const applied = Math.max(myPct(), cpct);
+      $("#detailPriceRow").innerHTML = applied ? `
+        <div class="tier-price-row">${cpct > myPct() ? `할인쿠폰 <b>-${cpct}%</b>` : `내 등급 할인 <b>-${myPct()}%</b>`} 적용${
+          cpct && cpct <= myPct() ? ` <span class="hint" style="margin:0">(등급 할인이 더 커서 쿠폰은 안 써요)</span>` : ""}
+          → 최종 결제가 <b>${fmtWon(finalPrice)}원</b></div>` : "";
+      if (buyBtn) buyBtn.textContent = `${fmtWon(finalPrice)}원 바로 구매`;
+    });
+  }
   if (buyBtn) {
     buyBtn.addEventListener("click", async () => {
       if ((shopCache?.balance ?? 0) < finalPrice) {
         return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
       }
-      if (!confirm(`'${d.name}'을(를) ${fmtWon(finalPrice)}원에 구매할까요?${myPct() ? `\n(등급 할인 -${myPct()}% 적용)` : ""}`)) return;
+      const cpct = couponPctOf(couponId);
+      const useCoupon = couponId && cpct > myPct();
+      if (!confirm(`'${d.name}'을(를) ${fmtWon(finalPrice)}원에 구매할까요?${useCoupon ? `\n(할인쿠폰 -${cpct}% 사용 — 쿠폰은 소모됩니다)` : (myPct() ? `\n(등급 할인 -${myPct()}% 적용)` : "")}`)) return;
       try {
         buyBtn.disabled = true;
-        const r = await api("/api/order", { game: d.name });
+        const r = await api("/api/order", useCoupon ? { game: d.name, coupon_id: Number(couponId) } : { game: d.name });
         closeDetail();
-        toast(`주문 완료!${r.gift ? ` 🎁 사은품 '${r.gift}' 포함!` : ""} 봇이 곧 처리하고 DM으로 링크를 보내드려요. (최대 1분)`);
+        toast(`주문 완료!${r.gift ? ` 🎁 사은품 '${r.gift}' 포함!` : ""}${r.coupon ? ` 🎟️ 쿠폰 -${r.coupon.pct}% 적용` : ""} 봇이 곧 처리하고 DM으로 링크를 보내드려요. (최대 1분)`);
+        loadShop();
         loadMy();
       } catch (e) {
         toast(e.message, true);
@@ -507,6 +543,7 @@ function findGame(name) {
   }
   return null;
 }
+let cartCouponId = "";
 function renderCart() {
   const items = getCart().filter((n) => findGame(n));  // 판매 종료된 건 제거
   setCart(items);
@@ -516,13 +553,24 @@ function renderCart() {
     return;
   }
   let total = 0;
+  const cpct = couponPctOf(cartCouponId);
+  // 쿠폰은 기본가가 가장 비싼 게임 1개에만 (서버와 동일 규칙)
+  let couponTarget = null, best = -1;
+  if (cpct > myPct()) {
+    for (const n of items) {
+      const g = findGame(n);
+      const base = g.sale_price ?? g.price;
+      if (base > best) { best = base; couponTarget = n; }
+    }
+  }
   box.innerHTML = items.map((n) => {
     const g = findGame(n);
-    const p = tierPrice(g.sale_price ?? g.price);
+    const p = tierPrice(g.sale_price ?? g.price, n === couponTarget ? cpct : 0);
     total += p;
     const notes = [];
     if (g.sale_price != null) notes.push("🔥 할인가");
-    if (myPct()) notes.push(`등급 -${myPct()}%`);
+    if (n === couponTarget) notes.push(`🎟️ 쿠폰 -${cpct}%`);
+    else if (myPct()) notes.push(`등급 -${myPct()}%`);
     return `
       <div class="item-row">
         <div><div class="name">${esc(n)}</div>
@@ -532,9 +580,14 @@ function renderCart() {
           <button class="small danger" data-rm="${esc(n)}">빼기</button>
         </div>
       </div>`;
-  }).join("") + `
+  }).join("") + couponSelectHTML("cartCoupon") + `
     <div class="cart-total">합계 <b>${fmtWon(total)}원</b>${myPct() ? ` <span class="hint" style="margin:0">(등급 할인 -${myPct()}% 반영)</span>` : ""} <span class="hint" style="margin:0">(내 잔액 ${fmtWon(shopCache?.balance ?? 0)}원)</span></div>
     <button class="primary" id="cartBuyAll">일괄 구매 (${items.length}개)</button>`;
+  const cartSel = $("#cartCoupon");
+  if (cartSel) {
+    cartSel.value = cartCouponId;
+    cartSel.addEventListener("change", () => { cartCouponId = cartSel.value; renderCart(); });
+  }
   box.querySelectorAll("[data-rm]").forEach((b) =>
     b.addEventListener("click", () => {
       setCart(getCart().filter((n) => n !== b.dataset.rm));
@@ -544,10 +597,12 @@ function renderCart() {
     if ((shopCache?.balance ?? 0) < total) {
       return toast(`잔액이 부족해요. (필요 ${fmtWon(total)}원 / 보유 ${fmtWon(shopCache.balance)}원)`, true);
     }
-    if (!confirm(`${items.length}개 게임을 총 ${fmtWon(total)}원에 일괄 구매할까요?\n\n각 게임의 링크가 디스코드 DM으로 발송됩니다.`)) return;
+    const useCoupon = couponTarget && cpct > myPct();
+    if (!confirm(`${items.length}개 게임을 총 ${fmtWon(total)}원에 일괄 구매할까요?${useCoupon ? `\n(할인쿠폰 -${cpct}% → '${couponTarget}'에 적용, 쿠폰은 소모됩니다)` : ""}\n\n각 게임의 링크가 디스코드 DM으로 발송됩니다.`)) return;
     try {
       $("#cartBuyAll").disabled = true;
-      const r = await api("/api/order", { games: items });
+      const r = await api("/api/order", useCoupon ? { games: items, coupon_id: Number(cartCouponId) } : { games: items });
+      cartCouponId = "";
       setCart([]);
       $("#cartOverlay").hidden = true;
       toast(`일괄 주문 완료!${r.gift ? ` 🎁 사은품 '${r.gift}' 포함!` : ""} 봇이 곧 처리하고 게임마다 DM으로 링크를 보내드려요.`);
@@ -772,6 +827,7 @@ async function loadMy() {
                   claim: ' <span class="game-tag pass-tag">무료 수령</span>' }[o.kind] || ""}</div>
               <div class="sub">${fmtDate(o.created_at)}${o.result ? " · " + esc(o.result) : (o.status === "대기" || o.status === "처리중" ? " · 봇이 처리 중이에요 (최대 1분)" : "")}</div>
               ${o.kind === "reserve" && o.status === "완료" && !o.link_sent ? '<div class="sub">출시되면 링크가 발송돼요.</div>' : ""}
+              ${o.coupon_pct ? `<div class="sub">🎟️ 할인쿠폰 -${o.coupon_pct}% 적용</div>` : ""}
               ${o.gift_game ? `<div class="sub" style="color:#1d4ed8">🎁 사은품: <b>${esc(o.gift_game)}</b></div>` : ""}
               <div class="link-slot" id="linkSlot${o.id}"></div>
               <div class="link-slot" id="giftSlot${o.id}"></div>
