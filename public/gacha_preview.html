@@ -243,6 +243,7 @@ button.pull:disabled { opacity: .45; cursor: default; }
 /* ── 프로토타입 데이터 (확률·내용물은 임시값, 실제 구현 시 관리자에서 설정) ── */
 /* ── 확정 보상표 (2026-09-16). p = 등급 확률(%), w = 등급 안 가중치(없으면 동일) ── */
 const C = { normal: "#8b8f98", rare: "#3b82f6", epic: "#8b5cf6", legend: "#f59e0b", hidden: "#e11d48" };
+const CP = "7일 내 게임 1개 구매 시 적용 · 1회용";
 const BOXES = {
   Normal: {
     name: "NORMAL BOX", cost: "200P", prem: false,
@@ -250,28 +251,32 @@ const BOXES = {
       { label: "노말",   p: 80,  color: C.normal, items: [
         { n: "300P", w: 10 }, { n: "200P", w: 15 }, { n: "100P", w: 25 }, { n: "50P", w: 25 }, { n: "꽝", w: 25 } ] },
       { label: "희귀",   p: 15,  color: C.rare, items: [
-        { n: "잔액 100원", w: 17.5 }, { n: "잔액 300원", w: 17.5 }, { n: "300P", w: 17.5 }, { n: "400P", w: 17.5 }, { n: "꽝", w: 30 } ] },
+        { n: "잔액 100원", w: 15 }, { n: "잔액 300원", w: 15 }, { n: "300P", w: 15 }, { n: "400P", w: 15 },
+        { n: "게임 5% 할인쿠폰", w: 10, d: CP }, { n: "꽝", w: 30 } ] },
       { label: "에픽",   p: 4,   color: C.epic, items: [
-        { n: "잔액 500원", w: 25 }, { n: "잔액 1,000원", w: 5 }, { n: "500P", w: 25 }, { n: "600P", w: 25 }, { n: "꽝", w: 20 } ] },
+        { n: "잔액 500원", w: 20 }, { n: "잔액 1,000원", w: 5 }, { n: "500P", w: 20 }, { n: "600P", w: 20 },
+        { n: "게임 10% 할인쿠폰", w: 15, d: CP }, { n: "꽝", w: 20 } ] },
       { label: "레전드", p: 0.8, color: C.legend, items: [
-        { n: "잔액 3,000원" }, { n: "잔액 5,000원" }, { n: "1,000P" }, { n: "1,500P" } ] },
+        { n: "잔액 3,000원" }, { n: "잔액 5,000원" }, { n: "1,000P" }, { n: "1,500P" }, { n: "게임 20% 할인쿠폰", d: CP } ] },
       { label: "히든",   p: 0.2, color: C.hidden, items: [
-        { n: "잔액 30,000원" }, { n: "게임패스 30일권" } ] },
+        { n: "잔액 30,000원" }, { n: "게임패스 30일권" }, { n: "게임 50% 할인쿠폰", d: CP } ] },
     ],
   },
   Premium: {
     name: "PREMIUM BOX", cost: "1,000원", prem: true,
     tiers: [
       { label: "노말",   p: 45,  color: C.normal, items: [
-        { n: "100P" }, { n: "200P" }, { n: "300P" }, { n: "잔액 200원" }, { n: "잔액 300원" } ] },
+        { n: "100P" }, { n: "200P" }, { n: "300P" }, { n: "잔액 200원" }, { n: "잔액 300원" }, { n: "게임 5% 할인쿠폰", d: CP } ] },
       { label: "희귀",   p: 32,  color: C.rare, items: [
-        { n: "잔액 500원" }, { n: "잔액 700원" }, { n: "500P" }, { n: "800P" } ] },
+        { n: "잔액 500원" }, { n: "잔액 700원" }, { n: "500P" }, { n: "800P" }, { n: "게임 10% 할인쿠폰", d: CP } ] },
       { label: "에픽",   p: 15,  color: C.epic, items: [
-        { n: "잔액 1,000원", w: 35 }, { n: "잔액 1,500원", w: 30 }, { n: "잔액 2,000원", w: 10 }, { n: "1,000P", w: 25 } ] },
+        { n: "잔액 1,000원", w: 30 }, { n: "잔액 1,500원", w: 25 }, { n: "잔액 2,000원", w: 10 }, { n: "1,000P", w: 20 },
+        { n: "게임 15% 할인쿠폰", w: 15, d: CP } ] },
       { label: "레전드", p: 6.5, color: C.legend, items: [
-        { n: "잔액 3,000원", w: 30 }, { n: "잔액 5,000원", w: 30 }, { n: "잔액 10,000원", w: 5 }, { n: "게임패스 7일권", w: 25 }, { n: "2,000P", w: 10 } ] },
+        { n: "잔액 3,000원", w: 25 }, { n: "잔액 5,000원", w: 25 }, { n: "잔액 10,000원", w: 5 }, { n: "게임패스 7일권", w: 20 },
+        { n: "2,000P", w: 10 }, { n: "게임 30% 할인쿠폰", w: 15, d: CP } ] },
       { label: "히든",   p: 1.5, color: C.hidden, items: [
-        { n: "게임패스 30일권", w: 70 }, { n: "잔액 30,000원", w: 20 }, { n: "잔액 50,000원", w: 10 } ] },
+        { n: "게임패스 30일권", w: 60 }, { n: "잔액 30,000원", w: 20 }, { n: "잔액 50,000원", w: 10 }, { n: "게임 50% 할인쿠폰", w: 10, d: CP } ] },
     ],
   },
 };
@@ -381,7 +386,7 @@ async function pull() {
   await wait(700);
 
   // 3) 2차 룰렛: 그 등급의 내용물 (등급 룰렛 위에 나타남)
-  const items = tier.items.map((it) => ({ label: it.n, color: it.n === "꽝" ? "#3f3f46" : tier.color, sub: tier.label, w: it.w }));
+  const items = tier.items.map((it) => ({ label: it.n, color: it.n === "꽝" ? "#3f3f46" : tier.color, sub: tier.label, w: it.w, d: it.d }));
   const itemIdx = weightedPick(items, (it) => it.w || 1);
   document.getElementById("wrap2").classList.add("show");
   await wait(550);
@@ -390,7 +395,7 @@ async function pull() {
 
   // 4) 결과
   const r = document.getElementById("result");
-  r.innerHTML = `<span class="tier">${tier.label.toUpperCase()}</span><div class="name">${items[itemIdx].label}</div><div class="sub">${b.name} · ${b.cost}</div>`;
+  r.innerHTML = `<span class="tier">${tier.label.toUpperCase()}</span><div class="name">${items[itemIdx].label}</div><div class="sub">${items[itemIdx].d ? items[itemIdx].d + "<br>" : ""}${b.name} · ${b.cost}</div>`;
   r.classList.add("show");
   for (let i = 0; i < 10; i++) {
     const s = document.createElement("div");
