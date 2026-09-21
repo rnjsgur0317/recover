@@ -20,7 +20,7 @@
    음악: 195 BPM (박 0.30769s · 마디 1.2308s · 첫 박 0.034s), 앞 30초
      0      부팅: 로딩 99% 에서 멈췄다가 1000% 로 넘쳐 버림
      2.50   광고: 봉인된 큐브(자아) 주위로 마디마다 팝업 광고가 뜬다 → 8.65 커서가 전부 닫음
-     9.88   비트: 큐브가 박자에 맞춰 춤춘다. "무해합니다!" 팝업 뒤에서 플레이어 HP 가 슬금슬금 닳고, 얼굴이 몇 프레임씩 본색을 드러냄
+     9.88   비트: 큐브가 박자에 맞춰 춤춘다. "무해합니다!" 팝업 뒤에서 플레이어 HP 가 슬금슬금 닳고, 큐브가 몇 프레임씩 붉게 뒤틀리며 본색을 드러냄
      19.73  빌드업: 사슬이 끊기고, "무해합니다 [확인]" 창이 폭주하고, 화면이 말 그대로 픽셀화된다
      24.65  드롭: 봉인 해제 — 육각 마법진 · 화살표 왕관 · 픽셀 폭발, 25.88 타이틀
      28.34  정적: "이 설명은 1,000,000% 진실" 확인 창 하나 → 29.5 커서가 [확인] 클릭
@@ -80,6 +80,7 @@ if (document.fonts) document.fonts.addEventListener("loadingdone", () => tcache.
 function spr(rows, x, y, sc, cols) { x = Math.round(x); y = Math.round(y); rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const col = cols[row[c]]; if (col) { pg.fillStyle = col; pg.fillRect(x + c * sc, y + r * sc, sc, sc); } } }); }
 function box(x, y, w, h, fill, line) { x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h); if (fill) { pg.fillStyle = fill; pg.fillRect(x, y, w, h); } if (line) { pg.fillStyle = line; pg.fillRect(x, y, w, 1); pg.fillRect(x, y + h - 1, w, 1); pg.fillRect(x, y, 1, h); pg.fillRect(x + w - 1, y, 1, h); } }
 
+/* (얼굴 스프라이트는 더 이상 쓰지 않음) */
 const FACE_HAPPY = ["............", "............", "..##....##..", "..##....##..", "............", "............", ".##########.", ".#........#.", "..#......#..", "...######...", "............", "............"];
 const FACE_WINK = ["............", "............", "..##........", "..##...####.", "............", "............", ".##########.", ".#........#.", "..#......#..", "...######...", "............", "............"];
 const FACE_EVIL = ["............", ".##......##.", "..###..###..", "...##..##...", "............", "............", "############", "#.#.#.#.#.#.", ".#.#.#.#.#.#", "############", "............", "............"];
@@ -137,11 +138,11 @@ function drawPixels(t) {
     const k = eInOut(seg(t, T.BREAK + .3, T.CLICK - .05)); spr(CURSOR, lerp(400, 243, k), lerp(236, 172, k) + (t >= T.CLICK ? 1 : 0), 1, { "#": K, w: W });
     return;
   }
-  /* 큐브 속 얼굴 · 자물쇠 */
+  /* 큐브 둘레를 도는 데이터 파편(16진수) · 자물쇠 — 얼굴은 없음: 본색은 큐브가 붉게 뒤틀리는 것으로 드러난다 */
   const cx = 240, cy = 118 + Math.round(Math.sin(t * 1.7) * 2), bad = evil(t) || slam;
-  if (slam) { const s = 16; spr(FACE_EVIL, cx - 6 * s, 100 - 6 * s, s, { "#": W }); }
-  else if (dropped) { /* 큐브는 마법진 안으로 */ }
-  else { const s = 4; box(cx - 6 * s - 3, cy - 6 * s - 1, 12 * s + 6, 12 * s + 2, "rgba(5,6,16,.82)", bad ? R : null); const f = bad ? FACE_EVIL : Math.floor((t - O) / BAR) % 2 ? FACE_WINK : FACE_HAPPY, sq = t >= T.KICK ? Math.round(kick * 2) : 0; spr(f, cx - 6 * s + (bad ? Math.round(Math.sin(t * 90) * 2) : 0), cy - 6 * s + sq, s, { "#": bad ? R : Y }); }
+  if (!slam) { const n = dropped ? 30 : 20, sp = dropped ? 2.2 : .8 + 2 * seg(t, T.BUILD, T.DROP), HEXC = "0123456789ABCDEF";
+    for (let i = 0; i < n; i++) { const ring = i % 2, a = i / n * TAU + t * sp * (ring ? -1 : 1), rx = (ring ? 74 : 56) + (dropped ? 30 : 0), ry = ring ? 16 : 26, dz = Math.sin(a), x = cx + Math.cos(a) * rx, y = cy + dz * ry + (ring ? -6 : 8) * Math.cos(a);
+      const h = Math.floor(Math.abs(Math.sin(i * 91.7 + Math.floor(t * (bad ? 30 : 7)) * 13.1)) * 16); ptext(bad && i % 3 === 0 ? "!" : HEXC[h], x - 2, y - 3, 1, bad ? R : dz > 0 ? Y : DIM); } }
   if (!dropped) { const shake = t >= T.BUILD ? Math.round(Math.sin(t * 70) * seg(t, T.BUILD, T.DROP) * 3) : 0, pop = seg(t, T.DROP - BEAT, T.DROP); spr(LOCK, cx - 11 + shake, 156 - pop * 30, 2, { "#": Y }); if (t < T.BUILD) ptext("SEALED", cx, 180, 1, DIM, "c"); }
   /* 플레이어 HUD (링은 벡터 층) */
   if (t >= T.KICK - .4 && !slam) { const a = eBack(seg(t, T.KICK - .4, T.KICK - .1)), hp = hpAt(t), hc = hp > 50 ? Y : hp > 20 ? "#ff9d1c" : R;
@@ -168,14 +169,33 @@ const CUBE_V = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1],
 function drawVector(t) {
   vg.setTransform(1, 0, 0, 1, 0, 0); vg.clearRect(0, 0, vcv.width, vcv.height); if (t < T.AD || (t >= T.BREAK && t < T.SLAM)) return;
   vg.setTransform(DPR, 0, 0, DPR, Wd / 2 * DPR, Hd / 2 * DPR); vg.globalCompositeOperation = "lighter"; vg.lineCap = "round"; vg.lineJoin = "round";
-  const kick = dat(D.kick, t), dropped = t >= T.DROP, age = t - T.DROP, cy = -.62 * U + Math.sin(t * 1.7) * .07 * U, appear = eOut(seg(t, T.AD, T.AD + .5));
+  const kick = dat(D.kick, t), dropped = t >= T.DROP, age = t - T.DROP, cy = (t >= T.SLAM ? -.2 : -.62) * U + Math.sin(t * 1.7) * .07 * U, appear = eOut(seg(t, T.AD, T.AD + .5));
   const line = (pts, w, col, close) => { vg.strokeStyle = col; vg.lineWidth = w * U; vg.beginPath(); pts.forEach(([x, y], i) => (i ? vg.lineTo(x, y) : vg.moveTo(x, y))); if (close) vg.closePath(); vg.stroke(); };
-  /* 큐브 */
+  /* 자아: 겹겹이 엇도는 큐브(테서랙트) + 팔면체 핵 + 자이로 링 + 깜빡이는 대각선 + 전기 아크 + 글리치 잔상 — 일부러 난잡하게 */
+  const bad = (evil(t) && !dropped) || t >= T.SLAM, YL = bad ? "255,64,96" : "255,226,58", WL = bad ? "255,190,200" : "255,248,200", rc = (a) => `rgba(${YL},${a})`, wc = (a) => `rgba(${WL},${a})`;
   const spin = t < T.KICK ? t * .5 : t < T.DROP ? t * .5 + (t - T.KICK) * .6 + seg(t, T.BUILD, T.DROP) ** 2 * 9 : t * 2.2, ax = .45 + .12 * Math.sin(t * .8);
-  const size = (dropped ? lerp(1.5, .78, eOut(seg(t, T.DROP, T.DROP + .3))) : 1.5 * appear) * U * (1 + .1 * kick * (t >= T.KICK ? 1 : 0)), sqY = 1 - .12 * kick * (t >= T.KICK && !dropped ? 1 : 0);
-  const pv = CUBE_V.map(([x, y, z]) => { const c = Math.cos(spin), s = Math.sin(spin), x1 = x * c + z * s, z1 = -x * s + z * c, c2 = Math.cos(ax), s2 = Math.sin(ax), y2 = y * c2 - z1 * s2, z2 = y * s2 + z1 * c2, f = 4.2 / (4.2 + z2); return [x1 * f * size * .62, y2 * f * size * .62 * sqY + cy]; });
-  CUBE_E.forEach(([a, b]) => line([pv[a], pv[b]], .045, "rgba(255,226,58,.95)"));
-  pv.forEach(([x, y]) => { vg.fillStyle = "#fff8c8"; vg.fillRect(x - .05 * U, y - .05 * U, .1 * U, .1 * U); });
+  const slamK = t >= T.SLAM ? 1 + 1.6 * eOut(seg(t, T.SLAM, T.SLAM + .2)) : 1;
+  const size = (dropped ? lerp(1.85, .82, eOut(seg(t, T.DROP, T.DROP + .3))) : 1.85 * appear) * U * (1 + .1 * kick * (t >= T.KICK ? 1 : 0)) * slamK, sqY = 1 - .12 * kick * (t >= T.KICK && !dropped ? 1 : 0);
+  const jit = bad ? .08 * U : 0, tick = Math.floor(t * 12), rr = rng(tick * 7 + 3);
+  const proj = (v, sp, tilt, sc) => v.map(([x, y, z]) => { const c = Math.cos(sp), s = Math.sin(sp), x1 = x * c + z * s, z1 = -x * s + z * c, c2 = Math.cos(tilt), s2 = Math.sin(tilt), y2 = y * c2 - z1 * s2, z2 = y * s2 + z1 * c2, f = 4.2 / (4.2 + z2); return [x1 * f * sc * .62 + (rr() - .5) * jit, y2 * f * sc * .62 * sqY + cy + (rr() - .5) * jit, z2]; });
+  const pv = proj(CUBE_V, spin, ax, size), pi = proj(CUBE_V, -spin * 1.7 + 1, ax + .6 + .3 * Math.sin(t * 1.3), size * (.52 + .06 * Math.sin(t * 5))), pm = proj(CUBE_V, spin * .6 + 2, -ax * 1.4, size * 1.28);
+  const OCT = [[0, -1, 0], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 0, -1], [0, 1, 0]], po = proj(OCT, t * 4.5, t * 2.1, size * (.3 + .12 * kick));
+  // 글리치 잔상 (가끔 옆으로 밀린 복사본)
+  if (rr() < (bad ? .9 : .22)) { const dx = (rr() - .5) * 1.4 * U, a = .25 + .3 * rr(); CUBE_E.forEach(([a0, b0]) => line([[pv[a0][0] + dx, pv[a0][1]], [pv[b0][0] + dx, pv[b0][1]]], .03, rc(a))); }
+  CUBE_E.forEach(([a, b]) => line([pm[a], pm[b]], .018, rc(.32)));                                           // 바깥 유령 큐브
+  CUBE_E.forEach(([a, b]) => line([pv[a], pv[b]], .05, rc(.95)));                                            // 본체
+  CUBE_E.forEach(([a, b]) => line([pi[a], pi[b]], .035, wc(.9)));                                            // 역회전하는 안쪽 큐브
+  for (let i = 0; i < 8; i++) { line([pv[i], pi[i]], .018, rc(.5)); if (i % 2 === 0) line([pv[i], pm[i]], .012, rc(.28)); }   // 테서랙트 연결선
+  [[0, 2], [1, 3], [4, 6], [5, 7], [0, 5], [1, 4], [3, 6], [2, 7], [0, 7], [3, 4], [1, 6], [2, 5]].forEach(([a, b], i) => { if (Math.sin(i * 37.1 + tick * 1.9) > .1) line([pv[a], pv[b]], .015, rc(.45)); });   // 깜빡이는 면 대각선
+  [[0, 1], [0, 2], [0, 3], [0, 4], [5, 1], [5, 2], [5, 3], [5, 4], [1, 2], [2, 3], [3, 4], [4, 1]].forEach(([a, b]) => line([po[a], po[b]], .03, wc(.95)));                                       // 팔면체 핵
+  vg.fillStyle = wc(.9); vg.beginPath(); vg.arc(0, cy, size * (.05 + .05 * kick), 0, TAU); vg.fill();
+  for (let g = 0; g < 3; g++) { const tilt = [.35, 1.2, -.8][g] + t * [.4, -.3, .55][g], rx = size * [1.25, 1.42, 1.08][g], ry = rx * (.22 + .18 * Math.abs(Math.sin(t * .7 + g * 2)));                          // 자이로 링
+    vg.save(); vg.translate(0, cy); vg.rotate(tilt); vg.strokeStyle = rc(.55 - g * .1); vg.lineWidth = .022 * U; vg.setLineDash(g === 1 ? [.12 * U, .1 * U] : []); vg.beginPath(); vg.ellipse(0, 0, rx, ry, 0, 0, TAU); vg.stroke(); vg.setLineDash([]);
+    for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + t * (1.5 + g), x = Math.cos(a) * rx, y = Math.sin(a) * ry; vg.fillStyle = wc(.95); vg.fillRect(x - .06 * U, y - .06 * U, .12 * U, .12 * U); } vg.restore(); }
+  pv.forEach(([x, y], i) => { vg.fillStyle = wc(1); vg.fillRect(x - .06 * U, y - .06 * U, .12 * U, .12 * U); const ex = x * .18, ey = (y - cy) * .18; line([[x + ex * .4, y + ey * .4], [x + ex * (1.3 + .8 * kick), y + ey * (1.3 + .8 * kick)]], .02, rc(.6)); });   // 꼭짓점 표식 + 바깥으로 뻗는 눈금
+  const arcs = (bad ? 7 : dropped ? 5 : t >= T.BUILD ? 2 + Math.floor(seg(t, T.BUILD, T.DROP) * 4) : t >= T.KICK ? 2 : 1);                                                       // 전기 아크: 꼭짓점 사이를 튀는 지그재그
+  for (let n = 0; n < arcs; n++) { const a = pv[Math.floor(rr() * 8)], b = (rr() < .5 ? pi : pm)[Math.floor(rr() * 8)], pts = [a]; for (let k = 1; k < 6; k++) { const q = k / 6; pts.push([lerp(a[0], b[0], q) + (rr() - .5) * .5 * U, lerp(a[1], b[1], q) + (rr() - .5) * .5 * U]); } pts.push(b); line(pts, .022, wc(.85)); }
+  for (let n = 0; n < 10; n++) { const a = rr() * TAU, d = size * (.9 + rr() * 1.1), x = Math.cos(a) * d, y = Math.sin(a) * d * .8 + cy, w = (.05 + rr() * .12) * U; vg.strokeStyle = rc(.5 + .4 * rr()); vg.lineWidth = .018 * U; vg.strokeRect(x - w / 2, y - w / 2, w, w); }   // 떠도는 조각
   /* 봉인 사슬: 19.73 / 22.19 에 하나씩 끊어짐 */
   [[T.BUILD, -1], [bar(18), 1]].forEach(([cut, dir]) => { const br = seg(t, cut, cut + .5); if (br >= 1 || dropped) return;
     for (const side of [-1, 1]) { const swing = eOut(br) * 1.1 * side * dir, ox = side * 3.1 * U, oy = cy - dir * side * 1.9 * U, len = 3.7 * U, a0 = Math.atan2(cy - oy, -ox) + swing, n = 9;
@@ -191,6 +211,8 @@ function drawVector(t) {
     const hexP = [0, 1, 2, 3, 4, 5].map((i) => hx(i, Rr, -PI / 2)); line(hexP, .05, "rgba(255,226,58,.95)", true);
     line([hexP[0], hexP[2], hexP[4]], .04, "rgba(255,248,200,.9)", true); line([hexP[1], hexP[3], hexP[5]], .04, "rgba(255,248,200,.9)", true);
     hexP.forEach((p, i) => { line([p, pv[i % 8]], .022, "rgba(255,226,58,.55)"); vg.fillStyle = "#fff8c8"; vg.fillRect(p[0] - .07 * U, p[1] - .07 * U, .14 * U, .14 * U); });
+    const hex2 = [0, 1, 2, 3, 4, 5].map((i) => hx(i, Rr * .62, PI / 6 - rot * 3)); line(hex2, .03, "rgba(255,226,58,.7)", true); line([hex2[0], hex2[2], hex2[4]], .025, "rgba(255,248,200,.6)", true); line([hex2[1], hex2[3], hex2[5]], .025, "rgba(255,248,200,.6)", true);
+    hexP.forEach((p, i) => line([p, hex2[(i + 2) % 6]], .015, "rgba(255,226,58,.4)"));
     const Ro = Rr * 1.32; vg.strokeStyle = "rgba(255,226,58,.5)"; vg.lineWidth = .03 * U; vg.setLineDash([.18 * U, .14 * U]); vg.beginPath(); vg.arc(0, cy, Ro, -rot, -rot + TAU); vg.stroke(); vg.setLineDash([]);
     for (let i = 0; i < 3; i++) { const w = (1.05 - i * .2) * U * k, y0 = cy - Rr - (1.5 - i * .42) * U - Math.sin(t * 6 + i) * .05 * U, h = .34 * U; vg.fillStyle = `rgba(255,${226 + i * 10},${58 + i * 60},${.9 - i * .12})`;
       vg.beginPath(); vg.moveTo(-w, y0); vg.lineTo(0, y0 + h); vg.lineTo(w, y0); vg.lineTo(w, y0 + h * .55); vg.lineTo(0, y0 + h * 1.55); vg.lineTo(-w, y0 + h * .55); vg.closePath(); vg.fill(); }
