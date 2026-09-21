@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ILLUSIONARY 컷씬 — ドリームステート</title>
+<link rel="stylesheet" href="/cs_ui.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Serif+JP:wght@500&display=swap">
+</head>
+<body>
+<div id="cs" hidden><canvas id="glc"></canvas></div>
+<audio id="bgm" src="/illusionary_cut.mp3" preload="auto"></audio>
+<script src="/illusionary_data.js"></script>
+<script src="/cs_gl.js"></script>
+<script src="/cs_ui.js"></script>
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   ILLUSIONARY — ドリームステート.  이해되지 않아야 하는 컷씬 (대사 없음 · 파랑/흰색/검정 3색)
+   아우라의 사물(8x8 체스판과 벽 · 떠 있는 트러스 의자와 검은 사각 얼굴의 인물 · 체스 말 · 주사위 · 원반 탑과 기둥 · 눈 고리 · 팝업 · 가려진 문구)을
+   3D 로 세워 놓고 '꿈의 논리'로 뒤튼다: 끝없는 판, 접히는 공간, 얼굴 속의 거울(이전 프레임 되먹임 → 무한 회귀), 거꾸로 가는 시간, 똑같은 사람들, 뒤에 있던 것.
+   사운드(참고 영상 2.3초~): 음악 ① 0.2~9.0 · 정적 9.0~12.2 · 음악 ② 12.2~18.1 · 정적(삑 20.05/21.05/21.58) · 타격 23.75 · 웅웅 24.7~ · 끝 26.6
+     A1 0.3 끝없는 판 → A2 1.33 의자 → A3 2.83 내려다본 판 → A4 3.87 원반 탑 → A5 5.4 얼굴(거울) → A6 6.4 접히는 공간 → A7 7.93 점멸 카드
+     B 9.0 어둠: wake up... / no, not yet.   C1 12.2 하늘의 눈 → C2 13.4 똑같은 사람들(만화경) → C3 15.37 거꾸로 → C4 16.5 얼굴 속으로 무한 줌
+     D 18.1 빈 의자와 팝업 → 22.6 바로 앞의 얼굴 '?' → E 23.75 ☻ → F 24.7 이름표 → 26.15 눈이 감김
+   패스: ① 레이마칭(0.75배, 3색 망점 툰) ② 블룸 ③ 최종(윤곽선 · 만화경 · 메아리 · 찢김 · 잡음 · 눈꺼풀 · 글자 합성) → 되먹임 버퍼 ④ 화면
+   ※ 되먹임 때문에 탐색 직후 몇 프레임은 실제 재생과 조금 다를 수 있다. 시계·HUD·시작/종료 화면은 cs_ui.js
+   ═══════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2, PI = Math.PI;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (t) => 1 - Math.pow(1 - t, 3), eIn = (t) => t * t * t;
+const eInOut = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
+const h1 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+
+const T = { A1: .3, A2: 1.33, A3: 2.83, A4: 3.87, A5: 5.4, A6: 6.4, A7: 7.93, B: 9.0, C1: 12.2, C2: 13.4, C3: 15.37, C4: 16.5, D: 18.1, D2: 22.6, E: 23.75, F: 24.7, LID: 26.15, END: 26.6 };
+const BLIPS = [20.05, 21.05, 21.58];
+const PHRASES = ["where am i?", "who is ■■■■?", "i am ■■■'s creation", "■ ■ ■ ■ ■ ■", "remembering hurts", "■■■■ watches me", "what is real?", "i hear your thoughts", "repeat, repeat", "he said \"don't wake\"", "was i ever real?", "time folds inward", "you are reading yourself", "i woke before i was born", "silence spoke first"];
+const SMALLS = ["am i real...?", "decadence", "███'█ perfect puppet", "you know, i love you"];
+const D = window.IL_DATA || { fps: 60, hit: [], lvl: [] };
+const dat = (arr, t) => { const i = Math.floor(t * D.fps); return i < 0 || !arr.length ? 0 : arr[Math.min(arr.length - 1, i)]; };
+
+const $ = (id) => document.getElementById(id);
+const glc = $("glc"), bgm = $("bgm"), tcv = document.createElement("canvas"), tg = tcv.getContext("2d");
+let Wd = 0, Hd = 0, U = 0, DPR = 1, DPR_CAP = 1.5, SCALE = .75, slow = 0, time = 0, X = null, P = {}, RT = { fb: [] }, fbi = 0, txtTex = null;
+
+/* ═════════════════ 셰이더 ═════════════════ */
+const FS_SCENE = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform vec2 uRes; uniform float uT; uniform vec3 uCamPos; uniform mat3 uCam; uniform float uFocal; uniform int uZero;
+uniform vec3 uJ[11]; uniform vec3 uChair; uniform mat3 uDiceR; uniform sampler2D uPrev;
+uniform float uCrowd, uBend, uUpper, uBoard, uInfinite, uBody, uGlyph, uUpRot, uMirrorInv, uLightK;
+${CSGL.NOISE}
+const vec3 WHITE = vec3(1.), BLUE = vec3(.045, .1, 1.), BLACK = vec3(0.);
+float sdBox(vec3 p, vec3 b){ vec3 d = abs(p) - b; return length(max(d, 0.)) + min(max(d.x, max(d.y, d.z)), 0.); }
+float sdFrame(vec3 p, vec3 b, float e){ p = abs(p) - b; vec3 q = abs(p + e) - e;
+  return min(min(length(max(vec3(p.x, q.y, q.z), 0.)) + min(max(p.x, max(q.y, q.z)), 0.), length(max(vec3(q.x, p.y, q.z), 0.)) + min(max(q.x, max(p.y, q.z)), 0.)), length(max(vec3(q.x, q.y, p.z), 0.)) + min(max(q.x, max(q.y, p.z)), 0.)); }
+float sdCap(vec3 p, vec3 a, vec3 b, float r){ vec3 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0., 1.)) - r; }
+float sdCyl(vec3 p, float r, float h){ vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h); return min(max(d.x, d.y), 0.) + length(max(d, 0.)); }
+float sdTorus(vec3 p, float R, float r){ return length(vec2(length(p.xz) - R, p.y)) - r; }
+float smin(float a, float b, float k){ float h = clamp(.5 + .5 * (b - a) / k, 0., 1.); return mix(b, a, h) - k * h * (1. - h); }
+vec2 opU(vec2 a, vec2 b){ return a.x < b.x ? a : b; }
+vec3 rotY(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z); }
+vec3 rotZ(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(c * p.x - s * p.y, s * p.x + c * p.y, p.z); }
+vec3 rotX(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z); }
+float taper(vec3 p, float r0, float r1, float h){ return max(length(p.xz) - mix(r0, r1, clamp(p.y / h, 0., 1.)), abs(p.y - h * .5) - h * .5) * .8; }
+float pawn(vec3 p){ return smin(min(taper(p, .32, .11, .8), sdCyl(p - vec3(0., .06, 0.), .36, .06)), min(length(p - vec3(0., .98, 0.)) - .2, sdCyl(p - vec3(0., .78, 0.), .2, .03)), .05); }
+float rook(vec3 p){ float top = max(sdCyl(p - vec3(0., 1.12, 0.), .3, .13), -min(sdBox(p - vec3(0., 1.22, 0.), vec3(.5, .08, .07)), sdBox(p - vec3(0., 1.22, 0.), vec3(.07, .08, .5)))); return min(min(taper(p, .33, .23, 1.), sdCyl(p - vec3(0., .07, 0.), .38, .07)), top); }
+float queen(vec3 p){ return smin(min(taper(p, .34, .12, 1.45), sdCyl(p - vec3(0., .07, 0.), .4, .07)), min(min(sdTorus(p - vec3(0., 1.5, 0.), .2, .07), length(p - vec3(0., 1.72, 0.)) - .1), sdCyl(p - vec3(0., 1.2, 0.), .22, .03)), .05); }
+/* 의자(트러스 윤곽 · 앞다리는 네모, 뒷다리는 구슬) + 인물(캡슐) + 검은 사각 얼굴 */
+vec2 figure(vec3 p){
+  float c = min(sdFrame(p, vec3(.56, .04, .56), .022), sdFrame(p - vec3(0., .68, -.54), vec3(.56, .64, .03), .022)); vec3 q = vec3(abs(p.x), p.y, p.z);
+  c = min(c, sdFrame(q - vec3(.49, -.46, .49), vec3(.07, .46, .07), .018)); for (int i = 0; i < 4; i++) c = min(c, length(q - vec3(.49, -.13 - .22 * float(i), -.49)) - .08);
+  vec2 r = vec2(c, 5.); if (uBody < .5) return r;
+  float b = sdCap(p, uJ[0], uJ[1], .17); b = smin(b, min(sdCap(p, uJ[0], uJ[3], .095), sdCap(p, uJ[0], uJ[4], .095)), .06); b = min(b, min(sdCap(p, uJ[3], uJ[5], .078), sdCap(p, uJ[4], uJ[6], .078)));
+  b = smin(b, min(sdCap(p, uJ[7], uJ[9], .062), sdCap(p, uJ[8], uJ[10], .062)), .05);
+  return opU(opU(r, vec2(b, 6.)), vec2(sdBox(p - uJ[2], vec3(.215)) - .012, 7.));
+}
+vec3 upperP(vec3 p){ return rotY(p, uUpRot); }
+vec2 upper(vec3 p){                                                              // 원반 탑: 원반 6 + 굵은 띠 + 기둥 + 가시 원통 + 흰/검 후광 + 삼각 돌기 + 눈 고리 2
+  vec3 q = upperP(p); float rr = length(q.xz); vec2 r = vec2(1e9, -1.);
+  float dsc = 1e9; for (int i = 0; i < 6; i++){ float fi = float(i); dsc = min(dsc, max(abs(q.y - 6.05 - fi * .11) - .018, abs(rr - (3.25 - fi * .47)) - .17)); } r = opU(r, vec2(dsc, 8.));
+  r = opU(r, vec2(max(abs(q.y - 5.85) - .07, abs(rr - 4.1) - .36), 9.));
+  float pil = sdCyl(q - vec3(0., 5.1, 0.), .3, 1.5); float a = atan(q.z, q.x), sec = 6.2832 / 14., da = mod(a + sec * .5, sec) - sec * .5, k = clamp((rr - .5) / 2.7, 0., 1.);
+  float spk = max(max(abs(da) * rr - .11 * (1. - k), abs(q.y - 5.95) - .13 * (1. - k)), max(rr - 3.2, .45 - rr)) * .7; r = opU(r, vec2(min(pil, spk), 10.));
+  float halo = sdTorus(q - vec3(0., 4.9, 0.), 2.6, .045), sec4 = 1.5708, d4 = mod(a + sec4 * .5, sec4) - sec4 * .5, tri = max(max(abs(d4) * rr - .3 * clamp((3.75 - rr) / 1.15, 0., 1.), abs(q.y - 4.9) - .03), max(2.6 - rr, rr - 3.75)) * .7;
+  r = opU(r, vec2(min(halo, tri), 11.)); r = opU(r, vec2(sdTorus(q - vec3(0., 4.68, 0.), 2.6, .05), 12.));
+  vec3 e1 = rotZ(p - vec3(0., 3.9, 0.), .62 + .08 * sin(uT * .7)), e2 = rotX(rotZ(p - vec3(0., 3.9, 0.), -.62), .5 + .1 * sin(uT * .5));
+  return opU(r, vec2(min(sdTorus(e1, 1.95, .035), sdTorus(e2, 1.95, .035)), 13.));
+}
+vec2 map(vec3 p){
+  p.y -= uBend * dot(p.xz, p.xz);                                                 // 공간이 안으로 접힌다
+  vec2 r = vec2(p.y, 0.); vec3 pf = p - uChair; if (uCrowd > .5) pf.xz = mod(pf.xz + 3., 6.) - 3.;
+  r = opU(r, figure(pf));
+  if (uBoard > .5 && p.y < 6.){
+    r = opU(r, vec2(min(sdBox(p - vec3(-4.06, 1.5, 0.), vec3(.06, 1.5, 4.)), sdBox(p - vec3(0., 1.5, -4.06), vec3(4., 1.5, .06))), 1.));
+    r = opU(r, vec2(min(min(pawn(p - vec3(-2.5, 0., 1.5)), rook(p - vec3(2.5, 0., -1.5))), queen(p - vec3(-1.5, 0., -2.5))), 2.)); r = opU(r, vec2(pawn(p - vec3(1.5, 0., 2.5)), 3.));
+    float bob = sin(uT * .9) * .15; r = opU(r, vec2(min(sdBox((p - vec3(-3., 4.3 + bob, -3.)) * uDiceR, vec3(.32)) - .06, sdBox((p - vec3(-1.7, 4.95 - bob, -3.5)) * uDiceR, vec3(.26)) - .05), 4.));
+  }
+  if (uUpper > .5 && p.y > 3.) r = opU(r, upper(p));
+  return r;
+}
+vec3 normalAt(vec3 p){ vec3 n = vec3(0.); for (int i = uZero; i < 4; i++){ vec3 e = .5773 * (2. * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.); n += e * map(p + .002 * e).x; } return normalize(n); }
+float aoAt(vec3 p, vec3 n){ float a = 0., s = 1.; for (int i = uZero; i < 4; i++){ float h = .03 + .1 * float(i); a += (h - map(p + n * h).x) * s; s *= .7; } return clamp(1. - 2.4 * a, 0., 1.); }
+float shadowAt(vec3 p, vec3 l){ float t = .05, res = 1.; for (int i = uZero; i < 22; i++){ float h = map(p + l * t).x; res = min(res, 9. * h / t); t += clamp(h, .04, .5); if (res < .02 || t > 9.) break; } return clamp(res, 0., 1.); }
+
+float star8(vec2 u){ float a = atan(u.y, u.x), k = abs(fract(a / .7854) - .5) * 2.; return smoothstep(.02, -.02, length(u) - mix(.46, 1., k)); }
+float glyph(vec2 u, float kind){ float r = length(u);
+  if (kind < .5){ float ring = smoothstep(.03, 0., abs(r - .78) - .03), eyes = smoothstep(.13, .1, length(vec2(abs(u.x) - .3, u.y - .2))), mouth = smoothstep(.03, 0., abs(length(u - vec2(0., .02)) - .46) - .035) * step(u.y, -.1); return max(ring, max(eyes, mouth)); }
+  if (kind < 1.5){ float disc = smoothstep(.84, .8, r), eyes = smoothstep(.13, .1, length(vec2(abs(u.x) - .3, u.y - .2))), mouth = smoothstep(.03, 0., abs(length(u - vec2(0., .02)) - .46) - .04) * step(u.y, -.1); return disc * (1. - eyes) * (1. - mouth); }
+  if (kind < 2.5){ vec2 v = u - vec2(0., .32); float hook = smoothstep(.03, 0., abs(length(v) - .33) - .075) * (1. - step(v.x, 0.) * step(v.y, 0.)) * step(-.34, v.y - abs(v.x) * .0);
+    float stem = smoothstep(.03, 0., sdBox(vec3(u - vec2(.0, -.17), 0.), vec3(.075, .16, 1.))), dot1 = smoothstep(.12, .09, length(u - vec2(0., -.62))); return max(max(hook, stem * step(u.y, .0)), dot1); }
+  return 0.; }
+float pips(vec2 u, float n){ vec2 c = floor((u * .5 + .5) * 3.), f = fract((u * .5 + .5) * 3.) - .5; float idx = c.x + 3. * c.y, m = n < 1.5 ? 16. : n < 2.5 ? 68. : n < 3.5 ? 84. : n < 4.5 ? 325. : n < 5.5 ? 341. : 365.;
+  return step(.5, mod(floor(m / pow(2., idx)), 2.)) * smoothstep(.3, .24, length(f)) * step(abs(u.x), 1.) * step(abs(u.y), 1.); }
+vec3 palInv(vec3 c){ float w = min(c.r, c.g), b = clamp(c.b - w, 0., 1.); return vec3(1. - max(w, b)) * (1. - b) + BLUE * b; }
+vec3 tone(float cls, float q){ cls = max(0., cls - step(q, .5) - step(q, .17)); return cls > 1.5 ? WHITE : cls > .5 ? BLUE : BLACK; }
+
+void main(){
+  vec2 s = (vUv - .5) * vec2(uRes.x / uRes.y, 1.) * 2.; vec3 ro = uCamPos, rd = normalize(uCam * vec3(s, uFocal));
+  float t = .1, id = -1., stepK = uBend > 0. ? .5 : .9; bool hit = false;
+  for (int i = uZero; i < 130; i++){ vec2 m = map(ro + rd * t); if (m.x < .0012 * t){ hit = true; id = m.y; break; } t += m.x * stepK; if (t > 70.) break; }
+  vec3 col = BLACK; float depth = 70.;
+  if (hit){
+    vec3 p = ro + rd * t, n = normalAt(p), l = normalize(vec3(.45, .8, .5)); depth = t;
+    vec3 pw = p; pw.y -= uBend * dot(p.xz, p.xz);
+    vec2 px = gl_FragCoord.xy; float dots = .5 + .5 * sin((px.x + px.y) * 1.1) * sin((px.x - px.y) * 1.1);                   // 45도 망점
+    float ndl = max(dot(n, l), 0.), lum = (ndl * shadowAt(p + n * .01, l) * .72 + .3) * aoAt(p, n) * uLightK, q = lum + (dots - .5) * .34, fres = pow(1. - max(dot(n, -rd), 0.), 3.);
+    float cls = 2.; vec3 over = vec3(-1.);
+    if (id < .5){ vec2 c = floor(pw.xz); float ch = mod(c.x + c.y, 2.); bool inB = abs(pw.x) < 4. && abs(pw.z) < 4.;
+      if (inB) cls = ch > .5 ? 2. : 1.; else if (uInfinite > .5) cls = ch > .5 ? 1. : 0.; else { vec2 g = abs(fract(pw.xz * .5) - .5); cls = min(g.x, g.y) < .012 * (1. + t * .08) ? 1. : 0.; q = 1.; } }
+    else if (id < 1.5){ vec2 c = floor(vec2(abs(n.x) > .5 ? pw.z : pw.x, pw.y)); cls = mod(c.x + c.y, 2.) > .5 ? 2. : 1.; if (pw.y > 2.2 + dots * .8) cls -= 1.; }
+    else if (id < 2.5) cls = 2.; else if (id < 3.5){ cls = 0.; if (fres > .55) over = WHITE; }
+    else if (id < 4.5){ cls = 2.; vec3 dq = (p - vec3(-3., 4.3 + sin(uT * .9) * .15, -3.)) * uDiceR; float sz = .38; if (length(dq) > .8){ dq = (p - vec3(-1.7, 4.95 - sin(uT * .9) * .15, -3.5)) * uDiceR; sz = .31; }
+      vec3 a = abs(dq); vec2 uv = a.x > a.y && a.x > a.z ? dq.yz : a.y > a.z ? dq.xz : dq.xy; float nn = a.x > a.y && a.x > a.z ? (dq.x > 0. ? 1. : 6.) : a.y > a.z ? (dq.y > 0. ? 2. : 5.) : (dq.z > 0. ? 3. : 4.); if (pips(uv / sz * 1.15, nn) > .5) over = BLACK; }
+    else if (id < 5.5){ over = WHITE; }
+    else if (id < 6.5){ cls = 2.; vec3 pf = pw - uChair; if (uCrowd > .5) pf.xz = mod(pf.xz + 3., 6.) - 3.; vec3 cc = mix(uJ[0], uJ[1], .72); if (n.z > .35 && star8((pf.xy - cc.xy) / .15) > .5 && abs(pf.z - cc.z) < .3) over = BLUE; }
+    else if (id < 7.5){ cls = 0.; vec3 pf = pw - uChair; vec2 cell = vec2(0.); if (uCrowd > .5){ cell = floor((pf.xz + 3.) / 6.); pf.xz = mod(pf.xz + 3., 6.) - 3.; }
+      vec2 u = (pf.xy - uJ[2].xy) / .2; if (n.z > .7 && abs(u.x) < 1.08 && abs(u.y) < 1.08){
+        float kind = uGlyph; if (uCrowd > .5) kind = floor(hash(cell + floor(uT * 5.)) * 3.);
+        if (kind > 3.5){ vec3 pv = texture(uPrev, clamp(u * .46 + .5, 0., 1.)).rgb; over = uMirrorInv > .5 ? palInv(pv) : pv; } else if (glyph(u, kind) > .5) over = WHITE; }
+      else if (fres > .6) over = WHITE; }
+    else if (id < 8.5){ cls = 1.; q = 1.; if (fres > .7) over = WHITE; }
+    else if (id < 9.5){ vec3 qq = upperP(pw); float a = atan(qq.z, qq.x); cls = 1.; q = 1.; if (hash(floor(vec2(a * 46. + uT * 2., length(qq.xz) * 9.)) + floor(uT * 7.) * .0) > .62 && hash(vec2(floor(a * 8.), floor(uT * 9.))) > .35) over = WHITE; }
+    else if (id < 10.5) cls = 2.; else if (id < 11.5){ over = WHITE; } else if (id < 12.5){ cls = 0.; if (fres > .4) over = BLUE; } else over = WHITE;
+    col = over.x >= 0. ? over : tone(cls, q);
+    col *= exp(-max(t - (uInfinite > .5 ? 10. : 16.), 0.) * (uInfinite > .5 ? .045 : .06));
+  }
+  o = vec4(col, depth);
+}`;
+const FS_FINAL = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform sampler2D uScene, uBloom, uTxt, uPrev; uniform vec2 uRes; uniform vec3 uFlatCol;
+uniform float uT, uEcho, uEchoZoom, uEchoRot, uTear, uStatic, uLid, uFlash, uInv, uFlat, uKal, uShake, uLines, uSceneK;
+${CSGL.NOISE}
+const vec3 BLUE = vec3(.045, .1, 1.);
+vec3 palInv(vec3 c){ float w = min(c.r, c.g), b = clamp(c.b - w, 0., 1.); return vec3(1. - max(w, b)) * (1. - b) + BLUE * b; }
+vec4 sceneAt(vec2 uv){ vec2 px = 1.4 / uRes; vec4 c = texture(uScene, uv); float d = c.a, e = 0.;                       // 깊이 불연속 → 윤곽선
+  e = max(max(abs(texture(uScene, uv + vec2(px.x, 0.)).a - d), abs(texture(uScene, uv - vec2(px.x, 0.)).a - d)), max(abs(texture(uScene, uv + vec2(0., px.y)).a - d), abs(texture(uScene, uv - vec2(0., px.y)).a - d))) / max(d, .5);
+  float edge = smoothstep(.035, .07, e), lum = dot(c.rgb, vec3(.4, .5, .1)); c.rgb = mix(c.rgb, lum > .45 ? vec3(0.) : vec3(1.), edge * step(d, 60.)); return c; }
+void main(){
+  float asp = uRes.x / uRes.y; vec2 uv = vUv + (vec2(hash(vec2(floor(uT * 50.), 1.)), hash(vec2(floor(uT * 50.), 2.))) - .5) * uShake;
+  float row = floor(uv.y * 60.), tk = floor(uT * 30.); if (hash(vec2(row, tk)) < uTear * .5) uv.x += (hash(vec2(row, tk + 7.)) - .5) * .22 * uTear;                 // 가로 찢김
+  if (uKal > .5){ vec2 c = (uv - .5) * vec2(asp, 1.); float a = atan(c.y, c.x) + uT * .07, r = length(c), sec = 3.14159 / uKal; a = abs(mod(a, 2. * sec) - sec) - sec * .5; c = vec2(cos(a), sin(a)) * r; uv = vec2(.5 + c.y / asp * 1.15, .08 + c.x * .95); uv = abs(fract(uv * .5 + .5) * 2. - 1.); }        // 부채꼴로 접어 만다라처럼
+  vec3 col = sceneAt(uv).rgb * uSceneK + texture(uBloom, uv).rgb * .45 * uSceneK;
+  col = mix(col, uFlatCol, uFlat);
+  if (uLines > 0.){ float ln = smoothstep(.02, 0., abs(fract(vUv.y * 22.) - .5) - .47); col = mix(col, BLUE, ln * uLines * (.25 + .75 * vUv.y)); }                      // 필기 용지 같은 파란 줄
+  if (uEcho > 0.){ vec2 c = (vUv - .5) * vec2(asp, 1.); float cr = cos(uEchoRot), sr = sin(uEchoRot); c = vec2(c.x * cr - c.y * sr, c.x * sr + c.y * cr) * uEchoZoom; vec3 pv = texture(uPrev, c / vec2(asp, 1.) + .5).rgb; col = max(col, pv * uEcho); }   // 메아리
+  vec4 tx = texture(uTxt, vUv); col = mix(col, tx.rgb, tx.a);
+  col = mix(col, palInv(col), uInv); col = mix(col, vec3(1.), uFlash);
+  vec2 sp = floor(gl_FragCoord.xy / max(2., uRes.y / 300.)); float sn = fract(sin(dot(sp, vec2(12.9898, 78.233)) + floor(uT * 60.) * 3.7) * 43758.5453);
+  col = mix(col, vec3(sn) * vec3(.75, .8, 1.), uStatic * (.5 + .5 * sn)); col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * .05;
+  float lid = abs(vUv.y - .5) * 2. + .35 * pow(abs(vUv.x - .5) * 2., 2.); col *= smoothstep(1.4 * (1. - uLid), 1.4 * (1. - uLid) - .02, lid - .0) ;                        // 눈꺼풀
+  float v = length((vUv - .5) * vec2(1., .85)); col *= 1. - smoothstep(.5, 1.05, v) * .4;
+  o = vec4(clamp(col, 0., 1.), 1.);
+}`;
+const FS_COPY = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o; uniform sampler2D uTex; void main(){ o = vec4(texture(uTex, vUv).rgb, 1.); }`;
+function lazyProgram(vs, fs) {
+  const gl = X.gl, mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+  const p = gl.createProgram(), v = mk(gl.VERTEX_SHADER, vs), f = mk(gl.FRAGMENT_SHADER, fs); gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p); let prog = null;
+  return () => { if (prog) return prog; if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || gl.getShaderInfoLog(f) || gl.getShaderInfoLog(v));
+    const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, ""); u[name] = gl.getUniformLocation(p, name); } return (prog = { p, u }); };
+}
+function initGL() { if (X) return; const x = CSGL.create(glc); x.gl.getExtension("KHR_parallel_shader_compile"); X = x; P.scene = lazyProgram(CSGL.VS_FULL, FS_SCENE); P.final = lazyProgram(CSGL.VS_FULL, FS_FINAL); P.copy = lazyProgram(CSGL.VS_FULL, FS_COPY); txtTex = X.canvasTexture(); }
+function resize() {
+  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); Wd = glc.clientWidth || 1280; Hd = glc.clientHeight || 720; U = Math.min(Wd, Hd) / 10;          // 창이 숨겨져 0이어도 동작하게 기본값
+  const pw = Math.max(2, Math.round(Wd * DPR)), ph = Math.max(2, Math.round(Hd * DPR)); glc.width = tcv.width = pw; glc.height = tcv.height = ph;
+  initGL(); const sw = Math.max(2, Math.round(pw * SCALE)), sh = Math.max(2, Math.round(ph * SCALE)); X.resize(sw, sh); X.free(RT.scene); RT.scene = X.target(sw, sh); X.free(RT.fb); RT.fb = [X.target(pw, ph), X.target(pw, ph)];
+}
+setTimeout(() => { try { initGL(); } catch (e) { /* 재생할 때 다시 시도하며 안내 */ } }, 200);
+
+/* ═════════════════ 연출: 시각 t → 카메라 · 자세 · 효과 (순수 함수) ═════════════════ */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const mix3 = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)];
+function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross(f, [0, 1, 0])), u0 = cross(r0, f), c = Math.cos(roll), s = Math.sin(roll);
+  return { pos, f, r: [r0[0] * c + u0[0] * s, r0[1] * c + u0[1] * s, r0[2] * c + u0[2] * s], u: [u0[0] * c - r0[0] * s, u0[1] * c - r0[1] * s, u0[2] * c - r0[2] * s] }; }
+const SIT = [[0, .16, .05], [0, .78, -.12], [0, 1.17, -.1], [-.17, .2, .58], [.17, .2, .58], [-.17, -.42, .62], [.17, -.42, .62], [-.27, .72, -.12], [.27, .72, -.12], [-.22, .3, .38], [.22, .3, .38]];
+const LIE = [[.2, .17, 0], [-.35, .22, -.02], [-.74, .32, 0], [.62, .3, .08], [.66, .2, -.1], [.95, -.2, .12], [1.0, -.3, -.08], [-.35, .3, .2], [-.35, .3, -.2], [-.15, 0, .58], [-.1, .35, -.3]];
+const CHAIR_Y = 1.02, HEAD = [0, CHAIR_Y + 1.17, -.1];
+function state(t) {
+  const S = { cam: null, focal: 1.6, pose: 0, chair: [0, CHAIR_Y, 0], crowd: 0, bend: 0, upper: 1, board: 1, infinite: 0, body: 1, glyph: 0, mirrorInv: 0, lightK: 1, echo: 0, echoZoom: 1, echoRot: 0, tear: 0, staticK: .04, lid: 0, flash: 0, inv: 0,
+    flat: 0, flatCol: [0, 0, 0], kal: 0, shake: 0, lines: 0, sceneK: 1, ts: t, shot: "" };
+  const hit = dat(D.hit, t), tick = Math.floor(t * 9), gl3 = [0, 1, 2][Math.floor(h1(tick) * 3)];
+  const tremble = (k) => (h1(Math.floor(t * 1.7)) > .45 ? (h1(Math.floor(t * 34)) - .5) * .09 * k : 0);                                       // 좌우로 간헐적으로 떠는 의자
+  S.chair = [tremble(1), CHAIR_Y + Math.sin(t * 1.3) * .05, 0];
+  if (t < T.A2) { const k = eOut(seg(t, T.A1, T.A2)); S.shot = "A1"; S.cam = camera([0, lerp(1.6, 1.3, k), lerp(46, 15, k)], [0, 2.2, 0], 0); S.infinite = 1; S.sceneK = seg(t, .25, .5); S.staticK = .12; S.echo = .55; S.echoZoom = .985; }
+  else if (t < T.A3) { const k = seg(t, T.A2, T.A3); S.shot = "A2"; S.cam = camera(mix3([1.1, 2.1, 3.9], [.7, 2.0, 3.2], k), [0, 1.8, 0], .04); S.glyph = gl3; S.lines = .5; }
+  else if (t < T.A4) { const k = seg(t, T.A3, T.A4); S.shot = "A3"; S.cam = camera([0, 12.5, 3.2], [0, 0, -.2], .5 * k + (Math.floor(t * 6) % 2) * .0); S.ts = Math.floor(t * 8) / 8; S.pose = 1; S.upper = 0; S.focal = 1.5; }
+  else if (t < T.A5) { const k = seg(t, T.A4, T.A5); S.shot = "A4"; S.cam = camera(mix3([.2, .7, 3.7], [-.4, .6, 2.9], k), [0, 5.2, 0], -.12 + .1 * k); S.focal = 1.25; S.echo = .4; S.echoRot = .012; S.echoZoom = 1.01; }
+  else if (t < T.A6) { const k = seg(t, T.A5, T.A6); S.shot = "A5"; S.cam = camera([0, HEAD[1] + .02, lerp(1.35, .95, k)], [0, HEAD[1], -.1], 0); S.glyph = 4; S.chair = [0, CHAIR_Y, 0]; S.lines = .35; S.tear = .2 * hit; }
+  else if (t < T.A7) { const k = seg(t, T.A6, T.A7); S.shot = "A6"; S.cam = camera([0, lerp(2.4, 3.2, k), lerp(10, 7, k)], [0, lerp(2, 4, k), 0], .15 * k); S.bend = .028 * eInOut(k); S.crowd = 1; S.infinite = 1; S.board = 0; S.upper = 0; S.pose = k; S.glyph = gl3; S.focal = 1.3; }
+  else if (t < T.B) { const n = Math.floor((t - T.A7) / .1); S.shot = "A7"; S.cam = camera([0, 2, 6], [0, 2, 0], 0); S.flat = 1; S.flatCol = n % 3 === 0 ? [1, 1, 1] : n % 3 === 1 ? [.045, .1, 1] : [0, 0, 0]; S.staticK = .1; }
+  else if (t < T.C1) { S.shot = "B"; S.cam = camera([0, 2, 6], [0, 2, 0], 0); S.flat = 1; S.flatCol = [0, 0, 0]; S.staticK = .07 + .05 * h1(Math.floor(t * 12)); }
+  else if (t < T.C2) { const k = seg(t, T.C1, T.C2); S.shot = "C1"; S.cam = camera([.05, .45, 1.3], [0, 6, 0], t * .25); S.focal = 1.05; S.body = 0; S.lid = 1 - eOut(seg(t, T.C1, T.C1 + .35)) + pulse(t, T.C1 + .75, .06, .1); S.echo = .5; S.echoRot = .02; S.echoZoom = 1.015; }
+  else if (t < T.C3) { const k = seg(t, T.C2, T.C3); S.shot = "C2"; S.cam = camera([lerp(-4, 4, k), 3.4, 9.5], [lerp(-2, 2, k), 1.5, 0], 0); S.crowd = 1; S.infinite = 1; S.board = 0; S.upper = 0; S.pose = 1; S.kal = 3; S.echo = .6; S.echoZoom = 1.03; S.echoRot = .03; S.focal = 1.35; }
+  else if (t < T.C4) { const k = seg(t, T.C3, T.C4), tr = T.A3 - k * (T.A3 - T.A2) * 1.0; S.shot = "C3"; S.ts = Math.floor(tr * 10) / 10; const kk = seg(S.ts, T.A2, T.A3); S.cam = camera(mix3([1.1, 2.1, 3.9], [.7, 2.0, 3.2], kk), [0, 1.8, 0], -.06); S.glyph = Math.floor(h1(Math.floor(t * 20)) * 3); S.tear = .85; S.inv = Math.floor(t * 14) % 5 === 0 ? 1 : 0; S.lines = .5; S.pose = k; }
+  else if (t < T.D) { const s = t - T.C4, cyc = Math.pow(s / (T.D - T.C4), 1.6) * 5, f = cyc % 1, n = Math.floor(cyc); S.shot = "C4"; S.cam = camera([0, HEAD[1], lerp(2.4, .42, eIn(f)) - .1], [0, HEAD[1], -.1], .25 * f * (n % 2 ? 1 : -1)); S.glyph = 4; S.mirrorInv = 1; S.chair = [0, CHAIR_Y, 0]; S.tear = .15; }
+  else if (t < T.D2) { const k = seg(t, T.D, T.D2), a = 1.2 + k * 1.1; S.shot = "D"; S.cam = camera([Math.sin(a) * lerp(8, 5.2, k), 2.6, Math.cos(a) * lerp(8, 5.2, k)], [0, 1.6, 0], 0); S.board = 0; S.upper = 0; S.body = 0; S.sceneK = seg(t, T.D + .2, T.D + 1.4); S.staticK = .08; S.focal = 1.7; }
+  else if (t < T.F) { const e = t >= T.E; S.shot = e ? "E" : "D2"; S.cam = camera([0, HEAD[1], e ? lerp(.62, .8, eOut(seg(t, T.E, T.F))) : lerp(.9, .62, seg(t, T.D2, T.E))], [0, HEAD[1], -.1], 0); S.board = 0; S.upper = 0; S.chair = [0, CHAIR_Y, 0];
+    S.glyph = e ? (t < T.E + .45 ? 1 : 4) : (h1(Math.floor(t * 3)) > .25 ? 2 : 3); S.lightK = e ? 1 : .55; S.flash = pulse(t, T.E, .01, .25) * .9; S.inv = e && t < T.E + .12 ? 1 : 0; S.echo = e ? .75 : 0; S.echoZoom = .97; S.shake = e ? .02 * pulse(t, T.E, .01, .5) : 0; S.staticK = e ? .1 : .16; S.tear = e ? .5 * pulse(t, T.E, .01, .6) : .05; }
+  else { const k = eOut(seg(t, T.F, T.F + 1.1)); S.shot = "F"; S.cam = camera([lerp(0, 5, k), lerp(HEAD[1], 3.4, k), lerp(.9, 15, k)], [0, lerp(HEAD[1], 3.1, k), 0], 0); S.glyph = gl3; S.infinite = 0; S.lid = eIn(seg(t, T.LID, T.LID + .3)); S.staticK = .07 + .25 * seg(t, T.LID - .6, T.LID + .2); S.echo = .35; S.echoZoom = .99; }
+  const ps = S.pose; S.J = SIT.map((a, i) => mix3(a, LIE[i], eInOut(ps)));
+  return S;
+}
+
+/* ═════════════════ 글자 캔버스: 가려진 문구 · 팝업 · 이름표 · 걷는 사람들 · 도는 태양 ═════════════════ */
+const MONO = '"Space Mono","Consolas","Courier New",monospace', JP = '"Noto Serif JP","Yu Mincho","MS Mincho",serif';
+function proj(S, p) { const v = sub(p, S.cam.pos), z = dot(v, S.cam.f); if (z < .1) return null; return [Wd / 2 + dot(v, S.cam.r) / z * S.focal * Hd / 2, Hd / 2 - dot(v, S.cam.u) / z * S.focal * Hd / 2, z]; }
+function star8(x, y, r, col) { tg.fillStyle = col; tg.beginPath(); for (let i = 0; i < 16; i++) { const a = i / 16 * TAU - PI / 2, rr = i % 2 ? r * .5 : r; tg.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } tg.closePath(); tg.fill(); }
+function icon(kind, x, y, s, col) { tg.strokeStyle = col; tg.fillStyle = col; tg.lineWidth = s * .12; tg.lineCap = "round";
+  if (kind === 0) { tg.beginPath(); for (let i = 0; i < 60; i++) { const a = i * .3, r = s * .08 + i * s * .013; tg.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } tg.stroke(); }                           // 나선
+  else if (kind === 1) { tg.beginPath(); tg.moveTo(x - s * .6, y - s * .25); tg.lineTo(x - s * .2, y - s * .25); tg.lineTo(x + s * .2, y - s * .6); tg.lineTo(x + s * .2, y + s * .6); tg.lineTo(x - s * .2, y + s * .25); tg.lineTo(x - s * .6, y + s * .25); tg.closePath(); tg.fill(); for (const r of [.5, .78]) { tg.beginPath(); tg.arc(x + s * .15, y, s * r, -.7, .7); tg.stroke(); } }   // 스피커
+  else if (kind === 2) { tg.strokeRect(x - s * .5, y - s * .65, s, s * 1.3); tg.beginPath(); tg.moveTo(x - s * .1, y); tg.lineTo(x + s * .95, y); tg.moveTo(x + s * .6, y - s * .3); tg.lineTo(x + s * .95, y); tg.lineTo(x + s * .6, y + s * .3); tg.stroke(); }                                                  // 출구
+  else { tg.beginPath(); tg.moveTo(x, y + s * .7); tg.bezierCurveTo(x - s * 1.3, y - s * .2, x - s * .5, y - s * 1.0, x, y - s * .3); tg.bezierCurveTo(x + s * .5, y - s * 1.0, x + s * 1.3, y - s * .2, x, y + s * .7); tg.fill(); } }                                                                   // 하트
+function phraseBox(s, x, y, px, inv) { tg.font = `700 ${px}px ${MONO}`; const w = tg.measureText(s).width + px * 1.2, h = px * 1.9; tg.fillStyle = inv ? "#fff" : "#000"; tg.fillRect(x - w / 2, y - h / 2, w, h); tg.fillStyle = inv ? "#000" : "#fff"; tg.textAlign = "center"; tg.textBaseline = "middle"; tg.fillText(s, x, y + px * .05); }
+function popup(S, anchor, dx, dy, text, kind, blue) { const a = proj(S, anchor); if (!a) return; const x = a[0] + dx * U, y = a[1] + dy * U, px = .2 * U; tg.strokeStyle = "#fff"; tg.lineWidth = Math.max(1, U * .012); tg.beginPath(); tg.moveTo(a[0], a[1]); tg.lineTo(x, y); tg.stroke();
+  tg.font = `400 ${px}px ${MONO}`; const w = tg.measureText(text).width + px * 1.4, h = px * 1.9; tg.fillStyle = blue ? "#0b1aff" : "#fff"; tg.fillRect(x, y - h / 2, w, h); tg.fillStyle = blue ? "#fff" : "#0b1aff"; tg.textAlign = "left"; tg.textBaseline = "middle"; tg.fillText(text, x + px * .7, y);
+  tg.fillStyle = "#0b1aff"; tg.fillRect(x + w + px * .4, y - h * .8, h * 1.6, h * 1.6); icon(kind, x + w + px * .4 + h * .8, y, h * .5, "#fff"); tg.fillStyle = "#fff"; tg.fillRect(a[0] - 2, a[1] - 2, 4, 4); }
+function walkers(t, y, n, dir) { tg.fillStyle = "#fff"; tg.strokeStyle = "#fff"; tg.lineCap = "round"; for (let i = 0; i < n; i++) { const x = (((t * .9 * dir + i * 1.7) % 22) + 22) % 22 - 2, X0 = x * U, s = .34 * U, ph = t * 7 + i * 1.3, sw = Math.sin(ph) * .45;
+  tg.beginPath(); tg.arc(X0, y - s * 1.75, s * .2, 0, TAU); tg.fill(); tg.lineWidth = s * .2; tg.beginPath(); tg.moveTo(X0, y - s * 1.5); tg.lineTo(X0, y - s * .8); tg.stroke(); tg.lineWidth = s * .14;
+  for (const k of [-1, 1]) { tg.beginPath(); tg.moveTo(X0, y - s * .8); tg.lineTo(X0 + Math.sin(sw * k) * s * .55, y - s * .1 + (k * sw > 0 ? -s * .08 : 0)); tg.moveTo(X0, y - s * 1.35); tg.lineTo(X0 - Math.sin(sw * k) * s * .4, y - s * .85); tg.stroke(); } } }
+function nameTags(S, t, a) { const fl = (n) => (h1(Math.floor(t * 11) + n) > .82 ? (h1(Math.floor(t * 11) + n + 3) > .5 ? "#0b1aff" : "#000") : "#fff"); tg.globalAlpha = a; tg.textBaseline = "middle"; tg.textAlign = "left";
+  tg.fillStyle = fl(1); tg.font = `400 ${.17 * U}px ${MONO}`; tg.fillText("1 in 0 0 0 0 0 0 0 0 0", 1.0 * U, 2.0 * U); tg.fillStyle = fl(2); tg.font = `700 ${.46 * U}px ${MONO}`; tg.fillText("illusionary", 1.0 * U, 2.5 * U); const w = tg.measureText("illusionary").width;
+  tg.strokeStyle = "#fff"; tg.lineWidth = Math.max(1, U * .012); const c = proj(S, [0, 5.2, 0]) || [Wd / 2, Hd / 2]; tg.beginPath(); tg.moveTo(1.0 * U + w + .2 * U, 2.5 * U); tg.lineTo(c[0] - 1.2 * U, 2.5 * U); tg.stroke();
+  tg.fillStyle = fl(5); tg.font = `500 ${.36 * U}px ${JP}`; tg.textAlign = "right"; tg.fillText("ドリームステート", Wd - 1.0 * U, Hd - 2.1 * U); const w2 = tg.measureText("ドリームステート").width, b = proj(S, [0, 3.7, 0]) || [Wd / 2, Hd / 2];
+  tg.beginPath(); tg.moveTo(Wd - 1.0 * U - w2 - .2 * U, Hd - 2.1 * U); tg.lineTo(b[0] + .6 * U, Hd - 2.1 * U); tg.lineTo(b[0], b[1]); tg.stroke(); star8(Wd - 1.0 * U - w2 - .45 * U, Hd - 2.1 * U, .13 * U, "#fff"); tg.globalAlpha = 1; }
+function drawText(t, S) {
+  tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, tcv.width, tcv.height); tg.setTransform(DPR, 0, 0, DPR, 0, 0); const sh = S.shot, tick = Math.floor(t * 9);
+  if (sh === "A7") { const n = Math.floor((t - T.A7) / .1), bg = n % 3, fg = bg === 0 ? "#0b1aff" : bg === 1 ? "#fff" : "#fff"; star8(Wd / 2, Hd / 2 - .2 * U, 2.2 * U, fg); icon(n % 4, Wd / 2, Hd / 2 - .2 * U, .8 * U, bg === 0 ? "#fff" : bg === 1 ? "#0b1aff" : "#000");
+    phraseBox(PHRASES[(n * 7) % PHRASES.length], Wd / 2 + (h1(n) - .5) * 6 * U, Hd / 2 + (h1(n + 9) - .3) * 3 * U, .3 * U, bg === 2); return; }
+  if (sh === "B") { const k = seg(t, T.B + .3, T.B + 1.6), sw = seg(t, 11.1, 11.5), cx = Wd / 2, cy = Hd / 2, R = 2.4 * U, s1 = "wake up... ", s2 = "no, not yet. ";                       // 어둠: 원을 이루며 도는 글자 + 궤적을 끄는 태양
+    tg.font = `700 ${.3 * U}px ${MONO}`; tg.textAlign = "center"; tg.textBaseline = "middle"; const n = 44;
+    for (let i = 0; i < n; i++) { const a = i / n * TAU + t * .35, late = h1(i * 3.1) < sw, str = late ? s2 : s1, ch = str[i % str.length]; tg.save(); tg.translate(cx + Math.cos(a) * R, cy + Math.sin(a) * R * .42); tg.rotate(a + PI / 2); tg.globalAlpha = k * (late ? 1 : .8) * (Math.sin(a) > -.2 ? 1 : .35); tg.fillStyle = late ? "#0b1aff" : "#fff"; tg.fillText(ch, 0, 0); tg.restore(); }
+    for (let i = 0; i < 26; i++) { const a = t * 1.4 - i * .06; tg.globalAlpha = k * (1 - i / 26) * .9; star8(cx + Math.cos(a) * R * 1.6, cy + Math.sin(a) * R * .7, (.13 - i * .004) * U, i ? "#0b1aff" : "#fff"); }
+    tg.globalAlpha = 1; if (t > 11.5) for (let i = 0; i < Math.min(9, Math.floor((t - 11.5) / .07)); i++) { tg.globalAlpha = 1 - i * .09; tg.fillStyle = "#fff"; tg.font = `400 ${.22 * U}px ${MONO}`; tg.fillText("no, not yet.", cx, cy - .9 * U + i * .26 * U); } tg.globalAlpha = 1; return; }
+  if (sh === "A1" || sh === "F") nameTags(S, t, sh === "A1" ? seg(t, .5, .8) : seg(t, T.F + .25, T.F + .6));
+  if (sh === "A2" || sh === "C3") { popup(S, [S.chair[0] + .3, CHAIR_Y + .9, .2], 1.6, -1.2, SMALLS[0], 0, false); if (t > T.A2 + .7 || sh === "C3") popup(S, [-.5, CHAIR_Y + .1, .4], -4.6, 1.3, SMALLS[2], 1, true); }
+  if (sh === "A3") { walkers(t, Hd * .2, 5, 1); walkers(t + 3, Hd * .86, 4, -1); }
+  if (sh === "A4" || sh === "F") { if (sh === "A4") walkers(t, Hd * .5, 3, 1); for (let i = 0; i < 4; i++) { if (h1(tick + i * 5) > .55) continue; const x = (.2 + .6 * h1(tick * 1.3 + i)) * Wd, y = (.15 + .5 * h1(tick * 2.1 + i)) * Hd, w = (.4 + 1.6 * h1(tick + i + 2)) * U; tg.strokeStyle = h1(tick + i) > .5 ? "#fff" : "#0b1aff"; tg.lineWidth = Math.max(1, U * .014); tg.strokeRect(x, y, w, w * .7); } }
+  if (sh === "A4" || sh === "A6" || sh === "C1" || sh === "C2") { const n = Math.floor(t * 2.6); if (h1(n) > .3) phraseBox(PHRASES[(n * 5 + 2) % PHRASES.length], Wd * (.25 + .5 * h1(n + 1)), Hd * (.22 + .5 * h1(n + 2)), .27 * U, false); }
+  if (sh === "D") { BLIPS.forEach((b, i) => { if (t < b) return; const k = eOut(seg(t, b, b + .12)); tg.globalAlpha = k; popup(S, [[.4, 1.2, .3], [-.4, 1.9, 0], [0, 1.0, .5]][i], [2.2, -5.2, 1.2][i] * k, [-1.6, -.4, 1.7][i] * k, [SMALLS[3], SMALLS[1], SMALLS[0]][i], [3, 1, 2][i], i === 1); tg.globalAlpha = 1; });
+    for (let i = 0; i < 20; i++) { const a = t * .9 - i * .07, p = proj(S, [Math.cos(a) * 2.6, 1.5 + Math.sin(a * 2) * .3, Math.sin(a) * 2.6]); if (p) { tg.globalAlpha = (1 - i / 20) * S.sceneK; star8(p[0], p[1], (.16 - i * .006) * U * 5 / p[2], i ? "#0b1aff" : "#fff"); } } tg.globalAlpha = 1; }
+  if (sh === "E" && t > T.E + .5) { const n = Math.floor(t * 5); phraseBox(PHRASES[11 + (n % 4)], Wd / 2 + (h1(n) - .5) * 8 * U, Hd * (.18 + .64 * h1(n + 4)), .26 * U, n % 2 === 0); }
+}
+
+function render(t) {
+  const S = state(t), gl = X.gl, pw = glc.width, ph = glc.height, sw = RT.scene.w, shh = RT.scene.h, prev = RT.fb[fbi], cur = RT.fb[1 - fbi];
+  drawText(t, S); X.upload(txtTex, tcv, false); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  const camM = new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f]), J = new Float32Array(33); S.J.forEach((p, i) => J.set(p, i * 3)); const da = S.ts * .5, cy = Math.cos(da), sy = Math.sin(da), cx = Math.cos(da * .7), sx = Math.sin(da * .7);
+  if (!S.flat) X.pass(P.scene(), RT.scene, (u) => { gl.uniform2f(u.uRes, sw, shh); gl.uniform1f(u.uT, S.ts); gl.uniform3f(u.uCamPos, S.cam.pos[0], S.cam.pos[1], S.cam.pos[2]); gl.uniformMatrix3fv(u.uCam, false, camM); gl.uniform1f(u.uFocal, S.focal); gl.uniform1i(u.uZero, 0);
+    gl.uniform3fv(u.uJ, J); gl.uniform3f(u.uChair, S.chair[0], S.chair[1], S.chair[2]); gl.uniformMatrix3fv(u.uDiceR, false, new Float32Array([cy, 0, -sy, sy * sx, cx, cy * sx, sy * cx, -sx, cy * cx])); X.bindTex(0, prev.tex, u.uPrev);
+    gl.uniform1f(u.uCrowd, S.crowd); gl.uniform1f(u.uBend, S.bend); gl.uniform1f(u.uUpper, S.upper); gl.uniform1f(u.uBoard, S.board); gl.uniform1f(u.uInfinite, S.infinite); gl.uniform1f(u.uBody, S.body); gl.uniform1f(u.uGlyph, S.glyph); gl.uniform1f(u.uUpRot, S.ts * .22); gl.uniform1f(u.uMirrorInv, S.mirrorInv); gl.uniform1f(u.uLightK, S.lightK); });
+  const bloomTex = X.bloom(RT.scene.tex, .8);
+  X.pass(P.final(), cur, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); X.bindTex(2, txtTex, u.uTxt); X.bindTex(3, prev.tex, u.uPrev); gl.uniform2f(u.uRes, pw, ph); gl.uniform3f(u.uFlatCol, S.flatCol[0], S.flatCol[1], S.flatCol[2]); gl.uniform1f(u.uT, t);
+    gl.uniform1f(u.uEcho, S.echo); gl.uniform1f(u.uEchoZoom, S.echoZoom); gl.uniform1f(u.uEchoRot, S.echoRot); gl.uniform1f(u.uTear, S.tear); gl.uniform1f(u.uStatic, S.staticK); gl.uniform1f(u.uLid, S.lid); gl.uniform1f(u.uFlash, S.flash); gl.uniform1f(u.uInv, S.inv);
+    gl.uniform1f(u.uFlat, S.flat); gl.uniform1f(u.uKal, S.kal); gl.uniform1f(u.uShake, S.shake); gl.uniform1f(u.uLines, S.lines); gl.uniform1f(u.uSceneK, t >= T.END - .1 ? 0 : S.sceneK); });
+  X.pass(P.copy(), null, (u) => { X.bindTex(0, cur.tex, u.uTex); }); fbi = 1 - fbi;
+}
+
+/* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
+const player = CSUI.create({
+  stage: $("cs"), audio: bgm, volume: .95, duration: T.END, theme: "illusion", capBlend: false,
+  no: "06", title: "ILLUSIONARY", sub: "ドリームステート", hero: "/thumbs/illusionary_hero.jpg",
+  tagline: "이해하려 하지 마세요. 끝없는 판, 접히는 공간, 얼굴 속의 거울 — 그리고 줄곧 당신 뒤에 있던 것.\n파랑 · 흰색 · 검정. 대사는 없습니다.",
+  meta: [["0:27", "Length"], ["1 in 0 0 0 0 0 0 0 0 0", "Rarity"], ["WebGL2 · 3D", "Renderer"]],
+  chapters: [{ t: 0, name: "the board" }, { t: T.A5, name: "the mirror" }, { t: T.B, name: "no, not yet." }, { t: T.C1, name: "the eye" }, { t: T.C4, name: "inward" }, { t: T.D, name: "the chair" }, { t: T.E, name: "☻" }],
+  captions: [],
+  prepare() { resize(); P.scene(); P.final(); P.copy(); },
+  simulate(tt) { time = tt; if (X && RT.scene) for (let i = 8; i > 0; i--) render(Math.max(0, tt - i / 60)); },          // 되먹임 버퍼를 몇 프레임 채워 둔다
+  frame(t, dt, raw) { time = t; slow = raw > .034 ? slow + 1 : Math.max(0, slow - 1); if (slow > 40) { slow = 0; if (DPR_CAP > 1) { DPR_CAP = 1; resize(); } else if (SCALE > .5) { SCALE = .5; resize(); } } render(t); },
+});
+window.addEventListener("resize", () => { if (!$("cs").hidden && X) { resize(); render(time); } });
+window.playIllusionaryCutscene = (o) => player.play(o);
+function renderStill(tt) { time = tt; render(tt); }
+</script>
+</body>
+</html>
