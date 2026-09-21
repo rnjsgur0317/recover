@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIXELATION 컷씬 — 픽셀레이션</title>
+<link rel="stylesheet" href="/cs_ui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@latest/dist/galmuri.css">
+</head>
+<body>
+<div id="cs" hidden><canvas id="glc"></canvas></div>
+<audio id="bgm" src="/pixelation_cut.mp3" preload="auto"></audio>
+<script src="/pixelation_data.js"></script>
+<script src="/cs_gl.js"></script>
+<script src="/cs_ui.js"></script>
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   ▣ PIXELATION ▣ 픽셀레이션 — "완전히 무해한" 디지털 자아 (우스꽝스러운 광고 컨셉)
+   음악: 195 BPM (박 0.30769s · 마디 1.2308s · 첫 박 0.034s), 앞 30초
+     0      부팅: 로딩 99% 에서 멈췄다가 1000% 로 넘쳐 버림
+     2.50   광고: 봉인된 큐브(자아) 주위로 마디마다 팝업 광고가 뜬다 → 8.65 커서가 전부 닫음
+     9.88   비트: 큐브가 박자에 맞춰 춤춘다. "무해합니다!" 팝업 뒤에서 플레이어 HP 가 슬금슬금 닳고, 얼굴이 몇 프레임씩 본색을 드러냄
+     19.73  빌드업: 사슬이 끊기고, "무해합니다 [확인]" 창이 폭주하고, 화면이 말 그대로 픽셀화된다
+     24.65  드롭: 봉인 해제 — 육각 마법진 · 화살표 왕관 · 픽셀 폭발, 25.88 타이틀
+     28.34  정적: "이 설명은 1,000,000% 진실" 확인 창 하나 → 29.5 커서가 [확인] 클릭
+     29.57  본색 → 29.84 CRT 꺼짐 → 30.0 끝
+   층: ① 셰이더(하늘 · 원근 격자 바닥 · 픽셀 파동)  ② 벡터 캔버스(와이어프레임 · 링, 가산)  ③ 480x270 픽셀 캔버스(팝업 · 글자 · 스프라이트)
+   전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
+   ═══════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2, PI = Math.PI;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (t) => 1 - Math.pow(1 - t, 3), eIn = (t) => t * t * t;
+const eInOut = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const eBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+
+const BEAT = .30769, O = .034, BAR = BEAT * 4, bar = (n) => O + n * BAR;
+const T = { AD: bar(2), CLOSE: bar(7), KICK: bar(8), BUILD: bar(16), DROP: bar(20), TITLE: bar(21), BREAK: bar(23), CLICK: 29.47, SLAM: bar(24), OFF: 29.84, END: 30.0 };
+const Y = "#ffe23a", W = "#fff8c8", K = "#0a0c18", R = "#ff4060", G = "#5dff8a", C = "#58c8ff", DIM = "#8a7a20";
+const D = window.PX_DATA || { fps: 60, kick: [], hat: [], lvl: [] };
+const dat = (arr, t) => { const i = Math.floor(t * D.fps); return i < 0 || !arr.length ? 0 : arr[Math.min(arr.length - 1, i)]; };
+const KICKS = (() => { const out = []; for (let n = 8; n < 16; n++) out.push(bar(n), bar(n) + BEAT, bar(n) + BEAT * 2.5); for (let b = 0; b < 16; b++) out.push(bar(16) + b * BEAT); for (let x = bar(20); x < bar(23); x += BEAT * .75) out.push(x); out.push(bar(24)); return out; })();   // 바닥 파동이 번지는 시각 (분석한 킥 패턴: 그루브 1·2박, 빌드업 매 박, 드롭 점8분)
+
+const $ = (id) => document.getElementById(id);
+const glc = $("glc"), bgm = $("bgm");
+const PW = 480, PH = 270, pcv = document.createElement("canvas"), pg = pcv.getContext("2d"); pcv.width = PW; pcv.height = PH; pg.imageSmoothingEnabled = false;
+const vcv = document.createElement("canvas"), vg = vcv.getContext("2d");
+let Wd = 0, Hd = 0, U = 0, DPR = 1, DPR_CAP = 1.5, slow = 0, time = 0, X = null, P = {}, RT = {}, pxTex = null, vecTex = null;
+
+/* ═════════════════ 픽셀 캔버스 도구 ═════════════════ */
+const FONT = { A: [14, 17, 17, 31, 17, 17, 17], B: [30, 17, 17, 30, 17, 17, 30], C: [14, 17, 16, 16, 16, 17, 14], D: [30, 17, 17, 17, 17, 17, 30], E: [31, 16, 16, 30, 16, 16, 31], F: [31, 16, 16, 30, 16, 16, 16],
+  G: [14, 17, 16, 23, 17, 17, 15], H: [17, 17, 17, 31, 17, 17, 17], I: [14, 4, 4, 4, 4, 4, 14], J: [7, 2, 2, 2, 2, 18, 12], K: [17, 18, 20, 24, 20, 18, 17], L: [16, 16, 16, 16, 16, 16, 31], M: [17, 27, 21, 21, 17, 17, 17],
+  N: [17, 25, 21, 19, 17, 17, 17], O: [14, 17, 17, 17, 17, 17, 14], P: [30, 17, 17, 30, 16, 16, 16], Q: [14, 17, 17, 17, 21, 18, 13], R: [30, 17, 17, 30, 20, 18, 17], S: [15, 16, 16, 14, 1, 1, 30], T: [31, 4, 4, 4, 4, 4, 4],
+  U: [17, 17, 17, 17, 17, 17, 14], V: [17, 17, 17, 17, 17, 10, 4], W: [17, 17, 17, 21, 21, 27, 17], X: [17, 17, 10, 4, 10, 17, 17], Y: [17, 17, 10, 4, 4, 4, 4], Z: [31, 1, 2, 4, 8, 16, 31],
+  0: [14, 17, 19, 21, 25, 17, 14], 1: [4, 12, 4, 4, 4, 4, 14], 2: [14, 17, 1, 2, 4, 8, 31], 3: [30, 1, 1, 14, 1, 1, 30], 4: [2, 6, 10, 18, 31, 2, 2], 5: [31, 16, 30, 1, 1, 17, 14], 6: [6, 8, 16, 30, 17, 17, 14],
+  7: [31, 1, 2, 4, 8, 8, 8], 8: [14, 17, 17, 14, 17, 17, 14], 9: [14, 17, 17, 15, 1, 2, 12], "!": [4, 4, 4, 4, 4, 0, 4], "?": [14, 17, 1, 2, 4, 0, 4], "%": [25, 26, 2, 4, 8, 11, 19], "/": [1, 2, 2, 4, 8, 8, 16],
+  ":": [0, 4, 0, 0, 0, 4, 0], ".": [0, 0, 0, 0, 0, 0, 4], "-": [0, 0, 0, 31, 0, 0, 0], "+": [0, 4, 4, 31, 4, 4, 0], "=": [0, 0, 31, 0, 31, 0, 0], "#": [31, 17, 21, 21, 21, 17, 31], ">": [16, 8, 4, 2, 4, 8, 16], "<": [1, 2, 4, 8, 4, 2, 1],
+  "*": [0, 21, 14, 31, 14, 21, 0], "_": [0, 0, 0, 0, 0, 0, 31], "(": [2, 4, 8, 8, 8, 4, 2], ")": [8, 4, 2, 2, 2, 4, 8], ",": [0, 0, 0, 0, 0, 4, 8], "'": [4, 4, 0, 0, 0, 0, 0] };
+function ptext(s, x, y, sc, color, align) {                               // 5x7 비트맵 글꼴 (영문·숫자)
+  s = String(s).toUpperCase(); const w = s.length * 6 * sc - sc; x = Math.round(align === "c" ? x - w / 2 : align === "r" ? x - w : x); y = Math.round(y); pg.fillStyle = color;
+  for (const ch of s) { const gph = FONT[ch]; if (gph) for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) if (gph[r] >> (4 - c) & 1) pg.fillRect(x + c * sc, y + r * sc, sc, sc); x += 6 * sc; }
+  return w;
+}
+const tcache = new Map(), tc = document.createElement("canvas"), tctx = tc.getContext("2d", { willReadFrequently: true });
+const hex = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+function ktext(str, px, color) {                                           // 한글: 작은 글꼴로 그린 뒤 알파를 끊어서 계단 픽셀로 (문자열별 캐시)
+  const key = str + "|" + px + "|" + color; let c = tcache.get(key); if (c) return c;
+  const font = `${px}px Galmuri11, DungGeunMo, "Malgun Gothic", sans-serif`; tctx.font = font; const w = Math.ceil(tctx.measureText(str).width) + 2, h = Math.ceil(px * 1.25) + 2;
+  tc.width = w; tc.height = h; tctx.font = font; tctx.textBaseline = "top"; tctx.fillStyle = "#fff"; tctx.fillText(str, 1, 1);
+  const im = tctx.getImageData(0, 0, w, h), d = im.data, [r, g, b] = hex(color);
+  for (let i = 0; i < d.length; i += 4) { const on = d[i + 3] > 88; d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = on ? 255 : 0; }
+  c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").putImageData(im, 0, 0); tcache.set(key, c); return c;
+}
+function kdraw(str, x, y, px, color, align) { const c = ktext(str, px, color); pg.drawImage(c, Math.round(align === "c" ? x - c.width / 2 : align === "r" ? x - c.width : x), Math.round(y)); return c.width; }
+if (document.fonts) document.fonts.addEventListener("loadingdone", () => tcache.clear());
+function spr(rows, x, y, sc, cols) { x = Math.round(x); y = Math.round(y); rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const col = cols[row[c]]; if (col) { pg.fillStyle = col; pg.fillRect(x + c * sc, y + r * sc, sc, sc); } } }); }
+function box(x, y, w, h, fill, line) { x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h); if (fill) { pg.fillStyle = fill; pg.fillRect(x, y, w, h); } if (line) { pg.fillStyle = line; pg.fillRect(x, y, w, 1); pg.fillRect(x, y + h - 1, w, 1); pg.fillRect(x, y, 1, h); pg.fillRect(x + w - 1, y, 1, h); } }
+
+const FACE_HAPPY = ["............", "............", "..##....##..", "..##....##..", "............", "............", ".##########.", ".#........#.", "..#......#..", "...######...", "............", "............"];
+const FACE_WINK = ["............", "............", "..##........", "..##...####.", "............", "............", ".##########.", ".#........#.", "..#......#..", "...######...", "............", "............"];
+const FACE_EVIL = ["............", ".##......##.", "..###..###..", "...##..##...", "............", "............", "############", "#.#.#.#.#.#.", ".#.#.#.#.#.#", "############", "............", "............"];
+const LOCK = ["...#####...", "..##...##..", "..#.....#..", "..#.....#..", ".#########.", ".#########.", ".####.####.", ".####.####.", ".#########.", ".#########."];
+const CURSOR = ["#.......", "##......", "#w#.....", "#ww#....", "#www#...", "#wwww#..", "#wwwww#.", "#www####", "#w#w#...", "##.#w#..", "...#w#..", "....#..."];
+const INVADER = ["..#.....#..", "...#...#...", "..#######..", ".##.###.##.", "###########", "#.#######.#", "#.#.....#.#", "...##.##..."];
+
+/* 팝업 광고 창 — born 에 튀어나오고 die 에 닫힌다 */
+function win(t, o) {
+  if (t < o.born || (o.die && t > o.die + .1)) return;
+  const k = o.die && t > o.die ? 1 - seg(t, o.die, o.die + .1) : eBack(seg(t, o.born, o.born + .17)), w = o.w * k, h = o.h * k, x = o.x + (o.w - w) / 2, y = o.y + (o.h - h) / 2, col = o.col || Y;
+  box(x + 2, y + 2, w, h, "rgba(0,0,0,.55)"); box(x, y, w, h, "rgba(8,10,24,.94)", col);
+  if (k < .92) return;
+  box(x, y, w, 10, col); ptext(o.title || "AD", x + 3, y + 2, 1, K); box(x + w - 9, y + 2, 7, 7, K); ptext("X", x + w - 8, y + 2, 1, col);
+  const lh = (o.px || 12) + 3; let ty = y + 14 + (o.pad || 0);
+  (o.lines || []).forEach((ln) => { if (o.ascii) ptext(ln, x + w / 2, ty, o.ascii, o.tcol || W, "c"); else kdraw(ln, x + w / 2, ty, o.px || 12, o.tcol || W, "c"); ty += o.ascii ? 8 * o.ascii + 2 : lh; });
+  if (o.btn) { const bw = 40, bx = x + w / 2 - bw / 2, by = y + h - 15, hot = o.hot && t >= o.hot; box(bx, by, bw, 11, hot ? col : null, col); kdraw(o.btn, x + w / 2, by - 1, 11, hot ? K : col, "c"); }
+}
+const ADS = [
+  { born: bar(2), die: T.CLOSE + .0, x: 22, y: 22, w: 156, h: 46, title: "HOT!!", lines: ["★1000% 진짜!?★"], px: 16, tcol: Y },
+  { born: bar(3), die: T.CLOSE + .2, x: 298, y: 28, w: 166, h: 50, title: "NEW", lines: ["디지털 월드에 봉인된", "수수께끼의 “자아” 등장!!"] },
+  { born: bar(4), die: T.CLOSE + .4, x: 12, y: 152, w: 172, h: 66, title: "WOW", lines: ["최고로 중독적인 비트 +", "눈부신 색 특수 효과 =", "정신이 나갈 정도로 몰입!!"] },
+  { born: bar(5), die: T.CLOSE + .6, x: 304, y: 150, w: 164, h: 50, title: "FAQ", lines: ["왜 이게 존재하냐고요?", "아무도 모릅니다..."] },
+  { born: bar(6), die: T.CLOSE + .8, x: 168, y: 204, w: 150, h: 46, title: "FAQ 2", lines: ["...만 누가 신경쓰나요?!", "¯\\_(ツ)_/¯"] },
+  { born: bar(10), die: bar(12) - .1, x: 18, y: 18, w: 170, h: 58, title: "100 100", lines: ["완전히 무해합니다!"], px: 16, tcol: G, col: G, btn: "확인" },
+  { born: bar(12), die: bar(14) - .1, x: 292, y: 176, w: 178, h: 62, title: "SAFE", lines: ["확신할 정도로 전혀", "유저에게 위험하지 않습니다!!"], btn: "확인" },
+  { born: bar(13), die: bar(13) + BEAT * 2.2, x: 176, y: 14, w: 128, h: 40, title: "SYSTEM", lines: ["! WARNING !"], ascii: 2, tcol: R, col: R },
+  { born: bar(13) + BEAT * 2, die: bar(15), x: 170, y: 10, w: 140, h: 48, title: "OK OK OK", lines: ["무해함 100"], px: 16, tcol: G, col: G },
+  { born: bar(14), die: T.BUILD - .15, x: 140, y: 214, w: 200, h: 44, title: "REALLY", lines: ["거의 이중 부정할 정도로요!!"] },
+];
+const SPAM = ["무해합니다!", "위험하지 않음!", "100% 안전", "진짜임", "믿으세요", "확인 확인"];
+const CONF = (() => { const r = rng(77); return Array.from({ length: 300 }, () => ({ a: r() * TAU, v: 40 + r() * r() * 260, s: 1 + Math.floor(r() * 3), c: [Y, Y, W, "#ff9d1c", C][Math.floor(r() * 5)], g: 60 + r() * 120, ph: r() * TAU })); })();
+const EVIL_AT = [bar(10) + BEAT * 3, bar(12) + BEAT * 2, bar(13) + BEAT, bar(14) + BEAT * 3, bar(15) + BEAT * 2, bar(16) + BEAT * 2, bar(17), bar(17) + BEAT * 2.5, bar(18) + BEAT, bar(18) + BEAT * 2.5, bar(19), bar(19) + BEAT * 1.5, bar(19) + BEAT * 2.5];
+const evil = (t) => EVIL_AT.some((e) => t >= e && t < e + .085) || (t >= bar(19) + BEAT * 3 && t < T.DROP);
+const hpAt = (t) => t < bar(12) ? 100 : Math.max(0, 100 - Math.floor((t - bar(12)) / (BEAT * 2)) * 7);
+
+function drawPixels(t) {
+  pg.clearRect(0, 0, PW, PH);
+  const kick = dat(D.kick, t), bp = Math.exp(-(((t - O) / BEAT) % 1) * 5);
+  if (t < T.AD) {                                                           /* 부팅 */
+    pg.fillStyle = "#03040a"; pg.fillRect(0, 0, PW, PH);
+    const lines = ["DIGITAL WORLD OS V10.00", "MEMORY CHECK ... 640K OK", "MOUNT /SEAL ... OK", "LOADING SELF.EXE"], n = Math.floor(seg(t, .15, 1.1) * 4 + .001);
+    for (let i = 0; i < Math.min(n + 1, 4); i++) { const full = i < n, s = lines[i]; ptext(full ? s : s.slice(0, Math.floor(seg(t, .15 + i * .24, .15 + (i + 1) * .24) * s.length)), 40, 60 + i * 14, 1, i === 3 ? Y : DIM); }
+    if (t > 1.1) { const over = t >= 2.12, pct = over ? 1000 : Math.min(99, Math.floor(seg(t, 1.1, 1.75) * 99)), bw = over ? lerp(400, 700, eOut(seg(t, 2.12, 2.4))) : 4 * pct;
+      box(38, 126, 404, 16, null, Y); pg.fillStyle = over && Math.floor(t * 20) % 2 ? W : Y; pg.fillRect(40, 128, bw, 12);
+      ptext(pct + "%", 240, 150, over ? 3 : 2, over ? W : Y, "c"); if (!over && pct === 99 && Math.floor(t * 4) % 2) ptext("...", 300, 150, 2, DIM);
+      if (over) kdraw("어라?", 240, 180, 12, DIM, "c"); }
+    if (Math.floor(t * 3) % 2 === 0) pg.fillStyle = Y, pg.fillRect(40 + (n < 4 ? 0 : 102), 60 + Math.min(n, 3) * 14 + 9 * (n < 4 ? 0 : 0), 5, 1);
+    return;
+  }
+  const dropped = t >= T.DROP, brk = t >= T.BREAK && t < T.SLAM, slam = t >= T.SLAM;
+  if (brk) {                                                                /* 정적: 확인 창 하나 */
+    pg.fillStyle = "rgba(2,3,8,.93)"; pg.fillRect(0, 0, PW, PH);
+    win(t, { born: T.BREAK + .04, x: 78, y: 82, w: 324, h: 100, title: "TRUTH.TXT", lines: ["“이 설명은 아무런 거짓을 함유하지 않고 있으며", "1,000,000%만큼의 진실만을 가지고 있습니다!”"], pad: 6, btn: "확인", hot: T.CLICK });
+    const k = eInOut(seg(t, T.BREAK + .3, T.CLICK - .05)); spr(CURSOR, lerp(400, 243, k), lerp(236, 172, k) + (t >= T.CLICK ? 1 : 0), 1, { "#": K, w: W });
+    return;
+  }
+  /* 큐브 속 얼굴 · 자물쇠 */
+  const cx = 240, cy = 118 + Math.round(Math.sin(t * 1.7) * 2), bad = evil(t) || slam;
+  if (slam) { const s = 16; spr(FACE_EVIL, cx - 6 * s, 100 - 6 * s, s, { "#": W }); }
+  else if (dropped) { /* 큐브는 마법진 안으로 */ }
+  else { const s = 4; box(cx - 6 * s - 3, cy - 6 * s - 1, 12 * s + 6, 12 * s + 2, "rgba(5,6,16,.82)", bad ? R : null); const f = bad ? FACE_EVIL : Math.floor((t - O) / BAR) % 2 ? FACE_WINK : FACE_HAPPY, sq = t >= T.KICK ? Math.round(kick * 2) : 0; spr(f, cx - 6 * s + (bad ? Math.round(Math.sin(t * 90) * 2) : 0), cy - 6 * s + sq, s, { "#": bad ? R : Y }); }
+  if (!dropped) { const shake = t >= T.BUILD ? Math.round(Math.sin(t * 70) * seg(t, T.BUILD, T.DROP) * 3) : 0, pop = seg(t, T.DROP - BEAT, T.DROP); spr(LOCK, cx - 11 + shake, 156 - pop * 30, 2, { "#": Y }); if (t < T.BUILD) ptext("SEALED", cx, 180, 1, DIM, "c"); }
+  /* 플레이어 HUD (링은 벡터 층) */
+  if (t >= T.KICK - .4 && !slam) { const a = eBack(seg(t, T.KICK - .4, T.KICK - .1)), hp = hpAt(t), hc = hp > 50 ? Y : hp > 20 ? "#ff9d1c" : R;
+    [[100, "PLAYER1"], [380, "PLAYER2"]].forEach(([x, name], i) => { const y = 66 - (1 - a) * 20; ptext(name, x, y, 1, Y, "c"); box(x - 27, y + 10, 54, 11, "rgba(8,10,24,.9)", hc); pg.fillStyle = hc; pg.fillRect(x - 25, y + 12, Math.round(50 * hp / 100), 7);
+      ptext(hp + "/100", x, y + 24, 1, hc, "c"); if (hp === 0 && Math.floor(t * 6) % 2) ptext("K.O.", x, y + 36, 2, R, "c");
+      spr(INVADER, x - 11 + (i ? -1 : 1) * Math.round(bp * 2), 120 - Math.round(bp * 3) + (hp === 0 ? 6 : 0), 2, { "#": hp === 0 ? DIM : W }); }); }
+  if (t >= T.CLOSE + .55 && t < T.KICK && Math.floor(t * 8) % 2) ptext("PLAYER 1 READY!", 240, 40, 2, W, "c");
+  /* 팝업 광고 + 닫는 커서 */
+  ADS.forEach((o) => win(t, o));
+  if (t >= T.CLOSE - .5 && t < T.KICK) { const i = clamp(Math.floor((t - T.CLOSE) / .2), 0, 4), o = ADS[i], k = eOut(seg(t, T.CLOSE - .5 + Math.max(0, i) * .0, T.CLOSE)); const tx = o.x + o.w - 7, ty = o.y + 4, px = i === 0 ? lerp(430, tx, k) : lerp(ADS[i - 1].x + ADS[i - 1].w - 7, tx, eOut(seg(t, T.CLOSE + (i - 1) * .2 + .05, T.CLOSE + i * .2))), py = i === 0 ? lerp(250, ty, k) : lerp(ADS[i - 1].y + 4, ty, eOut(seg(t, T.CLOSE + (i - 1) * .2 + .05, T.CLOSE + i * .2))); spr(CURSOR, px, py, 1, { "#": K, w: W }); }
+  /* 빌드업: "무해합니다" 창 폭주 */
+  if (t >= T.BUILD && !dropped) { const n = Math.floor((t - T.BUILD) / (BEAT / 2)); for (let i = Math.max(0, n - 40); i <= n; i++) win(t, { born: T.BUILD + i * BEAT / 2, x: 16 + (i * 67) % 340, y: 12 + (i * 41) % 196, w: 112, h: 40, title: "OK " + (i + 1), lines: [SPAM[i % SPAM.length]], col: i % 5 === 4 ? G : Y, tcol: i % 5 === 4 ? G : W }); }
+  /* 드롭: 픽셀 폭죽 + 타이틀 */
+  if (dropped) { const age = t - T.DROP; for (const p of CONF) { const d = p.v * (1 - Math.exp(-age * 1.6)) / 1.6, x = 240 + Math.cos(p.a) * d, y = 120 + Math.sin(p.a) * d * .7 + p.g * age * age * .5 - 40 * age; if (y > PH || age > 3.6) continue; if (Math.sin(age * 9 + p.ph) > -.4) { pg.fillStyle = p.c; pg.fillRect(Math.round(x), Math.round(y), p.s, p.s); } } }
+  if (t >= T.TITLE || slam) { const k = slam ? 1 : eOut(seg(t, T.TITLE, T.TITLE + .22)), jx = slam ? Math.round(Math.sin(t * 140) * 4) : Math.round((1 - k) * 60 * (Math.floor(t * 30) % 2 ? 1 : -1)), y = 196;
+    box(0, y - 8, PW, 58, "rgba(4,5,14,.78)"); pg.fillStyle = Y; pg.fillRect(0, y - 8, PW * k, 1); pg.fillRect(PW * (1 - k), y + 49, PW * k, 1);
+    ptext("# PIXELATION #", 240 + jx + 2, y + 2, 4, "#7a5a00", "c"); ptext("# PIXELATION #", 240 + jx, y, 4, slam ? W : Y, "c");
+    if (k > .9) { kdraw("▣ 픽셀레이션 ▣", 240, y + 31, 16, W, "c"); if (!slam && t > T.TITLE + .6 && Math.floor(t * 5) % 2) { box(168, 8, 144, 18, "rgba(4,5,14,.8)", G); kdraw("※ 완전히 무해합니다", 240, 10, 12, G, "c"); } } }
+  if (t >= T.DROP && t < T.DROP + BEAT * 2 && Math.floor(t * 16) % 2) ptext("SEAL BROKEN", 240, 30, 3, W, "c");
+}
+
+/* ═════════════════ 벡터 캔버스 (와이어프레임 · 링 · 사슬) ═════════════════ */
+const CUBE_V = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], CUBE_E = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+function drawVector(t) {
+  vg.setTransform(1, 0, 0, 1, 0, 0); vg.clearRect(0, 0, vcv.width, vcv.height); if (t < T.AD || (t >= T.BREAK && t < T.SLAM)) return;
+  vg.setTransform(DPR, 0, 0, DPR, Wd / 2 * DPR, Hd / 2 * DPR); vg.globalCompositeOperation = "lighter"; vg.lineCap = "round"; vg.lineJoin = "round";
+  const kick = dat(D.kick, t), dropped = t >= T.DROP, age = t - T.DROP, cy = -.62 * U + Math.sin(t * 1.7) * .07 * U, appear = eOut(seg(t, T.AD, T.AD + .5));
+  const line = (pts, w, col, close) => { vg.strokeStyle = col; vg.lineWidth = w * U; vg.beginPath(); pts.forEach(([x, y], i) => (i ? vg.lineTo(x, y) : vg.moveTo(x, y))); if (close) vg.closePath(); vg.stroke(); };
+  /* 큐브 */
+  const spin = t < T.KICK ? t * .5 : t < T.DROP ? t * .5 + (t - T.KICK) * .6 + seg(t, T.BUILD, T.DROP) ** 2 * 9 : t * 2.2, ax = .45 + .12 * Math.sin(t * .8);
+  const size = (dropped ? lerp(1.5, .78, eOut(seg(t, T.DROP, T.DROP + .3))) : 1.5 * appear) * U * (1 + .1 * kick * (t >= T.KICK ? 1 : 0)), sqY = 1 - .12 * kick * (t >= T.KICK && !dropped ? 1 : 0);
+  const pv = CUBE_V.map(([x, y, z]) => { const c = Math.cos(spin), s = Math.sin(spin), x1 = x * c + z * s, z1 = -x * s + z * c, c2 = Math.cos(ax), s2 = Math.sin(ax), y2 = y * c2 - z1 * s2, z2 = y * s2 + z1 * c2, f = 4.2 / (4.2 + z2); return [x1 * f * size * .62, y2 * f * size * .62 * sqY + cy]; });
+  CUBE_E.forEach(([a, b]) => line([pv[a], pv[b]], .045, "rgba(255,226,58,.95)"));
+  pv.forEach(([x, y]) => { vg.fillStyle = "#fff8c8"; vg.fillRect(x - .05 * U, y - .05 * U, .1 * U, .1 * U); });
+  /* 봉인 사슬: 19.73 / 22.19 에 하나씩 끊어짐 */
+  [[T.BUILD, -1], [bar(18), 1]].forEach(([cut, dir]) => { const br = seg(t, cut, cut + .5); if (br >= 1 || dropped) return;
+    for (const side of [-1, 1]) { const swing = eOut(br) * 1.1 * side * dir, ox = side * 3.1 * U, oy = cy - dir * side * 1.9 * U, len = 3.7 * U, a0 = Math.atan2(cy - oy, -ox) + swing, n = 9;
+      for (let i = 0; i < n; i++) { const d0 = len * i / n, d1 = len * (i + .62) / n, sag = Math.sin(i / n * PI) * .1 * U * br * 6; vg.globalAlpha = (1 - br) * appear; line([[ox + Math.cos(a0) * d0, oy + Math.sin(a0) * d0 + sag], [ox + Math.cos(a0) * d1, oy + Math.sin(a0) * d1 + sag]], i % 2 ? .1 : .05, "rgba(255,226,58,.5)"); } }
+    vg.globalAlpha = 1; });
+  /* 플레이어 링 */
+  if (t >= T.KICK - .4 && t < T.SLAM) { const a = eBack(seg(t, T.KICK - .4, T.KICK - .1)); for (const s of [-1, 1]) { const x = s * 5.18 * U, y = -.28 * U, r = 1.28 * U * a * (1 + .05 * kick), dead = hpAt(t) === 0, col = dead ? "rgba(255,64,96,.8)" : "rgba(255,226,58,.85)";
+    vg.strokeStyle = col; vg.lineWidth = .04 * U; vg.beginPath(); vg.arc(x, y, r, 0, TAU); vg.stroke(); vg.lineWidth = .09 * U; vg.beginPath(); vg.arc(x, y, r * 1.13, t * 1.5 * s, t * 1.5 * s + 1.4); vg.stroke(); vg.beginPath(); vg.arc(x, y, r * 1.13, t * 1.5 * s + PI, t * 1.5 * s + PI + .7); vg.stroke();
+    for (let i = 0; i < 24; i++) { const an = i / 24 * TAU - t * .4 * s; line([[x + Math.cos(an) * r * .86, y + Math.sin(an) * r * .86], [x + Math.cos(an) * r * (i % 6 ? .92 : .99), y + Math.sin(an) * r * (i % 6 ? .92 : .99)]], .025, col); }
+    if (dropped) line([[x - s * r, y], [-s * 2.4 * U, cy]], .03, "rgba(255,226,58,.5)"); } }
+  /* 드롭: 육각 마법진 · 화살표 왕관 · 방사선 */
+  if (dropped) { const k = eBack(seg(t, T.DROP, T.DROP + .28)), Rr = 2.45 * U * k * (1 + .06 * kick), rot = age * .35, hx = (i, r, off) => [Math.cos(i / 6 * TAU + rot + off) * r, Math.sin(i / 6 * TAU + rot + off) * r + cy];
+    const hexP = [0, 1, 2, 3, 4, 5].map((i) => hx(i, Rr, -PI / 2)); line(hexP, .05, "rgba(255,226,58,.95)", true);
+    line([hexP[0], hexP[2], hexP[4]], .04, "rgba(255,248,200,.9)", true); line([hexP[1], hexP[3], hexP[5]], .04, "rgba(255,248,200,.9)", true);
+    hexP.forEach((p, i) => { line([p, pv[i % 8]], .022, "rgba(255,226,58,.55)"); vg.fillStyle = "#fff8c8"; vg.fillRect(p[0] - .07 * U, p[1] - .07 * U, .14 * U, .14 * U); });
+    const Ro = Rr * 1.32; vg.strokeStyle = "rgba(255,226,58,.5)"; vg.lineWidth = .03 * U; vg.setLineDash([.18 * U, .14 * U]); vg.beginPath(); vg.arc(0, cy, Ro, -rot, -rot + TAU); vg.stroke(); vg.setLineDash([]);
+    for (let i = 0; i < 3; i++) { const w = (1.05 - i * .2) * U * k, y0 = cy - Rr - (1.5 - i * .42) * U - Math.sin(t * 6 + i) * .05 * U, h = .34 * U; vg.fillStyle = `rgba(255,${226 + i * 10},${58 + i * 60},${.9 - i * .12})`;
+      vg.beginPath(); vg.moveTo(-w, y0); vg.lineTo(0, y0 + h); vg.lineTo(w, y0); vg.lineTo(w, y0 + h * .55); vg.lineTo(0, y0 + h * 1.55); vg.lineTo(-w, y0 + h * .55); vg.closePath(); vg.fill(); }
+    const burst = 1 - seg(t, T.DROP, T.DROP + .7); if (burst > 0) for (let i = 0; i < 28; i++) { const an = i / 28 * TAU + .1, r0 = Rr * (1.1 + (1 - burst) * 2.5), r1 = r0 + U * (1 + (i % 3)) * burst; vg.globalAlpha = burst; line([[Math.cos(an) * r0, Math.sin(an) * r0 + cy], [Math.cos(an) * r1, Math.sin(an) * r1 + cy]], .05, "#fff8c8"); } vg.globalAlpha = 1; }
+  vg.globalCompositeOperation = "source-over";
+}
+
+/* ═════════════════ 셰이더 ═════════════════ */
+const FS_SCENE = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform sampler2D uPx, uVec; uniform vec2 uRes; uniform float uT, uBlock, uGlitch, uScene, uMood, uKick; uniform float uWave[6];
+${CSGL.NOISE}
+void main(){
+  vec2 uv = vUv; float asp = uRes.x / uRes.y;
+  if (uBlock > 1.5) uv = (floor(uv * uRes / uBlock) + .5) * uBlock / uRes;                       // 화면 전체가 말 그대로 '픽셀화'
+  float tick = floor(uT * 24.), row = floor(uv.y * 36.), gr = hash(vec2(row, tick));
+  if (gr < uGlitch * .55) uv.x += (hash(vec2(row, tick + 3.)) - .5) * .16 * uGlitch;               // 가로 줄 단위로 찢어지는 글리치
+  vec3 col = vec3(.004, .006, .018) + vec3(.0, .004, .02) * (1. - uv.y);
+  vec2 sg = floor(uv * vec2(asp, 1.) * 90.); float sr = hash(sg); col += vec3(.5, .6, 1.) * step(.994, sr) * (.04 + .1 * hash(sg + 9.)) * step(.47, uv.y);
+  float hy = .47;
+  if (uv.y < hy){                                                                                // 원근 격자 바닥 + 킥마다 번지는 픽셀 파동
+    float z = .2 / (hy - uv.y), x = (uv.x - .5) * z * asp * 2.4; vec2 fp = vec2(x, z);
+    vec2 w = fwidth(fp) * 1.2, l = smoothstep(w, vec2(0.), abs(fract(fp - .5) - .5)); float fade = exp(-z * .1);
+    col += vec3(.04, .16, .55) * max(l.x, l.y) * fade * (.55 + .45 * uScene);
+    vec2 cell = (floor(fp * 5.) + .5) / 5.; float d = length(cell - vec2(0., 3.2)), lit = 0.;
+    for (int i = 0; i < 6; i++){ float age = uWave[i]; if (age < 0.) continue; lit += exp(-pow((d - age * 9.) / .8, 2.)) * exp(-age * 2.4); }
+    float dith = step(.4, hash(cell * 7.3 + floor(uT * 14.)));
+    col += vec3(1., .82, .12) * (lit * dith * .5 + exp(-d * d * .12) * (.03 + .16 * uMood) * (.5 + .5 * dith)) * fade * uScene;
+  }
+  col += vec3(1., .85, .2) * exp(-pow((uv.y - hy) * 9., 2.)) * exp(-pow((uv.x - .5) * 2.4, 2.)) * (.03 + .1 * uMood) * uScene;   // 지평선 위 후광
+  float ca = .0025 * uGlitch + .0006;
+  vec3 vc = vec3(texture(uVec, uv + vec2(ca, 0.)).r, texture(uVec, uv).g, texture(uVec, uv - vec2(ca, 0.)).b);
+  col += vc * (1.05 + .4 * uKick) * (.92 + .08 * sin(uv.y * uRes.y * .8 + uT * 30.));                       // 홀로그램 깜빡임
+  vec2 pres = vec2(480., 270.), puv = (floor(uv * pres) + .5) / pres; vec4 px = texture(uPx, puv);
+  vec4 pxr = texture(uPx, puv + vec2(ca * 1.5, 0.)); px.r = mix(px.r, pxr.r, step(.01, uGlitch));
+  vec2 cellp = fract(uv * pres); float gridm = 1. - .16 * (step(.86, cellp.x) + step(.86, cellp.y));          // 픽셀 사이 어두운 틈 (LCD 느낌)
+  col = mix(col, px.rgb * (.95 + .25 * uKick) * gridm, px.a);
+  o = vec4(max(col, 0.), 1.);
+}`;
+const FS_FINAL = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform sampler2D uScene, uBloom; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uFlash, uCrt, uFade, uInvert;
+${CSGL.NOISE}
+void main(){
+  float sy = clamp(uCrt * 1.7, .004, 1.), sx = clamp(uCrt * 5., .002, 1.);                        // CRT 켜짐/꺼짐: 세로로 접힌 뒤 점으로
+  vec2 c = vUv - .5; c.x /= sx; c.y /= sy; vec2 uv = c / uZoom + .5 + uShake;
+  vec2 bz = uv - .5; uv = .5 + bz * (1. + .045 * dot(bz, bz));                                     // 살짝 볼록한 화면
+  if (abs(c.x) > .5 || abs(c.y) > .5 || uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.){ o = vec4(0., 0., 0., 1.); return; }
+  vec2 dir = uv - .5; float ca = uCA * (.3 + length(dir) * 1.8);
+  vec3 col = vec3(texture(uScene, uv + dir * ca).r, texture(uScene, uv).g, texture(uScene, uv - dir * ca).b);
+  vec3 bl = texture(uBloom, uv).rgb; col += bl * uBloomK + bl * vec3(.12, .06, 0.) * uBloomK;
+  col *= 1. + (1. - sy) * 5.; col = mix(col, vec3(1.) - min(col, vec3(1.)), uInvert); col += vec3(1., .95, .7) * uFlash;
+  col = (col * (2.51 * col + .03)) / (col * (2.43 * col + .59) + .14); col = pow(clamp(col, 0., 1.), vec3(1. / 2.2));
+  col *= .93 + .07 * sin(uv.y * uRes.y * 1.9);                                                    // 주사선
+  col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * .04;
+  float v = length((vUv - .5) * vec2(1., .85)); col *= 1. - smoothstep(.4, 1., v) * .6;
+  o = vec4(max(col, 0.) * (1. - uFade), 1.);
+}`;
+
+function initGL() { if (X) return; X = CSGL.create(glc); P.scene = X.compile(CSGL.VS_FULL, FS_SCENE); P.final = X.compile(CSGL.VS_FULL, FS_FINAL); pxTex = X.canvasTexture(); vecTex = X.canvasTexture(); }
+function resize() {
+  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); Wd = glc.clientWidth || 1280; Hd = glc.clientHeight || 720; U = Math.min(Wd, Hd) / 10;        // 창이 숨겨져 0이어도 동작하게 기본값
+  const pw = Math.max(2, Math.round(Wd * DPR)), ph = Math.max(2, Math.round(Hd * DPR)); glc.width = vcv.width = pw; glc.height = vcv.height = ph;
+  initGL(); X.resize(pw, ph); X.free(RT.scene); RT.scene = X.target(pw, ph);
+}
+function render(t) {
+  drawPixels(t); drawVector(t);
+  const gl = X.gl, pw = glc.width, ph = glc.height, kick = dat(D.kick, t), build = seg(t, T.BUILD, T.DROP), slam = t >= T.SLAM, brk = t >= T.BREAK && !slam, dropped = t >= T.DROP && !brk;
+  X.upload(pxTex, pcv, false); X.upload(vecTex, vcv, false);
+  const evilNow = evil(t) && t < T.DROP, glitch = t < T.AD ? .04 : brk ? (t >= T.CLICK ? .5 : .02) : slam ? .5 + .5 * pulse(t, T.SLAM, .01, .12) : Math.max(evilNow ? .85 : 0, .03 + (t < T.DROP ? .5 * build * build : 0) + (dropped ? .012 + .04 * kick + .9 * pulse(t, T.DROP, .01, .45) + .5 * pulse(t, T.TITLE, .01, .22) : 0), .7 * pulse(t, T.AD, .01, .3), .5 * pulse(t, T.KICK, .01, .3));
+  const stepB = [1, 1, 4, 7, 11][Math.min(4, Math.floor(build * 5))], block = (t >= T.DROP - BEAT && t < T.DROP ? 26 : t >= T.BUILD && t < T.DROP ? stepB : slam && t < T.SLAM + .08 ? 12 : 1) * ph / 720;
+  const waves = new Float32Array(6).fill(-1); let wi = 0; for (let i = KICKS.length - 1; i >= 0 && wi < 6; i--) { const a = t - KICKS[i]; if (a < 0) continue; if (a > 2) break; waves[wi++] = a; }
+  X.pass(P.scene, RT.scene, (u) => { X.bindTex(0, pxTex, u.uPx); X.bindTex(1, vecTex, u.uVec); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t); gl.uniform1f(u.uBlock, block); gl.uniform1f(u.uGlitch, glitch);
+    gl.uniform1f(u.uScene, t < T.AD ? 0 : brk ? .12 : eOut(seg(t, T.AD, T.AD + .6))); gl.uniform1f(u.uMood, dropped || slam ? 1 : .15 + .5 * build + (t >= T.KICK ? .25 * kick : 0)); gl.uniform1f(u.uKick, t >= T.KICK ? kick : 0); gl.uniform1fv(u.uWave, waves); });
+  const bloomTex = X.bloom(RT.scene.tex, .8), r0 = rng(Math.floor(t * 60));
+  const hit = (t >= T.KICK && !brk ? .12 * kick : 0) + .8 * pulse(t, T.DROP, .02, .6) + (dropped ? .25 * kick : 0) + .5 * pulse(t, T.KICK, .02, .4) + (slam ? .9 : 0) + (evilNow ? .3 : 0);
+  const flash = Math.max(.9 * pulse(t, T.DROP, .02, .45), .35 * pulse(t, T.KICK, .02, .3), .3 * pulse(t, T.AD, .02, .25), .8 * pulse(t, T.SLAM, .01, .2), .25 * pulse(t, T.TITLE, .02, .3));
+  const crt = t < .45 ? eOut(seg(t, .05, .45)) : t >= T.OFF ? 1 - eIn(seg(t, T.OFF, T.END - .02)) * 1 : 1;
+  X.pass(P.final, null, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t);
+    gl.uniform2f(u.uShake, (r0() - .5) * hit * .016, (r0() - .5) * hit * .016); gl.uniform1f(u.uZoom, 1 + .035 * hit + (dropped ? .015 * kick : 0)); gl.uniform1f(u.uCA, .0012 + .01 * hit); gl.uniform1f(u.uBloomK, brk ? .3 : .42 + .3 * (dropped ? kick : 0));
+    gl.uniform1f(u.uFlash, flash * flash); gl.uniform1f(u.uCrt, crt); gl.uniform1f(u.uFade, t >= T.END - .02 ? 1 : 0); gl.uniform1f(u.uInvert, (dropped && t < T.DROP + .07) || (slam && t < T.SLAM + .06) ? 1 : 0); });
+}
+
+/* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
+const player = CSUI.create({
+  stage: $("cs"), audio: bgm, volume: .8, duration: T.END, theme: "pixel", capBlend: false,
+  no: "03", title: "PIXELATION", sub: "픽셀레이션", hero: "/thumbs/pixelation_hero.jpg",
+  tagline: "디지털 월드에 봉인된 수수께끼의 “자아”. 완전히 무해합니다 — 확신할 정도로요.\n이 설명은 1,000,000%만큼의 진실만을 가지고 있습니다.",
+  meta: [["0:30", "Length"], ["195 BPM", "Tempo"], ["WebGL2", "Renderer"]],
+  chapters: [{ t: 0, name: "부팅" }, { t: T.AD, name: "광고" }, { t: T.KICK, name: "완전히 무해함" }, { t: T.BUILD, name: "봉인 균열" }, { t: T.DROP, name: "해방" }, { t: T.BREAK, name: "1,000,000% 진실" }],
+  captions: [],
+  prepare() { resize(); },
+  simulate(tt) { time = tt; },
+  frame(t, dt, raw) { time = t; slow = raw > .03 ? slow + 1 : Math.max(0, slow - 1); if (slow > 45 && DPR_CAP > 1) { DPR_CAP = 1; slow = 0; resize(); } render(t); },
+});
+window.addEventListener("resize", () => { if (!$("cs").hidden && X) { resize(); render(time); } });
+window.playPixelationCutscene = (o) => player.play(o);
+function renderStill(tt) { time = tt; render(tt); }
+</script>
+</body>
+</html>
