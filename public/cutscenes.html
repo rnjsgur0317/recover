@@ -4,45 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>컷씬 갤러리</title>
+<link rel="stylesheet" href="/cs_ui.css">
 <style>
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: #08090c; color: #e8e8ea; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; padding: 40px 20px 80px; }
-.wrap { max-width: 1040px; margin: 0 auto; }
-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 26px; }
-h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
-.lead { margin: 6px 0 0; color: #8a8c93; font-size: .88rem; }
-.sound { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: #b5b7bd; border: 1px solid #25272d; border-radius: 999px; padding: 8px 14px; cursor: pointer; user-select: none; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
-.card { background: #101116; border: 1px solid #22242b; border-radius: 16px; overflow: hidden; cursor: pointer; transition: transform .16s, border-color .16s, box-shadow .16s; display: flex; flex-direction: column; text-align: left; color: inherit; font-family: inherit; padding: 0; }
-.card:hover, .card:focus-visible { transform: translateY(-3px); border-color: #f1f1f3; box-shadow: 0 14px 40px rgba(0,0,0,.5); outline: none; }
-.thumb { position: relative; aspect-ratio: 16 / 9; background: #000 center / cover no-repeat; }
-.thumb::after { content: "▶"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; color: #fff; background: rgba(0,0,0,.35); opacity: 0; transition: opacity .16s; }
-.card:hover .thumb::after, .card:focus-visible .thumb::after { opacity: 1; }
-.dur { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,.72); border-radius: 6px; padding: 3px 8px; font-size: .74rem; font-weight: 700; }
-.info { padding: 15px 17px 17px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
-.title { font-size: 1.08rem; font-weight: 800; letter-spacing: .02em; }
-.title small { font-weight: 600; color: #9c9ea6; font-size: .84rem; margin-left: 6px; }
-.desc { color: #9a9ca3; font-size: .84rem; line-height: 1.6; flex: 1; }
-.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.tags span { font-size: .7rem; font-weight: 700; color: #c9cbd1; border: 1px solid #2c2e36; border-radius: 999px; padding: 3px 9px; }
-.tags span.warn { color: #f2c46d; border-color: #574520; }
-.foot { margin-top: 26px; color: #5f6169; font-size: .78rem; line-height: 1.7; }
-.foot code { background: #15161b; border-radius: 5px; padding: 1px 6px; color: #9ea0a8; }
+body { margin: 0; min-height: 100vh; background: #07070a; color: #f3f0e8; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; -webkit-font-smoothing: antialiased; padding: 64px 28px 90px; }
+.wrap { max-width: 1120px; margin: 0 auto; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding-bottom: 30px; margin-bottom: 34px; border-bottom: 1px solid rgba(243,240,232,.16); }
+.kicker { display: flex; align-items: center; gap: 14px; font-size: .72rem; letter-spacing: .34em; color: rgba(243,240,232,.6); text-transform: uppercase; }
+.kicker::before { content: ""; width: 38px; height: 1px; background: rgba(243,240,232,.3); }
+h1 { margin: 16px 0 0; font-size: clamp(2rem, 5vw, 3.4rem); font-weight: 800; letter-spacing: .04em; line-height: 1; }
+.lead { margin: 16px 0 0; color: rgba(243,240,232,.6); font-size: .88rem; line-height: 1.8; font-family: "Noto Serif KR", "Nanum Myeongjo", "Batang", serif; }
+.sound { display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 20px; font-size: .82rem; letter-spacing: .06em; color: #f3f0e8; border: 1px solid rgba(243,240,232,.3); border-radius: 999px; cursor: pointer; user-select: none; transition: border-color .15s; }
+.sound:hover { border-color: #f3f0e8; }
+.sound input { accent-color: #f3f0e8; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 22px; }
+.card { background: none; border: 0; cursor: pointer; display: flex; flex-direction: column; text-align: left; color: inherit; font-family: inherit; padding: 0; }
+.card:focus-visible { outline: 1px solid #f3f0e8; outline-offset: 6px; }
+.thumb { position: relative; aspect-ratio: 16 / 9; background: #000 center / cover no-repeat; border: 1px solid rgba(243,240,232,.16); overflow: hidden; transition: border-color .2s; }
+.thumb::before { content: ""; position: absolute; inset: 0; background: inherit; transition: transform .6s cubic-bezier(.2,.7,.2,1); }
+.card:hover .thumb::before { transform: scale(1.06); }
+.card:hover .thumb { border-color: #f3f0e8; }
+.thumb::after { content: ""; position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%; background: #f3f0e8 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2308080b' d='M9 6v12l10-6z'/%3E%3C/svg%3E") center / 26px no-repeat; opacity: 0; transform: scale(.8); transition: opacity .2s, transform .2s; }
+.card:hover .thumb::after, .card:focus-visible .thumb::after { opacity: 1; transform: none; }
+.no { position: absolute; left: 12px; top: 10px; z-index: 1; font-size: .68rem; letter-spacing: .24em; color: rgba(255,255,255,.75); mix-blend-mode: difference; }
+.dur { position: absolute; right: 10px; bottom: 10px; z-index: 1; background: rgba(0,0,0,.72); padding: 3px 8px; font-size: .72rem; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.info { padding: 16px 2px 0; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.title { display: flex; align-items: baseline; gap: 12px; font-size: 1.05rem; font-weight: 800; letter-spacing: .16em; }
+.title small { font-family: "Noto Serif KR", "Nanum Myeongjo", "Batang", serif; font-weight: 400; color: rgba(243,240,232,.6); font-size: .8rem; letter-spacing: .12em; }
+.desc { color: rgba(243,240,232,.6); font-size: .82rem; line-height: 1.75; flex: 1; word-break: keep-all; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 2px; font-size: .68rem; letter-spacing: .12em; color: rgba(243,240,232,.45); text-transform: uppercase; }
+.tags span.warn { color: rgba(243,240,232,.8); }
+.tags span.warn::before { content: "♪ "; }
+.foot { margin-top: 44px; padding-top: 22px; border-top: 1px solid rgba(243,240,232,.16); color: rgba(243,240,232,.4); font-size: .76rem; line-height: 1.8; }
+.foot code { border: 1px solid rgba(243,240,232,.16); border-radius: 5px; padding: 1px 6px; color: rgba(243,240,232,.7); }
 .stage { position: fixed; inset: 0; z-index: 100; background: #000; }
 .stage[hidden] { display: none; }
 .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-.close { position: absolute; left: 18px; top: 16px; z-index: 2; background: rgba(0,0,0,.45); color: #e4e4e7; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 14px; font-size: .8rem; cursor: pointer; font-family: inherit; }
+.close { position: absolute; left: 18px; top: 16px; z-index: 2; background: rgba(0,0,0,.45); color: #f3f0e8; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 14px; font-size: .78rem; letter-spacing: .08em; cursor: pointer; font-family: inherit; }
 .close:hover { border-color: #fff; }
+.close[hidden] { display: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div>
-      <h1>컷씬 갤러리</h1>
-      <p class="lead">카드를 누르면 전체 화면으로 재생됩니다. 끝나면 자동으로 이 화면으로 돌아와요. (ESC 또는 ← 목록으로 중단)</p>
+      <div class="kicker">Cutscene Archive</div>
+      <h1>CUTSCENES</h1>
+      <p class="lead">카드를 누르면 전체 화면으로 재생되고, 끝나면 이 목록으로 돌아옵니다.<br>재생 중 — Space 일시정지 · ←→ 탐색 · M 음소거 · F 전체화면 · Esc 닫기</p>
     </div>
-    <label class="sound"><input type="checkbox" id="sound" checked> 사운드 켜기</label>
+    <label class="sound"><input type="checkbox" id="sound" checked> 사운드</label>
   </header>
   <div class="grid" id="grid"></div>
   <p class="foot">새 컷씬을 추가하려면 이 파일의 <code>CUTSCENES</code> 배열에 한 줄만 넣으면 됩니다 (제목 · 설명 · 페이지 주소 · 썸네일).<br>
@@ -56,18 +67,19 @@ h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
 <script>
 "use strict";
 /* 컷씬 목록 — 새로 만들면 여기에 추가. page 는 ?autoplay=1 을 지원하는 컷씬 페이지여야 함
-   (끝나면 parent 로 { type: "cutscene-done" } 메시지를 보냄) */
+   (끝나면 parent 로 { type: "cutscene-done" } 메시지를 보냄)
+   kit: true = 공용 인터페이스(cs_ui.js)를 쓰는 페이지 — 닫기·건너뛰기·탐색 HUD 가 페이지 안에 있으므로 갤러리의 닫기 버튼은 숨김 */
 const CUTSCENES = [
-  { id: "equinox-gl", title: "EQUINOX", ko: "陰陽 · WebGL 고품질판", page: "/equinox_gl.html", thumb: "/thumbs/equinox_gl.jpg", dur: "0:21",
+  { id: "equinox-gl", title: "EQUINOX", ko: "陰陽 · WebGL 고품질판", page: "/equinox_gl.html", kit: true, thumb: "/thumbs/equinox_gl.jpg", dur: "0:21",
     desc: "같은 연출을 GPU 파이프라인으로. 먹이 번지듯 일렁이는 경계, 바탕을 뒤집는 GPU 입자, 어두운 쪽에서만 빛나는 블룸·갓레이, 박자마다 출렁이는 충격파, 한지·먹 질감.",
     tags: ["WebGL2", "음악 동기", "후처리"], needsAudio: true },
-  { id: "equinox", title: "EQUINOX", ko: "陰陽 · 2D 원본 (비교용)", page: "/equinox_preview.html", thumb: "/thumbs/equinox.jpg", dur: "0:21",
+  { id: "equinox", title: "EQUINOX", ko: "陰陽 · 2D 원본 (비교용)", page: "/equinox_preview.html", kit: true, thumb: "/thumbs/equinox.jpg", dur: "0:21",
     desc: "거대한 태극의 안쪽에서 시작해, 음과 양이 맞물려 하나가 되는 순간. 90BPM 3/4박 음악에 박자 단위로 맞춘 흑백 연출.",
     tags: ["음악 동기", "흑백", "태극 · 팔괘"], needsAudio: true },
-  { id: "luminosity-gl", title: "LUMINOSITY", ko: "광휘 · WebGL 고품질판", page: "/luminosity_gl.html", thumb: "/thumbs/luminosity_gl.jpg", dur: "0:28",
+  { id: "luminosity-gl", title: "LUMINOSITY", ko: "광휘 · WebGL 고품질판", page: "/luminosity_gl.html", kit: true, thumb: "/thumbs/luminosity_gl.jpg", dur: "0:28",
     desc: "같은 서사를 GPU 렌더링으로 다시 만든 버전. 셰이더 우주·혼돈의 연기·빛기둥, GPU 파티클 수만 개, HDR 블룸·갓레이·충격파 왜곡·색수차·필름 그레인.",
     tags: ["WebGL2", "후처리", "GPU 파티클"], needsAudio: true },
-  { id: "luminosity", title: "LUMINOSITY", ko: "광휘 · 2D 원본 (비교용)", page: "/luminosity_preview.html", thumb: "/thumbs/luminosity.jpg", dur: "0:28",
+  { id: "luminosity", title: "LUMINOSITY", ko: "광휘 · 2D 원본 (비교용)", page: "/luminosity_preview.html", kit: true, thumb: "/thumbs/luminosity.jpg", dur: "0:28",
     desc: "솔이 남긴 일곱 무기 중 마지막까지 남은 검. 혼돈의 씨앗에 동족이 부서지고, 가장 밝은 빛이 점화된다.",
     tags: ["사운드 동기", "서사 자막", "빛 · 혼돈"], needsAudio: true },
   { id: "seal", title: "THE FIFTH SEAL", ko: "다섯 번째 봉인", page: "/cutscene_preview.html", thumb: "/thumbs/seal.jpg", dur: "0:21+",
@@ -81,7 +93,7 @@ let frame = null;
 
 grid.innerHTML = CUTSCENES.map((c) => `
   <button class="card" data-id="${c.id}">
-    <div class="thumb" style="background-image:url('${c.thumb}')"><span class="dur">${c.dur}</span></div>
+    <div class="thumb" style="background-image:url('${c.thumb}')"><span class="no">${String(CUTSCENES.indexOf(c) + 1).padStart(2, "0")}</span><span class="dur">${c.dur}</span></div>
     <div class="info">
       <div class="title">${c.title}<small>${c.ko}</small></div>
       <div class="desc">${c.desc}</div>
@@ -95,7 +107,8 @@ function play(id) {
   frame = document.createElement("iframe");
   frame.allow = "autoplay; fullscreen";
   frame.src = `${c.page}?autoplay=1&sound=${$("sound").checked ? 1 : 0}`;
-  stage.append(frame); stage.hidden = false; document.body.style.overflow = "hidden";
+  $("close").hidden = !!c.kit;
+  stage.append(frame); stage.hidden = false; frame.addEventListener("load", () => { try { frame.contentWindow.focus(); } catch (e) { /* 무시 */ } }); document.body.style.overflow = "hidden";
   history.replaceState(null, "", "#" + id);
 }
 function stop() {

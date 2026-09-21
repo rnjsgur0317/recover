@@ -4,39 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LUMINOSITY 컷씬 (WebGL) — 광휘</title>
-<style>
-* { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: #05070d; color: #e6edf7; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.demo { max-width: 480px; width: 100%; background: #0c111b; border: 1px solid #1d2738; border-radius: 16px; padding: 26px 24px; }
-.demo h1 { margin: 0 0 6px; font-size: 1.15rem; letter-spacing: .06em; }
-.demo p { margin: 0 0 16px; color: #8593a8; font-size: .86rem; line-height: 1.65; }
-.demo .row { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: #b3c0d3; }
-.demo button.play { width: 100%; margin-top: 16px; border: 0; border-radius: 11px; padding: 14px; font-size: 1rem; font-weight: 800; cursor: pointer; color: #06101f; background: linear-gradient(180deg, #ffffff, #bcdcff); box-shadow: 0 8px 28px rgba(125,184,255,.35); font-family: inherit; }
-.demo .note { margin-top: 14px; font-size: .76rem; color: #5f6c80; line-height: 1.6; }
-.cs { position: fixed; inset: 0; z-index: 9999; background: #000; overflow: hidden; }
-.cs[hidden] { display: none; }
-.cs canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.cs-bar { position: absolute; left: 0; right: 0; height: 9vh; background: #000; z-index: 3; }
-.cs-bar.top { top: 0; } .cs-bar.bottom { bottom: 0; }
-.cs-skip { position: absolute; right: 18px; top: calc(9vh + 14px); z-index: 6; background: rgba(0,0,0,.4); color: #d5deea; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 14px; font-size: .78rem; cursor: pointer; font-family: inherit; }
-</style>
+<link rel="stylesheet" href="/cs_ui.css">
 </head>
 <body>
-<div class="demo">
-  <h1>[ LUMINOSITY ] — WebGL 버전</h1>
-  <p>같은 서사·같은 사운드를 GPU 렌더링으로 다시 만든 버전입니다. 셰이더로 만든 우주·혼돈의 연기·빛기둥, GPU 파티클 수만 개, 후처리(HDR 블룸 · 갓레이 · 충격파 왜곡 · 색수차 · 필름 그레인 · 톤매핑).</p>
-  <div class="row"><input type="checkbox" id="demoSound" checked> <label for="demoSound">사운드 재생</label></div>
-  <button class="play" id="demoPlay">▶ 컷씬 재생</button>
-  <div class="note" id="glNote">주소 뒤에 <code>?t=20.3</code> 처럼 붙이면 그 시점의 정지 화면을 볼 수 있어요.</div>
-</div>
-<div class="cs" id="cs" hidden>
-  <canvas id="glc"></canvas>
-  <canvas id="ui" style="z-index:2;pointer-events:none"></canvas>
-  <div class="cs-bar top"></div><div class="cs-bar bottom"></div>
-  <button class="cs-skip" id="csSkip">건너뛰기 ▸▸</button>
-</div>
+<div id="cs" hidden><canvas id="glc"></canvas></div>
 <audio id="bgm" src="/luminosity_cut.mp3" preload="auto"></audio>
 <script src="/luminosity_data.js"></script>
+<script src="/cs_ui.js"></script>
 <script>
 "use strict";
 /* ═══════════════════════════════════════════════════════════════
@@ -76,7 +50,6 @@ const LIGHT = "#cfe6ff", BLUE = "#7db8ff", SOL = "#fff1c9", CHAOS = "#b14dff", C
 
 const $ = (id) => document.getElementById(id);
 const glc = $("glc"), bgm = $("bgm");
-const ui = $("ui"), ug = ui.getContext("2d");                                   // 자막 전용 (블룸 영향 없이 또렷하게)
 const cv = document.createElement("canvas"), g = cv.getContext("2d");      // 2D 레이어 (화면에는 안 붙임)
 const D = window.LUM_DATA || { fps: 30, total: [], high: [], onsets: [] };
 let W = 0, H = 0, U = 0, DPR = 1, seeds = [], parts = [], pillars = [], halo = [], events = [], time = 0, running = false, raf = 0, anchor = 0, useAudio = false, opts = {};
@@ -237,9 +210,9 @@ function initGL() {
   glOK = true;
 }
 function resize() {
-  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); W = glc.clientWidth; H = glc.clientHeight; U = Math.min(W, H) / 10;
+  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); W = glc.clientWidth || 1280; H = glc.clientHeight || 720; U = Math.min(W, H) / 10;
   const pw = Math.max(2, Math.round(W * DPR)), ph = Math.max(2, Math.round(H * DPR));
-  glc.width = cv.width = ui.width = pw; glc.height = cv.height = ui.height = ph;
+  glc.width = cv.width = pw; glc.height = cv.height = ph;
   if (!glOK) initGL();
   for (const k in RT) { const t = RT[k]; (Array.isArray(t) ? t : [t]).forEach((x) => { gl.deleteTexture(x.tex); gl.deleteFramebuffer(x.fbo); }); }
   RT.scene = target(pw, ph); RT.bright = target(pw >> 1, ph >> 1); RT.rays = target(pw >> 1, ph >> 1);
@@ -304,10 +277,6 @@ function drawWeapon(i, x, y, s, rot, alpha, color, glow, reveal) {
   if (reveal > 0 && reveal < 1) { g.save(); g.translate(x, y); g.rotate(rot); g.fillStyle = "#fff"; g.globalAlpha = .95; g.fillRect(-.6 * s, (1.1 - 2.3 * reveal) * s - 1.5, 1.2 * s, 3); g.restore(); g.globalAlpha = 1; }
 }
 function glowDisc(x, y, r, rgb, a) { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(.35, `rgba(${rgb},${a * .35})`); gr.addColorStop(1, `rgba(${rgb},0)`); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); }
-function caption(s, a) { const lines = s.split("\n"), px = .42 * U; const bg = ug.createLinearGradient(0, 2.6 * U, 0, 4.6 * U); bg.addColorStop(0, "rgba(0,0,0,0)"); bg.addColorStop(.5, `rgba(0,0,0,${.6 * a})`); bg.addColorStop(1, "rgba(0,0,0,0)"); ug.fillStyle = bg; ug.fillRect(-W, 2.6 * U, 2 * W, 2 * U);
-  ug.font = `${px}px "Nanum Myeongjo","Batang","바탕",serif`; ug.textAlign = "center"; ug.textBaseline = "middle"; ug.shadowColor = "#000"; ug.shadowBlur = 12;
-  lines.forEach((ln, i) => { ug.globalAlpha = a; ug.fillStyle = "#f2f6fc"; ug.fillText(ln, 0, 3.55 * U + (i - (lines.length - 1) / 2) * px * 1.5); }); ug.shadowBlur = 0; ug.globalAlpha = 1; }
-
 function draw2D(t) {
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
   g.setTransform(DPR, 0, 0, DPR, cv.width / 2, cv.height / 2);
@@ -388,13 +357,8 @@ const WAVES = () => [
   ...T.BREAKS.map((bt, n) => { const [x, y] = ringPos(BREAK_ORDER[n]); return { t0: bt, x: x / U, y: y / U, r0: .2, sp: 6, dur: .7, str: .2 }; }),
   { t0: T.SURGE, x: 0, y: .25, r0: 9, sp: -9.5, dur: .7, str: .35 }, { t0: T.IGNITE, x: 0, y: .25, r0: .5, sp: 11, dur: 1.6, str: .75 }, { t0: T.FINAL, x: 0, y: -.5, r0: .5, sp: 13, dur: 1.5, str: .6 }];
 let waveList = null, DPR_CAP = 1.5, slow = 0;      // 느린 GPU면 해상도를 자동으로 낮춤
-function drawUI(t) {
-  ug.setTransform(1, 0, 0, 1, 0, 0); ug.clearRect(0, 0, ui.width, ui.height); ug.setTransform(DPR, 0, 0, DPR, ui.width / 2, ui.height / 2);
-  const fade = Math.max(1 - seg(t, 0, .5), seg(t, T.FADE, T.END));
-  for (const c of CAPS) { const a = Math.min(seg(t, c.a, c.a + .5), 1 - seg(t, c.b - .5, c.b)) * (1 - fade); if (a > 0) caption(c.s, a); }
-}
 function render(t) {
-  draw2D(t); drawUI(t);
+  draw2D(t);
   const pw = glc.width, ph = glc.height, Ud = U * DPR, lit = litAt(t), title = t >= T.FINAL, sw = swordState(t), h = hi(t);
   gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
   // ① 배경
@@ -440,37 +404,24 @@ function render(t) {
     gl.uniform1f(u.uFlash, flash); gl.uniform1f(u.uChaosFlash, chaosFlash); gl.uniform1f(u.uFade, fade); gl.uniform4fv(u.uWaves, wv); });
 }
 
-/* ═════════════════ 재생 ═════════════════ */
-const now = () => performance.now() / 1000;
-function frame() {
-  if (!running) return;
-  if (useAudio && !bgm.paused && bgm.currentTime > 0) { const diff = (now() - bgm.currentTime) - anchor; anchor += Math.abs(diff) > .25 ? diff : diff * .1; }
-  const t = now() - anchor, raw = t - time, dt = Math.min(.05, Math.max(0, raw)); time = t;
-  slow = raw > .03 ? slow + 1 : Math.max(0, slow - 1); if (slow > 45 && DPR_CAP > 1) { DPR_CAP = 1; slow = 0; resize(); }
-  update(t, dt); render(t);
-  if (t >= T.END) return endCutscene();
-  raf = requestAnimationFrame(frame);
-}
-function prepare() { $("cs").hidden = false; resize(); init(); waveList = WAVES(); }
-function playLuminosityCutscene(o = {}) {
-  opts = o;
-  try { prepare(); } catch (e) { $("cs").hidden = true; $("glNote").textContent = "WebGL 초기화 실패: " + e.message; console.error(e); if (o.onDone) o.onDone(); return; }
-  time = 0; running = true; anchor = now(); useAudio = o.sound !== false;
-  if (useAudio) { try { bgm.currentTime = 0; bgm.volume = 1; const p = bgm.play(); if (p) p.catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
-  cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
-}
-function endCutscene() { running = false; cancelAnimationFrame(raf); try { bgm.pause(); } catch (e) { /* 무시 */ } $("cs").hidden = true; if (opts.onDone) opts.onDone(); }
-$("csSkip").addEventListener("click", endCutscene);
-$("demoPlay").addEventListener("click", () => playLuminosityCutscene({ sound: $("demoSound").checked }));
-window.addEventListener("resize", () => { if (!$("cs").hidden && glOK) { resize(); init(); waveList = WAVES(); } });
-window.playLuminosityCutscene = playLuminosityCutscene;
-function renderStill(tt) { init(); waveList = WAVES(); for (let t = 0; t < tt; t += 1 / 60) { time = t; update(t, 1 / 60); } time = tt; render(tt); }
-{ const q = new URLSearchParams(location.search).get("t"); if (q !== null) { prepare(); renderStill(parseFloat(q) || 0); } }
-
-/* 갤러리(cutscenes.html)에서 ?autoplay=1 로 열리면 바로 재생하고, 끝나면 부모 창에 알림 */
-{ const q = new URLSearchParams(location.search); if (q.get("autoplay")) { document.querySelector(".demo").style.display = "none"; document.body.style.background = "#000";
-  const done = () => { try { parent.postMessage({ type: "cutscene-done" }, location.origin); } catch (e) { /* 단독 실행 */ } };
-  playLuminosityCutscene({ sound: q.get("sound") !== "0", onDone: done }); } }
+/* ═════════════════ 재생: 시계·HUD·자막·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
+function simulate(tt) { init(); waveList = WAVES(); for (let t = 0; t < tt; t += 1 / 60) { time = t; update(t, 1 / 60); } time = tt; }
+const VARIANT = "gl";
+const player = CSUI.create({
+  stage: $("cs"), audio: bgm, volume: 1, duration: T.END, theme: "lumen", capBlend: false,
+  no: "02", title: "LUMINOSITY", sub: "광휘", hero: "/thumbs/luminosity_hero.jpg",
+  tagline: "솔이 남긴 일곱 무기 가운데, 끝까지 남은 단 하나의 검.\n혼돈의 씨앗에 동족이 부서지고 — 가장 밝은 빛이 점화된다.",
+  meta: [["0:28", "Length"], ["Sol's RNG", "Source"], [VARIANT === "gl" ? "WebGL2" : "Canvas 2D", "Renderer"]],
+  variants: [{ label: "WebGL", href: "/luminosity_gl.html", on: VARIANT === "gl" }, { label: "2D", href: "/luminosity_preview.html", on: VARIANT === "2d" }],
+  chapters: [{ t: 0, name: "솔의 명령" }, { t: T.FORGE, name: "남겨진 유산" }, { t: T.BREAKS[0] - .2, name: "부서지는 무기들" }, { t: T.ONE, name: "마지막 하나" }, { t: T.IGNITE, name: "점화" }, { t: T.FINAL, name: "광휘" }],
+  captions: CAPS,
+  prepare() { resize(); },                          // WebGL 초기화 실패 시 throw → 키트가 안내
+  simulate,
+  frame(t, dt, raw) { time = t; slow = raw > .03 ? slow + 1 : Math.max(0, slow - 1); if (slow > 45 && DPR_CAP > 1) { DPR_CAP = 1; slow = 0; resize(); } update(t, dt); render(t); },
+});
+window.addEventListener("resize", () => { if (!$("cs").hidden && glOK) { resize(); simulate(time); render(time); } });
+window.playLuminosityCutscene = (o) => player.play(o);
+function renderStill(tt) { simulate(tt); render(tt); }
 </script>
 </body>
 </html>
