@@ -24,9 +24,9 @@
      2.77  陽  The Positive, that you've taken         검은 세계 — 흰 구체를 올려다봄, 빛 조각이 흘러나온다
      5.43  衡  The Equinox, Everything from everywhere 낮과 밤이 반반(명암 경계선) — 두 구체가 도는 아우라 전경, 음악 막대
      8.10  無  And you, now having it all, …           네 구슬이 눈앞을 스치고, 물러나며 두 구체가 한 점(ZERO)으로 나선을 그린다
-     10.77 충돌 → 제목 EQUINOX                          두 구체가 빠르게 돌며 큰 아우라(빛기둥 · 방사 광선 · 혜성 꼬리 · 바닥 충격 고리 · 소용돌이 파편)를 내뿜는다.
+     10.77 충돌 → 제목 EQUINOX                          두 구체가 음악의 박마다 반 바퀴씩 튕기듯 돌며 큰 아우라(빛기둥 · 방사 광선 · 혜성 꼬리 · 바닥 충격 고리 · 소용돌이 파편)를 내뿜는다.
                                                         명암 경계선은 화면에 고정 — 구체는 돌아서 경계선을 넘을 때마다 흰 구 ↔ 검은 구로 뒤바뀐다(픽셀 단위)
-     13.85 나선을 그리며 가운데로 → 14.6 두 구체가 부딪혀 터짐(섬광 · 파편 · 충격파) → 깔끔하게 암전 → 15.6 끝
+     13.77 반 박마다 튕기며 가운데로 → 14.43 두 구체가 부딪혀 터짐(섬광 · 파편 · 충격파, 효과음 없이 원곡 잔향만) → 깔끔하게 암전 → 15.4 끝
    규칙: 두 구체 · 구슬 · 바닥의 큰 두 원은 '절대색'(뒤집히지 않음), 그 밖의 세계는 박자의 파동 · 장면 전환 파동 · 명암 경계선에 따라 뒤집힌다.
    패스: ① 장면(구·원반·고리·원통을 해석적으로 교차, 가장자리 면적 안티앨리어싱, 바닥 반사 1회, 알파 = 절대색 표시) ② 파편 입자(배타 블렌딩) ③ 블룸 ④ 최종(파동 굴절 · 뒤집기 · 글자 · 조리개)
    전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
@@ -41,7 +41,7 @@ const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / ri
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
 
 const BEAT = 1 / 3, B0 = .10, beatT = (n) => B0 + n * BEAT;
-const T = { YIN: beatT(0), YANG: beatT(8), HENG: beatT(16), MU: beatT(24), IMPACT: beatT(32), SPIRAL: 13.85, BURST: 14.6, END: 15.6 };
+const T = { YIN: beatT(0), YANG: beatT(8), HENG: beatT(16), MU: beatT(24), IMPACT: beatT(32), SPIRAL: beatT(41), BURST: beatT(43), END: 15.4 };                       // 13.77 나선 · 14.43 터짐 (둘 다 박 위)
 const LINES = [
   { g: "陰", en: "The Negative, that you've granted", ko: "음 — 네가 내어 준 부정", a: T.YIN, b: T.YANG },
   { g: "陽", en: "The Positive, that you've taken", ko: "양 — 네가 거두어 간 긍정", a: T.YANG, b: T.HENG },
@@ -287,17 +287,21 @@ function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross
 function aim(pos, tgt, sx, sy, focal, roll) { const c0 = camera(pos, tgt, 0), d = Math.hypot(...sub(tgt, pos)); return camera(pos, sub(sub(tgt, mul(c0.r, d * sx / focal)), mul(c0.u, d * sy / focal)), roll); }
 function proj(S, p) { const v = sub(p, S.cam.pos), z = Math.max(.05, dot(v, S.cam.f)); return [dot(v, S.cam.r) / z * S.focal, dot(v, S.cam.u) / z * S.focal]; }
 const ORB_R = .62, ORBIT = 1.75, ORB_H = 1.5, HEAD = [0, 1.7, 0];
-const TH0 = .95, spinW = (s) => 4.71 + 1.6 * s + 14 * Math.max(0, s - (T.SPIRAL - T.IMPACT)), spinA = (s) => 4.71 * s + .8 * s * s + 7 * Math.pow(Math.max(0, s - (T.SPIRAL - T.IMPACT)), 2);   // 제목 구간의 회전: 처음부터 빠르고 점점 더 빨라진다
-function orbitAngle(t) { if (t >= T.IMPACT) return TH0 + PI / 2 + spinA(Math.min(t, T.BURST) - T.IMPACT); const x = Math.max(0, t - T.MU); return .9 + .42 * t + .5 * x * x * x; }
+const TH0 = .95, snapE = (x) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2), SNAP = .62, XC = .144;                 // 튕기는 반 바퀴: 박의 앞 62% 동안 휙 돌고(살짝 지나쳤다 돌아옴) 나머지는 멈춤. XC = 경계선을 넘는 지점
+function spin(t) {                                                                                       // 제목 구간의 회전: 박마다(나선 구간은 반 박마다) 반 바퀴 → { 누적 반 바퀴 수, 마지막으로 경계선을 넘은 뒤 흐른 시간, 박 길이 }
+  const tt = Math.min(t, T.BURST - 1e-4), fast = tt >= T.SPIRAL, len = fast ? BEAT / 2 : BEAT, base = fast ? T.SPIRAL : T.IMPACT, n0 = fast ? Math.round((T.SPIRAL - T.IMPACT) / BEAT) : 0, q = (tt - base) / len, n = Math.floor(q), f = q - n;
+  const since = f >= XC * SNAP ? (f - XC * SNAP) * len : (f + 1 - XC * SNAP) * len; return { turns: n0 + n + snapE(clamp(f / SNAP)), since: since + Math.max(0, t - T.BURST), len };
+}
+function orbitAngle(t) { if (t >= T.IMPACT) return TH0 + PI / 2 + PI * spin(t).turns; const x = Math.max(0, t - T.MU); return .9 + .42 * t + .5 * x * x * x; }
 function state(t) {
-  const S = { focal: 1.6, mode: 0, amt: 1, bars: 1, floorK: 1, ringK: 1, beadR: .1, beadOrbit: .5, swap: 0, aura: 0, trail: 0, pulse: 0, omega: 5, termN: [1, 0] };
+  const S = { focal: 1.6, mode: 0, amt: 1, bars: 1, floorK: 1, ringK: 1, beadR: .1, beadOrbit: .5, swap: 0, aura: 0, trail: 0, pulse: 0, since: 9, beatLen: BEAT, termN: [1, 0] };
   const A = orbitAngle(t), bp = Math.exp(-((((t - B0) / BEAT) % 1 + 1) % 1) * 5) * (t < T.IMPACT ? 1 : Math.max(0, 1 - (t - T.IMPACT) / 3));
   let orbit = ORBIT, R0 = ORB_R, R1 = ORB_R, h = ORB_H, cam;
   if (t < T.MU) { R0 *= eBack(seg(t, T.YIN, T.YIN + .3)); }
   else if (t < T.IMPACT) { const x = seg(t, T.MU, T.IMPACT); orbit = lerp(ORBIT, .0, eIn(x)); h = lerp(ORB_H, 1.4, x); }
   else { const s = t - T.IMPACT, k = eBack(seg(s, 0, .5)), c = eIn(seg(t, T.SPIRAL, T.BURST)), gone = t >= T.BURST; orbit = ORBIT * eOut(seg(s, 0, .7)) * (1 - c); R0 = R1 = gone ? 0 : ORB_R * k * (1 + .25 * c); h = lerp(1.4, ORB_H, eOut(seg(s, 0, .7))); S.bars = gone ? 1 - seg(t, T.BURST, T.BURST + .2) : 1;
-    S.swap = 1; S.aura = gone ? 1 - seg(t, T.BURST, T.BURST + .3) : eOut(seg(s, .05, .9)) * (1 + .6 * c); S.trail = gone ? 0 : 2.5 * eOut(seg(s, .1, .8)); const ze = .2 * Math.sin(s * .8); S.termN = [Math.cos(ze), Math.sin(ze)];
-    const ph = (A - (TH0 + .07 * s)) / PI; S.pulse = ph - Math.floor(ph); S.omega = spinW(s); }
+    S.swap = 1; S.aura = gone ? 1 - seg(t, T.BURST, T.BURST + .3) : eOut(seg(s, .05, .9)) * (1 + .6 * c); S.trail = gone ? 0 : clamp(Math.abs(A - orbitAngle(t - .02)) / .02 * .1, 0, 2.6);                                      // 꼬리는 돌고 있을 때만(빠를수록 길게) const ze = .2 * Math.sin(s * .8); S.termN = [Math.cos(ze), Math.sin(ze)];
+    const sp = spin(t); S.since = sp.since; S.pulse = clamp(sp.since / (sp.len * 1.6)); S.beatLen = sp.len; }
   const dir = [Math.cos(A), 0, Math.sin(A)]; S.A = A; S.orbit = orbit;
   S.orb = [[dir[0] * orbit, h + .08 * Math.sin(t * 1.3), dir[2] * orbit, R0], [-dir[0] * orbit, h + .08 * Math.sin(t * 1.3 + 2), -dir[2] * orbit, R1]];
   const hand = [Math.sin(t * 1.3) * .015 + Math.sin(t * 3.1) * .006, Math.cos(t * 1.1) * .012, Math.sin(t * .9) * .01];
@@ -330,7 +334,7 @@ function fx(t, S) {
   for (const n of beats) { const tb = beatT(n), age = (t - tb) / .7; if (age < 0 || age >= 1 || n > 32) continue; if (n >= 32 && t < T.IMPACT) continue; if (n < 32 && t >= T.IMPACT) continue;
     const amp = n < 32 ? (n % 1 ? .6 : 1) : Math.max(0, 1 - (n - 32) / 6) * 1.3, src = n < 8 ? srcs[0] : n < 16 ? srcs[1] : n < 24 ? srcs[n % 2] : n < 32 ? S.centerS : n === 32 ? S.centerS : srcs[n % 2];
     const rOut = (n === 32 ? 5 : 3.7) * age * (1.15 - .15 * age), th = (n === 32 ? .6 : .32) * (1 - age) * amp; if (th > .004 && W.length < 8) W.push([src[0], src[1], rOut, Math.max(.0005, rOut - th)]); }
-  if (t >= T.IMPACT + .2 && t < T.BURST) for (let j = 0; j < 3; j++) { const ageT = (S.pulse + j) * PI / S.omega, age = ageT / .55; if (age >= 1 || t - ageT < T.IMPACT + .1 || W.length >= 8) continue; const rOut = 4.4 * age; W.push([S.centerS[0], S.centerS[1], rOut, Math.max(.0005, rOut - .3 * (1 - age))]); }   // 구체가 경계선을 넘을 때마다(반 바퀴) 가운데에서 뒤집힘의 파동
+  if (t >= T.IMPACT + .2 && t < T.BURST) for (let j = 0; j < 3; j++) { const ageT = S.since + j * S.beatLen, age = ageT / .55; if (age >= 1 || t - ageT < T.IMPACT + .1 || W.length >= 8) continue; const rOut = 4.4 * age; W.push([S.centerS[0], S.centerS[1], rOut, Math.max(.0005, rOut - .3 * (1 - age))]); }   // 구체가 경계선을 넘을 때마다(반 바퀴) 가운데에서 뒤집힘의 파동
   if (t >= T.BURST) for (let j = 0; j < 3; j++) { const age = (t - T.BURST - j * .08) / .5; if (age < 0 || age >= 1 || W.length >= 8) continue; const rOut = 6.5 * age; W.push([S.centerS[0], S.centerS[1], rOut, Math.max(.0005, rOut - .9 * (1 - age))]); }                                        // 터지는 충격파
   return { waves: W, worldA: [prev.w[0], prev.w[1], dn[0], dn[1]], worldB: [cur.w[0], cur.w[1], dn[0], dn[1]], trans: [tc[0], tc[1], tk >= 1 ? 9 : 5 * eOut(tk)] };
 }
@@ -338,7 +342,7 @@ function render(t) {
   drawText(t);
   const S = state(t), F = fx(t, S), gl = X.gl, pw = glc.width, ph = glc.height, sw = RT.scene.w, sh = RT.scene.h, lvl = dat(D.lvl, t), hitv = dat(D.hit, t), sp = spectrum(t);
   X.upload(txtTex, tcv, false); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
-  const spun = t >= T.IMPACT ? spinA(Math.min(t, T.BURST) - T.IMPACT) : 0, camM = new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f]), sats = new Float32Array(S.sat.flat()), orbs = new Float32Array([...S.orb[0], ...S.orb[1]]), beads = new Float32Array(S.bead.flat()), rn = new Float32Array(S.ringN.flat());
+  const spun = t >= T.IMPACT ? PI * spin(t).turns : 0, camM = new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f]), sats = new Float32Array(S.sat.flat()), orbs = new Float32Array([...S.orb[0], ...S.orb[1]]), beads = new Float32Array(S.bead.flat()), rn = new Float32Array(S.ringN.flat());
   const setCam = (u) => { gl.uniform3f(u.uCamPos, S.cam.pos[0], S.cam.pos[1], S.cam.pos[2]); gl.uniformMatrix3fv(u.uCam, false, camM); gl.uniform1f(u.uFocal, S.focal); };
   const fr = norm([S.cam.f[0], 0, S.cam.f[2]]), rr = norm([S.cam.r[0], 0, S.cam.r[2]]);
   X.pass(P.scene(), RT.scene, (u) => { gl.uniform2f(u.uRes, sw, sh); gl.uniform1f(u.uT, t); setCam(u); gl.uniform4fv(u.uOrb, orbs); gl.uniform4fv(u.uBead, beads); gl.uniform3fv(u.uRingN, rn); gl.uniform1fv(u.uSpec, sp); gl.uniform1i(u.uZero, 0);
@@ -350,10 +354,10 @@ function render(t) {
     gl.bindVertexArray(null); gl.disable(gl.BLEND); }
   const bloomTex = X.bloom(RT.scene.tex, .9), r0 = rng(Math.floor(t * 60));
   const flash = Math.max(pulse(t, T.IMPACT, .03, .7), 1.25 * pulse(t, T.BURST, .03, .55), .3 * pulse(t, T.YIN, .02, .3)), hit = .5 * pulse(t, T.IMPACT, .02, .9) + .8 * pulse(t, T.BURST, .02, .6) + .25 * eIn(seg(t, T.SPIRAL, T.BURST)) * (t < T.BURST ? 1 : 0) + .08 * hitv * (t < T.IMPACT ? 1 : .4);
-  const ir = 99, cross = t >= T.IMPACT && t < T.BURST ? Math.exp(-S.pulse * PI / S.omega * 9) : 0;                          // 경계선을 넘는 순간의 출렁임
+  const ir = 99, cross = t >= T.IMPACT && t < T.BURST ? Math.exp(-S.since * 10) : 0;                          // 경계선을 넘는 순간의 출렁임
   const wv = new Float32Array(32); F.waves.forEach((w, i) => wv.set(w, i * 4));
   X.pass(P.final(), null, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); X.bindTex(2, txtTex, u.uTxt); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t);
-    gl.uniform2f(u.uShake, (r0() - .5) * hit * .016, (r0() - .5) * hit * .016 - .004 * S.bp); gl.uniform1f(u.uZoom, 1 + .022 * S.bp + .018 * cross + .05 * pulse(t, T.IMPACT, .02, .6) + .07 * pulse(t, T.BURST, .02, .5)); gl.uniform1f(u.uBloomK, .45);
+    gl.uniform2f(u.uShake, (r0() - .5) * hit * .016, (r0() - .5) * hit * .016 - .004 * S.bp); gl.uniform1f(u.uZoom, 1 + .022 * S.bp + .03 * cross + .05 * pulse(t, T.IMPACT, .02, .6) + .07 * pulse(t, T.BURST, .02, .5)); gl.uniform1f(u.uBloomK, .45);
     gl.uniform1f(u.uFlash, flash * flash); gl.uniform1f(u.uFade, t < T.YIN - .02 ? 1 : eInOut(seg(t, T.BURST + .22, T.BURST + .8))); gl.uniform4fv(u.uWave, wv); gl.uniform4fv(u.uWorldA, F.worldA); gl.uniform4fv(u.uWorldB, F.worldB); gl.uniform3fv(u.uTrans, F.trans);
     gl.uniform2f(u.uCenterS, S.centerS[0], S.centerS[1]); gl.uniform3f(u.uIris, S.centerS[0], S.centerS[1], ir); gl.uniform1f(u.uZeroRing, 0); });
 }
