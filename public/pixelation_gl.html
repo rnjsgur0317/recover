@@ -17,14 +17,14 @@
 "use strict";
 /* ═══════════════════════════════════════════════════════════════
    ▣ PIXELATION ▣ 픽셀레이션 — "완전히 무해한" 디지털 자아 (우스꽝스러운 광고 컨셉)
-   음악: 195 BPM (박 0.30769s · 마디 1.2308s · 첫 박 0.034s), 앞 30초
+   음악: 195 BPM (박 0.30769s · 마디 1.2308s · 첫 박 0.034s), 앞 33.3초 + 테이프 스톱
      0      부팅: 로딩 99% 에서 멈췄다가 1000% 로 넘쳐 버림
      2.50   광고: 봉인된 큐브(자아) 주위로 마디마다 팝업 광고가 뜬다 → 8.65 커서가 전부 닫음
      9.88   비트: 큐브가 박자에 맞춰 춤춘다. "무해합니다!" 팝업 뒤에서 플레이어 HP 가 슬금슬금 닳고, 큐브가 몇 프레임씩 붉게 뒤틀리며 본색을 드러냄
      19.73  빌드업: 사슬이 끊기고, "무해합니다 [확인]" 창이 폭주하고, 화면이 말 그대로 픽셀화된다
      24.65  드롭: 봉인 해제 — 육각 마법진 · 화살표 왕관 · 픽셀 폭발, 25.88 타이틀
      28.34  정적: "이 설명은 1,000,000% 진실" 확인 창 하나 → 29.5 커서가 [확인] 클릭
-     29.57  본색 → 29.84 CRT 꺼짐 → 30.0 끝
+     29.57  본색: 붉게 뒤틀린 구조물이 화면을 채우고 오류 창이 쏟아짐 (3마디) → 33.26 테이프 스톱 + CRT 꺼짐 → 33.76 끝
    층: ① 셰이더(하늘 · 원근 격자 바닥 · 픽셀 파동)  ② 벡터 캔버스(와이어프레임 · 링, 가산)  ③ 480x270 픽셀 캔버스(팝업 · 글자 · 스프라이트)
    전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
    ═══════════════════════════════════════════════════════════════ */
@@ -39,11 +39,11 @@ const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / ri
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
 
 const BEAT = .30769, O = .034, BAR = BEAT * 4, bar = (n) => O + n * BAR;
-const T = { AD: bar(2), CLOSE: bar(7), KICK: bar(8), BUILD: bar(16), DROP: bar(20), TITLE: bar(21), BREAK: bar(23), CLICK: 29.47, SLAM: bar(24), OFF: 29.84, END: 30.0 };
+const T = { AD: bar(2), CLOSE: bar(7), KICK: bar(8), BUILD: bar(16), DROP: bar(20), TITLE: bar(21), BREAK: bar(23), CLICK: 29.47, SLAM: bar(24), OFF: bar(27), END: bar(27) + .5 };
 const Y = "#ffe23a", W = "#fff8c8", K = "#0a0c18", R = "#ff4060", G = "#5dff8a", C = "#58c8ff", DIM = "#8a7a20";
 const D = window.PX_DATA || { fps: 60, kick: [], hat: [], lvl: [] };
 const dat = (arr, t) => { const i = Math.floor(t * D.fps); return i < 0 || !arr.length ? 0 : arr[Math.min(arr.length - 1, i)]; };
-const KICKS = (() => { const out = []; for (let n = 8; n < 16; n++) out.push(bar(n), bar(n) + BEAT, bar(n) + BEAT * 2.5); for (let b = 0; b < 16; b++) out.push(bar(16) + b * BEAT); for (let x = bar(20); x < bar(23); x += BEAT * .75) out.push(x); out.push(bar(24)); return out; })();   // 바닥 파동이 번지는 시각 (분석한 킥 패턴: 그루브 1·2박, 빌드업 매 박, 드롭 점8분)
+const KICKS = (() => { const out = []; for (let n = 8; n < 16; n++) out.push(bar(n), bar(n) + BEAT, bar(n) + BEAT * 2.5); for (let b = 0; b < 16; b++) out.push(bar(16) + b * BEAT); for (let x = bar(20); x < bar(23); x += BEAT * .75) out.push(x); for (let b = 0; b < 12; b++) out.push(bar(24) + b * BEAT); return out; })();   // 바닥 파동이 번지는 시각 (분석한 킥 패턴: 그루브 1·2박, 빌드업 매 박, 드롭 점8분)
 
 const $ = (id) => document.getElementById(id);
 const glc = $("glc"), bgm = $("bgm");
@@ -140,7 +140,7 @@ function drawPixels(t) {
   }
   /* 큐브 둘레를 도는 데이터 파편(16진수) · 자물쇠 — 얼굴은 없음: 본색은 큐브가 붉게 뒤틀리는 것으로 드러난다 */
   const cx = 240, cy = 118 + Math.round(Math.sin(t * 1.7) * 2), bad = evil(t) || slam;
-  if (!slam) { const n = dropped ? 30 : 20, sp = dropped ? 2.2 : .8 + 2 * seg(t, T.BUILD, T.DROP), HEXC = "0123456789ABCDEF";
+  { const n = dropped ? 30 : 20, sp = dropped ? 2.2 : .8 + 2 * seg(t, T.BUILD, T.DROP), HEXC = "0123456789ABCDEF";
     for (let i = 0; i < n; i++) { const ring = i % 2, a = i / n * TAU + t * sp * (ring ? -1 : 1), rx = (ring ? 74 : 56) + (dropped ? 30 : 0), ry = ring ? 16 : 26, dz = Math.sin(a), x = cx + Math.cos(a) * rx, y = cy + dz * ry + (ring ? -6 : 8) * Math.cos(a);
       const h = Math.floor(Math.abs(Math.sin(i * 91.7 + Math.floor(t * (bad ? 30 : 7)) * 13.1)) * 16); ptext(bad && i % 3 === 0 ? "!" : HEXC[h], x - 2, y - 3, 1, bad ? R : dz > 0 ? Y : DIM); } }
   if (!dropped) { const shake = t >= T.BUILD ? Math.round(Math.sin(t * 70) * seg(t, T.BUILD, T.DROP) * 3) : 0, pop = seg(t, T.DROP - BEAT, T.DROP); spr(LOCK, cx - 11 + shake, 156 - pop * 30, 2, { "#": Y }); if (t < T.BUILD) ptext("SEALED", cx, 180, 1, DIM, "c"); }
@@ -157,11 +157,14 @@ function drawPixels(t) {
   if (t >= T.BUILD && !dropped) { const n = Math.floor((t - T.BUILD) / (BEAT / 2)); for (let i = Math.max(0, n - 40); i <= n; i++) win(t, { born: T.BUILD + i * BEAT / 2, x: 16 + (i * 67) % 340, y: 12 + (i * 41) % 196, w: 112, h: 40, title: "OK " + (i + 1), lines: [SPAM[i % SPAM.length]], col: i % 5 === 4 ? G : Y, tcol: i % 5 === 4 ? G : W }); }
   /* 드롭: 픽셀 폭죽 + 타이틀 */
   if (dropped) { const age = t - T.DROP; for (const p of CONF) { const d = p.v * (1 - Math.exp(-age * 1.6)) / 1.6, x = 240 + Math.cos(p.a) * d, y = 120 + Math.sin(p.a) * d * .7 + p.g * age * age * .5 - 40 * age; if (y > PH || age > 3.6) continue; if (Math.sin(age * 9 + p.ph) > -.4) { pg.fillStyle = p.c; pg.fillRect(Math.round(x), Math.round(y), p.s, p.s); } } }
-  if (t >= T.TITLE || slam) { const k = slam ? 1 : eOut(seg(t, T.TITLE, T.TITLE + .22)), jx = slam ? Math.round(Math.sin(t * 140) * 4) : Math.round((1 - k) * 60 * (Math.floor(t * 30) % 2 ? 1 : -1)), y = 196;
+  if (t >= T.TITLE || slam) { const k = slam ? 1 : eOut(seg(t, T.TITLE, T.TITLE + .22)), jx = slam ? Math.round(Math.sin(t * 140) * (1 + 5 * pulse(t, T.SLAM, .01, .3))) : Math.round((1 - k) * 60 * (Math.floor(t * 30) % 2 ? 1 : -1)), y = 196;
     box(0, y - 8, PW, 58, "rgba(4,5,14,.78)"); pg.fillStyle = Y; pg.fillRect(0, y - 8, PW * k, 1); pg.fillRect(PW * (1 - k), y + 49, PW * k, 1);
     ptext("# PIXELATION #", 240 + jx + 2, y + 2, 4, "#7a5a00", "c"); ptext("# PIXELATION #", 240 + jx, y, 4, slam ? W : Y, "c");
     if (k > .9) { kdraw("▣ 픽셀레이션 ▣", 240, y + 31, 16, W, "c"); if (!slam && t > T.TITLE + .6 && Math.floor(t * 5) % 2) { box(168, 8, 144, 18, "rgba(4,5,14,.8)", G); kdraw("※ 완전히 무해합니다", 240, 10, 12, G, "c"); } } }
   if (t >= T.DROP && t < T.DROP + BEAT * 2 && Math.floor(t * 16) % 2) ptext("SEAL BROKEN", 240, 30, 3, W, "c");
+  if (slam) { const LIES = ["무해했습니다", "ERROR", "도망치세요", "100 → 0", "거짓말이었음", "ㅋㅋㅋㅋㅋ"], n = Math.floor((t - T.SLAM) / (BEAT / 2));                                   // 본색: 붉은 오류 창이 쏟아진다
+    for (let i = Math.max(0, n - 15); i <= n; i++) win(t, { born: T.SLAM + i * BEAT / 2, x: i % 2 ? 6 + (i * 29) % 56 : 358 - (i * 31) % 56, y: 30 + (i * 47) % 128, w: 116, h: 40, title: "ERR " + (i + 1), lines: [LIES[i % LIES.length]], col: R, tcol: i % 2 ? W : R });
+    const lie = Math.floor((t - T.SLAM) / BEAT) % 2; box(150, 8, 180, 18, "rgba(4,5,14,.85)", lie ? R : G); kdraw(lie ? "※ 거짓말이었습니다" : "※ 완전히 무해합니다", 240, 10, 12, lie ? R : G, "c"); }
 }
 
 /* ═════════════════ 벡터 캔버스 (와이어프레임 · 링 · 사슬) ═════════════════ */
@@ -174,7 +177,7 @@ function drawVector(t) {
   /* 자아: 겹겹이 엇도는 큐브(테서랙트) + 팔면체 핵 + 자이로 링 + 깜빡이는 대각선 + 전기 아크 + 글리치 잔상 — 일부러 난잡하게 */
   const bad = (evil(t) && !dropped) || t >= T.SLAM, YL = bad ? "255,64,96" : "255,226,58", WL = bad ? "255,190,200" : "255,248,200", rc = (a) => `rgba(${YL},${a})`, wc = (a) => `rgba(${WL},${a})`;
   const spin = t < T.KICK ? t * .5 : t < T.DROP ? t * .5 + (t - T.KICK) * .6 + seg(t, T.BUILD, T.DROP) ** 2 * 9 : t * 2.2, ax = .45 + .12 * Math.sin(t * .8);
-  const slamK = t >= T.SLAM ? 1 + 1.6 * eOut(seg(t, T.SLAM, T.SLAM + .2)) : 1;
+  const slamK = t >= T.SLAM ? 1 + (1.0 + .35 * kick) * eOut(seg(t, T.SLAM, T.SLAM + .2)) : 1;
   const size = (dropped ? lerp(1.85, .82, eOut(seg(t, T.DROP, T.DROP + .3))) : 1.85 * appear) * U * (1 + .1 * kick * (t >= T.KICK ? 1 : 0)) * slamK, sqY = 1 - .12 * kick * (t >= T.KICK && !dropped ? 1 : 0);
   const jit = bad ? .08 * U : 0, tick = Math.floor(t * 12), rr = rng(tick * 7 + 3);
   const proj = (v, sp, tilt, sc) => v.map(([x, y, z]) => { const c = Math.cos(sp), s = Math.sin(sp), x1 = x * c + z * s, z1 = -x * s + z * c, c2 = Math.cos(tilt), s2 = Math.sin(tilt), y2 = y * c2 - z1 * s2, z2 = y * s2 + z1 * c2, f = 4.2 / (4.2 + z2); return [x1 * f * sc * .62 + (rr() - .5) * jit, y2 * f * sc * .62 * sqY + cy + (rr() - .5) * jit, z2]; });
@@ -282,15 +285,15 @@ function render(t) {
   drawPixels(t); drawVector(t);
   const gl = X.gl, pw = glc.width, ph = glc.height, kick = dat(D.kick, t), build = seg(t, T.BUILD, T.DROP), slam = t >= T.SLAM, brk = t >= T.BREAK && !slam, dropped = t >= T.DROP && !brk;
   X.upload(pxTex, pcv, false); X.upload(vecTex, vcv, false);
-  const evilNow = evil(t) && t < T.DROP, glitch = t < T.AD ? .04 : brk ? (t >= T.CLICK ? .5 : .02) : slam ? .5 + .5 * pulse(t, T.SLAM, .01, .12) : Math.max(evilNow ? .85 : 0, .03 + (t < T.DROP ? .5 * build * build : 0) + (dropped ? .012 + .04 * kick + .9 * pulse(t, T.DROP, .01, .45) + .5 * pulse(t, T.TITLE, .01, .22) : 0), .7 * pulse(t, T.AD, .01, .3), .5 * pulse(t, T.KICK, .01, .3));
+  const evilNow = evil(t) && t < T.DROP, glitch = t < T.AD ? .04 : brk ? (t >= T.CLICK ? .5 : .02) : slam ? .08 + .2 * kick + .9 * pulse(t, T.SLAM, .01, .3) : Math.max(evilNow ? .85 : 0, .03 + (t < T.DROP ? .5 * build * build : 0) + (dropped ? .012 + .04 * kick + .9 * pulse(t, T.DROP, .01, .45) + .5 * pulse(t, T.TITLE, .01, .22) : 0), .7 * pulse(t, T.AD, .01, .3), .5 * pulse(t, T.KICK, .01, .3));
   const stepB = [1, 1, 4, 7, 11][Math.min(4, Math.floor(build * 5))], block = (t >= T.DROP - BEAT && t < T.DROP ? 26 : t >= T.BUILD && t < T.DROP ? stepB : slam && t < T.SLAM + .08 ? 12 : 1) * ph / 720;
   const waves = new Float32Array(6).fill(-1); let wi = 0; for (let i = KICKS.length - 1; i >= 0 && wi < 6; i--) { const a = t - KICKS[i]; if (a < 0) continue; if (a > 2) break; waves[wi++] = a; }
   X.pass(P.scene, RT.scene, (u) => { X.bindTex(0, pxTex, u.uPx); X.bindTex(1, vecTex, u.uVec); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t); gl.uniform1f(u.uBlock, block); gl.uniform1f(u.uGlitch, glitch);
     gl.uniform1f(u.uScene, t < T.AD ? 0 : brk ? .12 : eOut(seg(t, T.AD, T.AD + .6))); gl.uniform1f(u.uMood, dropped || slam ? 1 : .15 + .5 * build + (t >= T.KICK ? .25 * kick : 0)); gl.uniform1f(u.uKick, t >= T.KICK ? kick : 0); gl.uniform1fv(u.uWave, waves); });
   const bloomTex = X.bloom(RT.scene.tex, .8), r0 = rng(Math.floor(t * 60));
-  const hit = (t >= T.KICK && !brk ? .12 * kick : 0) + .8 * pulse(t, T.DROP, .02, .6) + (dropped ? .25 * kick : 0) + .5 * pulse(t, T.KICK, .02, .4) + (slam ? .9 : 0) + (evilNow ? .3 : 0);
+  const hit = (t >= T.KICK && !brk ? .12 * kick : 0) + .8 * pulse(t, T.DROP, .02, .6) + (dropped ? .25 * kick : 0) + .5 * pulse(t, T.KICK, .02, .4) + (slam ? .3 * kick + .9 * pulse(t, T.SLAM, .02, .4) : 0) + (evilNow ? .3 : 0);
   const flash = Math.max(.9 * pulse(t, T.DROP, .02, .45), .35 * pulse(t, T.KICK, .02, .3), .3 * pulse(t, T.AD, .02, .25), .8 * pulse(t, T.SLAM, .01, .2), .25 * pulse(t, T.TITLE, .02, .3));
-  const crt = t < .45 ? eOut(seg(t, .05, .45)) : t >= T.OFF ? 1 - eIn(seg(t, T.OFF, T.END - .02)) * 1 : 1;
+  const crt = t < .45 ? eOut(seg(t, .05, .45)) : t >= T.OFF ? 1 - eInOut(seg(t, T.OFF, T.OFF + .34)) : 1;
   X.pass(P.final, null, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t);
     gl.uniform2f(u.uShake, (r0() - .5) * hit * .016, (r0() - .5) * hit * .016); gl.uniform1f(u.uZoom, 1 + .035 * hit + (dropped ? .015 * kick : 0)); gl.uniform1f(u.uCA, .0012 + .01 * hit); gl.uniform1f(u.uBloomK, brk ? .3 : .42 + .3 * (dropped ? kick : 0));
     gl.uniform1f(u.uFlash, flash * flash); gl.uniform1f(u.uCrt, crt); gl.uniform1f(u.uFade, t >= T.END - .02 ? 1 : 0); gl.uniform1f(u.uInvert, (dropped && t < T.DROP + .07) || (slam && t < T.SLAM + .06) ? 1 : 0); });
@@ -301,8 +304,8 @@ const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: .8, duration: T.END, theme: "pixel", capBlend: false,
   no: "03", title: "PIXELATION", sub: "픽셀레이션", hero: "/thumbs/pixelation_hero.jpg",
   tagline: "디지털 월드에 봉인된 수수께끼의 “자아”. 완전히 무해합니다 — 확신할 정도로요.\n이 설명은 1,000,000%만큼의 진실만을 가지고 있습니다.",
-  meta: [["0:30", "Length"], ["195 BPM", "Tempo"], ["WebGL2", "Renderer"]],
-  chapters: [{ t: 0, name: "부팅" }, { t: T.AD, name: "광고" }, { t: T.KICK, name: "완전히 무해함" }, { t: T.BUILD, name: "봉인 균열" }, { t: T.DROP, name: "해방" }, { t: T.BREAK, name: "1,000,000% 진실" }],
+  meta: [["0:34", "Length"], ["195 BPM", "Tempo"], ["WebGL2", "Renderer"]],
+  chapters: [{ t: 0, name: "부팅" }, { t: T.AD, name: "광고" }, { t: T.KICK, name: "완전히 무해함" }, { t: T.BUILD, name: "봉인 균열" }, { t: T.DROP, name: "해방" }, { t: T.BREAK, name: "1,000,000% 진실" }, { t: T.SLAM, name: "본색" }],
   captions: [],
   prepare() { resize(); },
   simulate(tt) { time = tt; },
