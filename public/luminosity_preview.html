@@ -197,10 +197,6 @@ function draw(t) {
     g.globalCompositeOperation = "lighter"; glowDisc(cx, cy, R * 1.5, "150,50,255", .35 * a); g.globalCompositeOperation = "source-over";
     path(); const gr = g.createRadialGradient(cx, cy, R * .2, cx, cy, R * 1.05); gr.addColorStop(0, "#020006"); gr.addColorStop(.75, "#12031f"); gr.addColorStop(1, "#3a0d5e"); g.globalAlpha = a; g.fillStyle = gr; g.fill();
     g.strokeStyle = CHAOS2; g.lineWidth = Math.max(1.5, U * .035); g.shadowColor = CHAOS; g.shadowBlur = U * .5; g.stroke(); g.shadowBlur = 0;
-    // 솔을 향해 뻗는 촉수
-    const [sx, sy] = solPos(t), reach = eInOut(seg(t, .8, 2.9)); g.lineCap = "round";
-    for (let k = 0; k < 6; k++) { const off = (k - 2.5) * .55 * U, ex = lerp(cx - R * .9, sx + 1.4 * U, reach * (.75 + .25 * Math.sin(t * 1.7 + k))), ey = sy + off * .5 + Math.sin(t * 2.2 + k) * .3 * U;
-      g.strokeStyle = k % 2 ? CHAOS : "#5a1a8a"; g.lineWidth = U * (.1 - .01 * k); g.globalAlpha = a * .85; g.beginPath(); g.moveTo(cx - R * .85, cy + off); g.bezierCurveTo(cx - R * 1.4, cy + off * 1.8, ex + 1.5 * U, ey - off * .6, ex, ey); g.stroke(); }
     g.globalAlpha = 1; }
 
   /* 혼돈의 씨앗 — 끝까지 사라지지 않는다 */

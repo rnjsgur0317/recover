@@ -323,12 +323,6 @@ function draw2D(t) {
     const lance = pulse(t, T.HIT1 - .55, .55, .35); if (lance > 0) { const hw = U * (.03 + .22 * eIn(seg(t, T.HIT1 - .1, T.HIT1 + .1))); const gr = g.createLinearGradient(sx, 0, MASS[0] * U, 0); gr.addColorStop(0, `rgba(255,248,225,${lance})`); gr.addColorStop(1, `rgba(255,248,225,${lance * .5})`); g.fillStyle = gr; g.fillRect(sx, sy - hw, MASS[0] * U - sx, hw * 2); }
     g.globalCompositeOperation = "source-over"; }
 
-  /* 혼돈의 촉수 (덩어리 본체는 셰이더가 그림) */
-  if (t < T.HIT1) { const cx = MASS[0] * U, cy = MASS[1] * U, R = MASS[2] * U, a = seg(t, .1, 1.6), [sx, sy] = solPos(t), reach = eInOut(seg(t, .8, 2.9)); g.lineCap = "round"; g.shadowColor = CHAOS; g.shadowBlur = U * .3;
-    for (let k = 0; k < 6; k++) { const off = (k - 2.5) * .55 * U, ex = lerp(cx - R * .9, sx + 1.4 * U, reach * (.75 + .25 * Math.sin(t * 1.7 + k))), ey = sy + off * .5 + Math.sin(t * 2.2 + k) * .3 * U;
-      g.strokeStyle = k % 2 ? CHAOS : "#6a22a5"; g.lineWidth = U * (.09 - .01 * k); g.globalAlpha = a * .9; g.beginPath(); g.moveTo(cx - R * .85, cy + off); g.bezierCurveTo(cx - R * 1.4, cy + off * 1.8, ex + 1.5 * U, ey - off * .6, ex, ey); g.stroke(); }
-    g.shadowBlur = 0; g.globalAlpha = 1; }
-
   /* 혼돈의 씨앗 */
   if (t > T.HIT1 + .8) { const grow = seg(t, 10.2, 14.5) * (1 - lit * .7) * (title ? .45 : 1), a0 = seg(t, T.HIT1 + .8, 6);
     g.globalCompositeOperation = "lighter";
