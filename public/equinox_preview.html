@@ -20,7 +20,7 @@
                  아르페지오 16분음마다 음·양 구슬에서 번갈아 파문. 9.02부터 소용돌이치며 멀어짐(줌아웃).
    2막 11.02~19.02 합일: 태극이 한 점으로 맞물림. 박마다 ①충격파 ②양(빛살) ③음(먹) 폭발, 팔괘·해·달·위성 태극.
    종막 19.02~   춘분: 태극의 S곡선이 수평선으로 펴져 낮과 밤이 반반 — 타이틀 EQU◐NOX.
-        20.35    펑: 전부 한 점으로 빨려들었다가 터지고, 그대로 암전.
+        21.02    펑(다음 마디 첫 박): 전부 한 점으로 빨려들었다가 터지고, 그대로 암전.
    API: playEquinoxCutscene({ sound: true, onDone(){} })   ※ 시계·HUD·자막·시작/종료 화면은 공용 키트 cs_ui.js
    ═══════════════════════════════════════════════════════════════ */
 const TAU = Math.PI * 2, PI = Math.PI;
@@ -35,7 +35,7 @@ function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let
 
 const SPIN = 1.5;                                    // 회전 속도 배율
 const VOLUME = .7;                                   // 음악 음량 (0~1)
-const BEAT = 2 / 3, T0 = 1.02, BUILD = 9.02, DROP = 11.02, SAT = 15.02, CONV = 17.02, TITLE = 19.02, POP = 20.35, FADE = 20.72, END = 21.2;
+const BEAT = 2 / 3, T0 = 1.02, BUILD = 9.02, DROP = 11.02, SAT = 15.02, CONV = 17.02, TITLE = 19.02, POP = 21.02, FADE = 21.4, END = 21.9;
 const D = window.EQ_DATA || { fps: 30, low: [], high: [], onsets: [] };
 const CAPS = [
   { a: 1.5, b: 4.7, s: "陰 — 어둠은 빛을 품고" },
@@ -271,7 +271,7 @@ const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: VOLUME, duration: END, theme: "ink", capBlend: true,
   no: "01", title: "EQUINOX", sub: "陰陽", hero: "/thumbs/equinox_hero.jpg",
   tagline: "거대한 태극의 안쪽에서 시작해, 음과 양이 맞물려 하나가 되는 순간까지.\n90 BPM · 3/4박의 음악에 박자 단위로 맞춘 흑백 연출.",
-  meta: [["0:21", "Length"], ["90 BPM · 3/4", "Tempo"], [VARIANT === "gl" ? "WebGL2" : "Canvas 2D", "Renderer"]],
+  meta: [["0:22", "Length"], ["90 BPM · 3/4", "Tempo"], [VARIANT === "gl" ? "WebGL2" : "Canvas 2D", "Renderer"]],
   variants: [{ label: "WebGL", href: "/equinox_gl.html", on: VARIANT === "gl" }, { label: "2D", href: "/equinox_preview.html", on: VARIANT === "2d" }],
   chapters: [{ t: 0, name: "分 · 분리" }, { t: BUILD, name: "渦 · 소용돌이" }, { t: DROP, name: "合 · 합일" }, { t: CONV, name: "歸 · 수렴" }, { t: TITLE, name: "春分 · 춘분" }],
   captions: CAPS,

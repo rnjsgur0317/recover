@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""equinox_cut.mp3 재편집: 끝을 서서히 줄이는 대신 20.35초(박)에 '펑' — 빨려드는 라이저 + 서브 붐 + 노이즈 버스트, 음악은 그 순간 끊김"""
+"""equinox_cut.mp3 재편집: 끝을 서서히 줄이는 대신 21.02초(마디 첫 박)에 '펑' — 빨려드는 라이저 + 서브 붐 + 노이즈 버스트, 음악은 그 순간 끊김"""
 import subprocess, shutil, os
 import numpy as np
 from scipy.signal import butter, sosfilt
@@ -7,7 +7,7 @@ from scipy.signal import butter, sosfilt
 SRC = r"C:\Users\rnjsg\Downloads\KoraiiLayersCut.mp3.mpeg"
 OUT = r"C:\Users\rnjsg\dev\recover\public\equinox_cut.mp3"
 BAK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "equinox_cut_before_pop.mp3")
-SR, POP, END = 44100, 20.353, 21.2
+SR, POP, END = 44100, 21.02, 21.9
 
 if not os.path.exists(BAK):
     shutil.copy(OUT, BAK)
