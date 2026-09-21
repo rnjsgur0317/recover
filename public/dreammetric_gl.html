@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DREAMMETRIC 컷씬 — 드림메트릭</title>
+<link rel="stylesheet" href="/cs_ui.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;800&family=Oswald:wght@600&display=swap">
+</head>
+<body>
+<div id="cs" hidden><canvas id="glc"></canvas></div>
+<audio id="bgm" src="/dreammetric_cut.mp3" preload="auto"></audio>
+<script src="/dreammetric_data.js"></script>
+<script src="/cs_gl.js"></script>
+<script src="/cs_ui.js"></script>
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   DREAMMETRIC 드림메트릭 — 꿈속의 프레젠테이션 네 장, 그리고 NO SIGNAL
+   사운드: 참고 영상에서 추출(앞 0.9초 무음 제거), 140 BPM. 컷 시점은 원본 사운드의 전환음에 맞춤
+     0      01 THE DISTANCE — '나'와 '그것' 사이의 거리를 재는 계측기. 멀어지면 화면이 하얗게 흐려지고(의식), 가까워지면 떨린다(불안)
+     7.83   02 THE MEANING  — 8중 대칭 문양이 의미를 이루는 듯하다가 곧바로 다른 문양으로 흩어진다
+     14.77  03 THE ORACLE   — 알아들을 수 없는 룬을 쏟아내는 눈. 멍한 시야(겹쳐 보임)
+     20.97  04 THE LASTING  — 결정이 아래서부터 부서져 날아가고, 세계가 하얘진다 → "This was all a dream."
+     29.68  NO SIGNAL → 33.2 CRT 꺼짐
+   층: ① 셰이더(분홍 그라디언트 · 구름 · 보케 · 빛샘 · 망점)  ② 엠블럼 캔버스(흰 도형, 셰이더에서 색수차·그림자·붕괴 마스크)  ③ 글자 캔버스(블룸 뒤 합성)
+   전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
+   ═══════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2, PI = Math.PI;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (t) => 1 - Math.pow(1 - t, 3), eIn = (t) => t * t * t;
+const eInOut = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const eBack = (t) => { const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+
+const BEAT = .42857, PH = .179;
+const CUTS = [0, 7.83, 14.77, 20.97, 29.68], T = { NOSIG: 29.68, OFF: 33.2, END: 33.75, DREAM: 27.5 };
+const CH = [
+  { no: "01", title: "THE DISTANCE", lines: [["The farther it moved from you, the more your consciousness faded.", "그것이 멀어질수록, 당신의 의식은 희미해졌다."], ["The closer it moved towards you, the more anxious you became.", "그것이 가까워질수록, 당신은 불안해졌다."],
+    ["This “Distance” from it held on to your fading consciousness.", "그것과의 이 ‘거리’가, 꺼져 가는 의식을 붙들고 있었다."], ["You need it, Yet you don't know why.", "당신에겐 그것이 필요하다. 이유는 모르는 채로."]] },
+  { no: "02", title: "THE MEANING", lines: [["What does this mean?", "이건 무슨 뜻일까?"], ["Even if you know its “meaning”, what comes to you?", "그 ‘의미’를 안다 한들, 당신에게 무엇이 오는가?"],
+    ["It's not meaningless, nor is it meaningful.", "무의미하지도, 의미 있지도 않다."], ["In any case, it left us with an unforgettable experience.", "어쨌든 그것은 잊지 못할 경험을 남겼다."]] },
+  { no: "03", title: "THE ORACLE", lines: [["They said something, But you couldn't understand.", "그들은 무언가를 말했지만, 당신은 알아듣지 못했다."], ["You were too dazed to listen.", "듣기엔 너무 멍한 상태였다."],
+    ["It existed, even if your senses had tried denying it.", "감각이 부정하려 해도, 그것은 존재했다."], ["Was it an illusion?", "환상이었을까?"]] },
+  { no: "04", title: "THE LASTING", lines: [["As it slowly fades, your consciousness returns.", "그것이 서서히 흐려지자, 의식이 돌아온다."], ["There's nothing left in your hand as you pull yourself away from it.", "몸을 떼어 냈을 때, 손에는 아무것도 남아 있지 않다."],
+    ["“What was it all about?” you ask.", "“대체 뭐였던 거지?” 당신이 묻는다."], ["The place you escaped from never existed in the first place.", "당신이 빠져나온 그곳은 애초에 존재한 적이 없었다."]] },
+];
+const chapterAt = (t) => (t >= CUTS[3] ? 3 : t >= CUTS[2] ? 2 : t >= CUTS[1] ? 1 : 0);
+const D = window.DM_DATA || { fps: 60, lvl: [], hit: [] };
+const dat = (arr, t) => { const i = Math.floor(t * D.fps); return i < 0 || !arr.length ? 0 : arr[Math.min(arr.length - 1, i)]; };
+const beatP = (t) => Math.exp(-((((t - PH) / BEAT) % 1 + 1) % 1) * 4.5);
+/* 01: '그것'과의 가까움 c(0 멀다 ~ 1 가깝다) — 글줄 내용에 맞춰 멀어졌다가(의식이 흐려짐) 다가온다(불안) */
+const closeness = (t) => { const a = 1 - eInOut(seg(t, 1.2, 3.0)), b = eInOut(seg(t, 3.2, 4.9)), c = .55 + .12 * Math.sin(t * 2.1); return t < 3.1 ? lerp(.5, .04, 1 - a) : t < 5.3 ? lerp(.04, .97, b) : lerp(.97, c, eInOut(seg(t, 5.3, 6.4))); };
+
+const $ = (id) => document.getElementById(id);
+const glc = $("glc"), bgm = $("bgm");
+const ecv = document.createElement("canvas"), eg = ecv.getContext("2d"), tcv = document.createElement("canvas"), tg = tcv.getContext("2d");
+let Wd = 0, Hd = 0, U = 0, DPR = 1, DPR_CAP = 1.5, slow = 0, time = 0, X = null, P = {}, RT = {}, embTex = null, txtTex = null;
+
+/* ═════════════════ 엠블럼 캔버스 (흰 도형 — 색·그림자·붕괴는 셰이더가 입힌다) ═════════════════ */
+const EY = -1.62, LW = 1.75;                                                          // 엠블럼 중심 높이 (U, 화면 위쪽이 −)
+function E() {
+  const ln = (x1, y1, x2, y2, w, a) => { eg.globalAlpha = a; eg.lineWidth = w * LW * U; eg.beginPath(); eg.moveTo(x1 * U, y1 * U); eg.lineTo(x2 * U, y2 * U); eg.stroke(); };
+  const ring = (x, y, r, w, a, a0, a1) => { eg.globalAlpha = a; eg.lineWidth = w * LW * U; eg.beginPath(); eg.arc(x * U, y * U, Math.max(0, r) * U, a0 || 0, a1 === undefined ? TAU : a1); eg.stroke(); };
+  const disc = (x, y, r, a) => { eg.globalAlpha = a; eg.beginPath(); eg.arc(x * U, y * U, Math.max(0, r) * U, 0, TAU); eg.fill(); };
+  const poly = (pts, a, stroke, w) => { eg.globalAlpha = a; eg.beginPath(); pts.forEach(([x, y], i) => (i ? eg.lineTo(x * U, y * U) : eg.moveTo(x * U, y * U))); eg.closePath(); if (stroke) { eg.lineWidth = w * LW * U; eg.stroke(); } else eg.fill(); };
+  const txt = (s, x, y, px, a, align, font) => { eg.globalAlpha = a; eg.font = `${font || "500"} ${px * U}px "Montserrat","Pretendard","Segoe UI",sans-serif`; eg.textAlign = align || "center"; eg.textBaseline = "middle"; eg.fillText(s, x * U, y * U); };
+  return { ln, ring, disc, poly, txt };
+}
+function emblemDistance(t, k) {                                            /* 01 — 거리 계측기 */
+  const { ln, ring, disc, poly, txt } = E(), c = closeness(t), anx = clamp((c - .6) / .4), bp = beatP(t), jx = (Math.sin(t * 61) + Math.sin(t * 97)) * .03 * anx, jy = Math.sin(t * 83) * .03 * anx;
+  const you = -3.0, it = lerp(3.3, -1.75, c) + jx, y = EY + jy;
+  ln(-4.2, y + 1.15, 4.2, y + 1.15, .02, .7 * k); for (let i = 0; i <= 42; i++) { const x = -4.2 + i * .2, big = i % 5 === 0; ln(x, y + 1.15, x, y + 1.15 + (big ? .2 : .1), .016, (big ? .9 : .5) * k); if (big) txt(String(i * 2).padStart(2, "0"), x, y + 1.5, .13, .6 * k); }
+  ln(you, y, you, y + 1.15, .012, .4 * k); ln(it, y, it, y + 1.15, .012, .4 * k);                                              // 눈금자로 내린 투영선
+  for (let i = 0; i < 3; i++) ring(you, y, .62 + i * .3 + .06 * Math.sin(t * 2 + i), .018, (.75 - i * .2) * k);              // 나
+  disc(you, y, .34 + .03 * bp, k); for (let i = 0; i < 3; i++) { const a = ((t * (.8 + 1.6 * anx) + i / 3) % 1); ring(you, y, .4 + a * 1.9, .02, (1 - a) * .7 * anx * k); }     // 불안: 심장 박동 파문
+  const s = .62 * (1 + .25 * c), sl = (dx, dy, a) => poly([[it - s + dx + .25, y - s * .42 + dy], [it + s + dx + .25, y - s * .42 + dy], [it + s + dx - .25, y + s * .42 + dy], [it - s + dx - .25, y + s * .42 + dy]], a);
+  sl(.22, -.3, .55 * k); sl(0, 0, k); poly([[it - s * 1.5, y], [it, y - s * 1.2], [it + s * 1.5, y], [it, y + s * 1.2]], .8 * k, true, .02);          // 그것: 겹친 판 + 마름모 틀
+  for (let i = 0; i < 2; i++) { eg.save(); eg.translate(it * U, y * U); eg.rotate(t * (i ? -.7 : .5) + i); eg.globalAlpha = .6 * k; eg.lineWidth = .016 * U; eg.setLineDash(i ? [.1 * U, .08 * U] : []); eg.beginPath(); eg.ellipse(0, 0, 1.35 * U, .42 * U, 0, 0, TAU); eg.stroke(); eg.setLineDash([]); eg.restore(); }
+  const x0 = you + .5, x1 = it - s * 1.5 - .1; if (x1 > x0 + .1) { eg.setLineDash([.12 * U, .1 * U]); ln(x0, y, x1, y, .022, .9 * k); eg.setLineDash([]); poly([[x0, y], [x0 + .18, y - .1], [x0 + .18, y + .1]], k); poly([[x1, y], [x1 - .18, y - .1], [x1 - .18, y + .1]], k); }
+  txt("DISTANCE  " + (Math.max(0, it - you - 1.4) * 12.7).toFixed(2), (you + it) / 2, y - 1.05, .2, .95 * k, "center", "800"); txt("YOU", you, y - 1.25, .15, .7 * k); txt("IT", it, y - 1.4, .15, .7 * k);
+  if (anx > .3) for (let i = 0; i < 5; i++) txt("!", you + (Math.sin(i * 7 + Math.floor(t * 9)) * .9), y - .5 + Math.cos(i * 5 + Math.floor(t * 9)) * .8, .3, anx * k * (Math.floor(t * 9 + i) % 2), "center", "800");
+  for (let i = 0; i < 4; i++) { const cx = [-4.3, 4.3, -4.3, 4.3][i], cy = y + [-1.5, -1.5, 1.9, 1.9][i]; ln(cx - .15, cy, cx + .15, cy, .016, .6 * k); ln(cx, cy - .15, cx, cy + .15, .016, .6 * k); }
+}
+function emblemMeaning(t, k) {                                             /* 02 — 의미가 되려다 마는 8중 대칭 문양 */
+  const { ln, ring, disc, poly, txt } = E(), s = t - CUTS[1], period = BEAT * 4, idx = Math.floor(s / period), m = eInOut(seg(s % period, 0, period * .55)), bp = beatP(t);
+  const set = (n) => { const r = rng(n * 131 + 9); return Array.from({ length: 6 }, () => ({ r0: .2 + r() * 1.0, r1: .9 + r() * 1.3, w: .1 + r() * .45, off: r() * PI / 8, kind: Math.floor(r() * 3) })); }, A = set(idx), B = set(idx + 1);
+  eg.save(); eg.translate(0, EY * U); eg.rotate(t * .12);
+  for (let j = 0; j < 6; j++) { const a = A[j], b = B[j], r0 = lerp(a.r0, b.r0, m), r1 = lerp(a.r1, b.r1, m), w = lerp(a.w, b.w, m), off = lerp(a.off, b.off, m), kind = m < .5 ? a.kind : b.kind;
+    for (let i = 0; i < 8; i++) { eg.save(); eg.rotate(i / 8 * TAU + off * (j % 2 ? 1 : -1)); eg.globalAlpha = (j < 2 ? .95 : .7) * k;
+      if (kind === 0) { eg.beginPath(); eg.moveTo(r0 * U, 0); eg.lineTo((r0 + r1) / 2 * U, w * .5 * U); eg.lineTo(r1 * U, 0); eg.lineTo((r0 + r1) / 2 * U, -w * .5 * U); eg.closePath(); j % 2 ? eg.stroke() : eg.fill(); }
+      else if (kind === 1) { eg.lineWidth = .03 * U; eg.beginPath(); eg.arc((r0 + r1) / 2 * U, 0, w * .6 * U, 0, TAU); eg.stroke(); eg.beginPath(); eg.arc(r1 * U, 0, .05 * U, 0, TAU); eg.fill(); }
+      else { eg.lineWidth = .028 * U; eg.beginPath(); eg.moveTo(r0 * U, 0); eg.lineTo(r1 * U, w * U); eg.lineTo(r1 * U, -w * U); eg.closePath(); eg.stroke(); }
+      eg.restore(); } }
+  eg.restore();
+  ring(0, EY, 2.35 + .05 * bp, .02, .8 * k); ring(0, EY, 2.55, .012, .5 * k); for (let i = 0; i < 48; i++) { const a = i / 48 * TAU - t * .2, r = 2.35, l = i % 4 ? .08 : .18; ln(Math.cos(a) * r, EY + Math.sin(a) * r, Math.cos(a) * (r + l), EY + Math.sin(a) * (r + l), .014, .7 * k); }
+  for (let i = 0; i < 3; i++) { const a = t * .3 + i * TAU / 3; ring(Math.cos(a) * .9, EY + Math.sin(a) * .9, 1.45, .01, .35 * k); }                 // 작도선
+  for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + t * .25; txt(i % 2 ? "?" : "=", Math.cos(a) * 2.95, EY + Math.sin(a) * 2.95, .22, .75 * k, "center", "800"); }
+  const words = ["MEANING", "의미", "意味", "?", "∅", "SENS", "NOTHING", "SOMETHING"]; disc(0, EY, .5, .0); eg.globalCompositeOperation = "destination-out"; disc(0, EY, .62, 1); eg.globalCompositeOperation = "source-over";
+  ring(0, EY, .62, .02, .9 * k); txt(words[Math.floor(t * 5) % words.length], 0, EY, .2, k, "center", "800");
+}
+function runeGlyph(seed, x, y, sz, a) { const r = rng(seed), n = 3 + Math.floor(r() * 3); eg.globalAlpha = a; eg.lineWidth = Math.max(1, sz * .13 * U); eg.beginPath(); let px = Math.floor(r() * 3), py = Math.floor(r() * 3); eg.moveTo((x + (px - 1) * sz * .5) * U, (y + (py - 1) * sz * .5) * U);
+  for (let i = 0; i < n; i++) { px = Math.floor(r() * 3); py = Math.floor(r() * 3); eg.lineTo((x + (px - 1) * sz * .5) * U, (y + (py - 1) * sz * .5) * U); } eg.stroke(); if (r() < .5) { eg.beginPath(); eg.arc((x + (Math.floor(r() * 3) - 1) * sz * .5) * U, (y + (Math.floor(r() * 3) - 1) * sz * .5) * U, sz * .1 * U, 0, TAU); eg.fill(); } }
+function emblemOracle(t, k) {                                              /* 03 — 알아들을 수 없는 말을 쏟아내는 눈 */
+  const { ln, ring, disc, poly, txt } = E(), lv = dat(D.lvl, t), bp = beatP(t), tick = Math.floor((t - PH) / BEAT);
+  for (let pass = 0; pass < 3; pass++) {                                   // 멍한 시야: 좌우로 어긋난 잔상
+    const dx = pass === 0 ? 0 : (pass === 1 ? -1 : 1) * (.18 + .12 * Math.sin(t * 1.3)), ka = pass === 0 ? k : .28 * k; eg.save(); eg.translate(dx * U, 0);
+    const open = .62 * (1 - .9 * pulse(t, CUTS[2] + 2.6, .08, .16) - .9 * pulse(t, CUTS[2] + 4.9, .08, .16)), w = 2.1;
+    eg.globalAlpha = ka; eg.lineWidth = .045 * U; eg.beginPath(); eg.moveTo(-w * U, EY * U); eg.quadraticCurveTo(0, (EY - open * 2.2) * U, w * U, EY * U); eg.quadraticCurveTo(0, (EY + open * 2.2) * U, -w * U, EY * U); eg.stroke();
+    eg.save(); eg.beginPath(); eg.moveTo(-w * U, EY * U); eg.quadraticCurveTo(0, (EY - open * 2.2) * U, w * U, EY * U); eg.quadraticCurveTo(0, (EY + open * 2.2) * U, -w * U, EY * U); eg.clip();
+    eg.globalAlpha = ka; eg.lineWidth = .03 * U; eg.beginPath(); for (let i = 0; i <= 96; i++) { const a = i / 96 * TAU, r = .78 + (.1 + .25 * lv) * Math.sin(a * 9 + t * 6) * Math.sin(a * 4 - t * 3); i ? eg.lineTo(Math.cos(a) * r * U, (EY + Math.sin(a) * r) * U) : eg.moveTo(Math.cos(a) * r * U, (EY + Math.sin(a) * r) * U); } eg.closePath(); eg.stroke();   // 목소리 파형 홍채
+    for (let i = 0; i < 24; i++) { const a = i / 24 * TAU + t * .4; ln(Math.cos(a) * .32, EY + Math.sin(a) * .32, Math.cos(a) * .62, EY + Math.sin(a) * .62, .016, .7 * ka); } disc(0, EY, .26 + .05 * bp, ka); eg.restore();
+    if (pass === 0) { [[1.55, 14, .3, .25], [2.15, 20, .26, -.18], [2.75, 28, .2, .12]].forEach(([r, n, sz, sp], g) => { ring(0, EY, r - sz * .9, .01, .3 * k); for (let i = 0; i < n; i++) { const a = i / n * TAU + t * sp; if (Math.abs(Math.sin(a)) < .2 && r < 2.2) continue; runeGlyph(i * 17 + g * 101 + (Math.sin(i * 3.3 + g) > .2 ? tick : 0), Math.cos(a) * r, EY + Math.sin(a) * r * .86, sz, (.85 - g * .15) * k); } });
+      for (let i = 0; i < 10; i++) { const f = ((t * .45 + i / 10) % 1), a = i * 2.4 + 1, r = .5 + f * 3.6; runeGlyph(i * 53 + Math.floor(t * 3 + i), Math.cos(a) * r * 1.3, EY + Math.sin(a) * r * .7, .16 + f * .5, (1 - f) * .8 * k); } }   // 눈에서 쏟아져 나오는 말
+    eg.restore(); }
+  for (let i = 0; i < 2; i++) { const s = i ? 1 : -1; ln(s * 2.3, EY, s * 3.4, EY, .02, .7 * k); poly([[s * 3.4, EY - .12], [s * 3.7, EY], [s * 3.4, EY + .12]], .8 * k); }
+}
+function emblemLasting(t, k) {                                             /* 04 — 부서져 날아가는 결정 (아래서부터 붕괴: 셰이더 마스크) */
+  const { ln, ring, disc, poly, txt } = E(), bp = beatP(t), y = EY, h = 2.25, w = .95;
+  const P6 = [[0, y - h], [w, y - h * .45], [w, y + h * .35], [0, y + h * .95], [-w, y + h * .35], [-w, y - h * .45]];
+  poly(P6, .22 * k); poly(P6, k, true, .04); [[0, 1], [0, 5], [3, 2], [3, 4]].forEach(() => 0);
+  ln(0, y - h, 0, y + h * .95, .02, .8 * k); ln(-w, y - h * .45, w, y + h * .35, .016, .6 * k); ln(w, y - h * .45, -w, y + h * .35, .016, .6 * k); ln(-w, y - h * .45, w, y - h * .45, .016, .6 * k); ln(-w, y + h * .35, w, y + h * .35, .016, .6 * k);
+  poly([[0, y - h * .62], [w * .5, y - h * .2], [0, y + h * .45], [-w * .5, y - h * .2]], .9 * k); eg.globalCompositeOperation = "destination-out"; poly([[0, y - h * .3], [w * .2, y - h * .1], [0, y + h * .12], [-w * .2, y - h * .1]], 1); eg.globalCompositeOperation = "source-over";
+  for (const s of [-1, 1]) { for (let i = 0; i < 3; i++) { const o = 1.35 + i * .42, a0 = s > 0 ? -.9 + i * .12 : PI - .9 - (-.9 + i * .12) - 1.8 + 1.8, a = s > 0 ? [-.95 + i * .1, .95 - i * .1] : [PI - .95 + i * .1, PI + .95 - i * .1]; ring(0, y, o + .04 * bp, .03 - i * .006, (.85 - i * .2) * k, a[0], a[1]); }
+    poly([[s * 1.5, y - h * .75], [s * 1.95, y - h * 1.0], [s * 1.72, y - h * .45]], .85 * k); poly([[s * 1.6, y + h * .8], [s * 2.2, y + h * .62], [s * 1.75, y + h * .45]], .7 * k, true, .02); }
+  for (let i = 0; i < 9; i++) { const a = i / 9 * TAU + t * .35, r = 2.75; eg.save(); eg.translate(Math.cos(a) * r * 1.25 * U, (y + Math.sin(a) * r * .55) * U); eg.rotate(a + t); eg.globalAlpha = .75 * k; eg.fillRect(-.07 * U, -.07 * U, .14 * U, .14 * U); eg.restore(); }
+  ring(0, y, 2.95, .012, .4 * k); txt("FADING", 0, y + h * 1.18, .13, .6 * k, "center", "800");
+}
+const EMB = [emblemDistance, emblemMeaning, emblemOracle, emblemLasting];
+function drawEmblem(t) {
+  eg.setTransform(1, 0, 0, 1, 0, 0); eg.clearRect(0, 0, ecv.width, ecv.height); if (t >= T.NOSIG) return;
+  eg.setTransform(DPR, 0, 0, DPR, Wd / 2 * DPR, Hd / 2 * DPR); eg.fillStyle = "#fff"; eg.strokeStyle = "#fff"; eg.lineCap = "round"; eg.lineJoin = "round";
+  const ch = chapterAt(t), k = eBack(seg(t, CUTS[ch] + .08, CUTS[ch] + .6)); const es = [1.1, .94, .98, .94][ch] * (.75 + .25 * k); eg.save(); eg.translate(0, EY * U); eg.scale(es, es); eg.translate(0, -EY * U); EMB[ch](t, clamp(k)); eg.restore(); eg.globalAlpha = 1;
+}
+
+/* ═════════════════ 글자 캔버스 (장 번호 · 제목 · 별 · 글줄 · 슬라이드 장식) ═════════════════ */
+function star4(x, y, r, a) { tg.globalAlpha = a; tg.beginPath(); for (let i = 0; i < 8; i++) { const an = i / 8 * TAU - PI / 2, rr = i % 2 ? r * .32 : r; tg.lineTo(x + Math.cos(an) * rr, y + Math.sin(an) * rr); } tg.closePath(); tg.fill(); }
+function drawText(t) {
+  tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, tcv.width, tcv.height); tg.setTransform(DPR, 0, 0, DPR, 0, 0); tg.fillStyle = "#fff"; tg.strokeStyle = "#fff"; tg.textBaseline = "middle";
+  const SANS = '"Montserrat","Pretendard","Segoe UI","Malgun Gothic",sans-serif', COND = '"Oswald","Bebas Neue",Impact,"Arial Narrow",sans-serif', cx = Wd / 2, cy = Hd / 2, sc = Math.min(1, Wd / (15 * U));
+  if (t >= T.NOSIG) {                                                      // NO SIGNAL
+    tg.textAlign = "left"; tg.font = `600 ${1.0 * U}px ${COND}`; tg.globalAlpha = .96; tg.fillText("NO SIGNAL", .55 * U, Hd - 1.55 * U);
+    tg.font = `500 ${.2 * U}px ${SANS}`; tg.globalAlpha = .7; tg.textAlign = "right"; tg.fillText("DREAMMETRIC  ·  드림메트릭", Wd - .6 * U, 1.35 * U); tg.textAlign = "left"; tg.fillText("CH --    " + new Date(0).toISOString().slice(11, 19), .6 * U, 1.35 * U); tg.globalAlpha = 1; return; }
+  const ch = chapterAt(t), c = CH[ch], s = t - CUTS[ch], dur = (CUTS[ch + 1] || T.NOSIG) - CUTS[ch], dream = ch === 3 && t >= T.DREAM;
+  /* 슬라이드 장식 */
+  tg.globalAlpha = .85; for (let r = 0; r < 2; r++) for (let i = 0; i < 4; i++) { const x = (.55 + i * .42) * U, y = Hd - (1.5 + r * .42) * U, l = .1 * U; tg.lineWidth = .035 * U; tg.beginPath(); tg.moveTo(x - l, y); tg.lineTo(x + l, y); tg.moveTo(x, y - l); tg.lineTo(x, y + l); tg.stroke(); }
+  tg.textAlign = "right"; tg.font = `800 ${.17 * U}px ${SANS}`; tg.globalAlpha = .75; tg.fillText("DREAMMETRIC", Wd - .6 * U, 1.35 * U); tg.font = `500 ${.15 * U}px ${SANS}`; tg.fillText("SLIDE " + c.no + " / 04", Wd - .6 * U, 1.65 * U);
+  for (let i = 0; i < 4; i++) { tg.globalAlpha = i === ch ? 1 : .4; tg.fillRect(Wd - (.6 + (4 - i) * .5) * U + .1 * U, Hd - 1.42 * U, .38 * U, (i === ch ? .06 : .03) * U); } tg.globalAlpha = .9; tg.fillRect(Wd - 2.5 * U, Hd - 1.3 * U, 1.9 * U * seg(t, CUTS[ch], CUTS[ch] + dur), .02 * U);
+  if (dream) { const k = eOut(seg(t, T.DREAM, T.DREAM + .7)); tg.textAlign = "center"; tg.font = `800 ${.62 * U * sc}px ${SANS}`; tg.globalAlpha = k; tg.fillText("This was all a dream.", cx, cy - .1 * U + (1 - k) * .3 * U); tg.font = `500 ${.3 * U * sc}px ${SANS}`; tg.globalAlpha = k * .8; tg.fillText("이 모든 건 꿈이었다.", cx, cy + .65 * U); tg.globalAlpha = 1; return; }
+  const out = ch === 3 ? 1 - seg(t, T.DREAM - .5, T.DREAM - .05) : 1;
+  /* 장 번호 */
+  const kn = eOut(seg(s, .05, .5)); tg.textAlign = "left"; tg.font = `600 ${1.5 * U}px ${COND}`; tg.globalAlpha = kn * out; tg.fillText(c.no, .55 * U - (1 - kn) * U, 1.95 * U); tg.globalAlpha = kn * .5 * out; tg.lineWidth = .02 * U; tg.strokeText(c.no, .55 * U + .09 * U, 1.95 * U + .09 * U);
+  /* 제목 + 양옆 선 + 별 여덟 */
+  const kt = eOut(seg(s, .2, .7)), ty = cy + 1.22 * U; tg.textAlign = "center"; tg.font = `800 ${.5 * U}px ${SANS}`; tg.globalAlpha = kt * out; const chars = [...c.title], track = .14 * U, ws = chars.map((ch2) => (ch2 === " " ? .22 * U : tg.measureText(ch2).width)), tw = ws.reduce((a, b) => a + b, 0) + track * (chars.length - 1); let tx = cx - tw / 2;
+  chars.forEach((chr, i) => { const ki = eOut(seg(s, .2 + i * .025, .55 + i * .025)); tg.globalAlpha = ki * out; tg.fillText(chr, tx + ws[i] / 2, ty + (1 - ki) * .25 * U); tx += ws[i] + track; });
+  tg.globalAlpha = kt * out; for (const sd of [-1, 1]) { tg.beginPath(); tg.moveTo(cx + sd * (tw / 2 + .4 * U), ty); tg.lineTo(cx + sd * (tw / 2 + .4 * U + 1.6 * U * kt), ty); tg.lineWidth = .025 * U; tg.stroke(); }
+  for (let i = 0; i < 8; i++) { const ki = eBack(seg(s, .45 + i * .04, .7 + i * .04)); star4(cx + (i - 3.5) * .27 * U, ty + .46 * U, .075 * U * ki, .95 * out * clamp(ki)); }
+  /* 글줄: 영어 원문 + 한국어 */
+  const n = c.lines.length, t0 = 1.0, stepL = (dur - 2.3 - (ch === 3 ? 2.2 : 0)) / n; tg.textAlign = "center";
+  c.lines.forEach(([en, ko], i) => { const ka = eOut(seg(s, t0 + i * stepL, t0 + i * stepL + .55)); if (ka <= 0) return; const y = ty + (.92 + i * .53) * U;
+    tg.font = `500 ${.25 * U * sc}px ${SANS}`; tg.globalAlpha = ka * out; tg.fillText(en, cx, y + (1 - ka) * .12 * U); tg.font = `500 ${.175 * U * sc}px ${SANS}`; tg.globalAlpha = ka * .8 * out; tg.fillText(ko, cx, y + .255 * U + (1 - ka) * .12 * U); });
+  tg.globalAlpha = 1;
+}
+
+/* ═════════════════ 셰이더 ═════════════════ */
+const FS_SCENE = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform sampler2D uEmb; uniform vec2 uRes; uniform vec3 uTint; uniform float uT, uWhite, uAnx, uDis, uSlide, uBeat, uNoSig, uDream;
+${CSGL.NOISE}
+void main(){
+  vec2 uv = vUv; float asp = uRes.x / uRes.y; vec2 p = (uv - .5) * vec2(asp, 1.) * 10.;
+  if (uNoSig > .5){                                                                              // NO SIGNAL: 파란 화면 + 흐르는 잡음 띠
+    vec3 c = mix(vec3(.01, .08, .62), vec3(.05, .2, 1.), uv.y); float band = smoothstep(.06, 0., abs(fract(uv.y * .7 - uT * .17) - .5) - .02);
+    c += vec3(.1, .16, .3) * band * (.5 + .5 * hash(vec2(floor(uv.y * uRes.y * .5), floor(uT * 30.)))); c += (hash(floor(uv * uRes * .5) + floor(uT * 24.)) - .5) * .05;
+    o = vec4(c * .55, 1.); return; }
+  vec3 top = vec3(1., .86, .95), mid = vec3(1., .5, .8), bot = vec3(.86, .25, .62);
+  vec3 col = mix(bot, mid, smoothstep(-.05, .6, uv.y)); col = mix(col, top, smoothstep(.5, 1.05, uv.y)); col *= uTint;
+  vec2 q = p * .16 + vec2(uT * .02, 0.); q += .5 * vec2(fbm(q * 1.7 + uT * .015), fbm(q * 1.7 + 4.1));
+  col = mix(col, vec3(1., .9, .97), smoothstep(.42, .85, fbm(q * 1.5)) * .5);                     // 구름
+  for (int i = 0; i < 12; i++){ vec2 h = vec2(hash(vec2(float(i), 1.3)), hash(vec2(float(i), 7.7))); float r = .35 + 1.3 * hash(vec2(float(i), 3.1));
+    vec2 c = vec2((h.x - .5) * 20. + sin(uT * .1 + h.y * 9.), mod(h.y * 14. + uT * (.12 + .25 * h.x), 14.) - 7.); float d = length(p - c);
+    col += vec3(1., .85, .95) * smoothstep(r, r * .9, d) * (.5 + .5 * smoothstep(r * .55, r, d)) * (.05 + .05 * uBeat); }                     // 보케
+  vec2 ld = normalize(vec2(1., .6)); float lk = dot(p, ld) - (mod(uT * 1.1, 26.) - 13.); col += vec3(1., .8, .7) * exp(-lk * lk * .12) * .1;     // 빛샘
+  float hd = length(fract(p * 2.2) - .5), hk = smoothstep(7., 11., length(p - vec2(-9., -5.)) * -1. + 14.) ; col += vec3(1.) * smoothstep(.22 * hk, .22 * hk - .05, hd) * .16 * step(.01, hk);   // 구석 망점
+  col *= 1. - smoothstep(5., 11., length(p * vec2(.8, 1.))) * vec3(.3, .45, .2);                  // 보랏빛 가장자리
+  col *= 1. - .3 * exp(-dot(p - vec2(0., 1.62), p - vec2(0., 1.62)) * vec2(.05, .09).x) * (1. - uWhite);       // 엠블럼 뒤는 조금 짙게 → 흰 도형이 도드라짐
+  // 엠블럼: 슬라이드 · 불안 떨림 · 색수차 · 그림자 · 붕괴 마스크
+  vec2 euv = uv - vec2(uSlide * .55, 0.) + vec2(hash(vec2(floor(uT * 40.), 1.)) - .5, hash(vec2(floor(uT * 40.), 2.)) - .5) * .004 * uAnx;
+  float ca = .0016 + .004 * uAnx + .002 * uBeat; vec3 ea = vec3(texture(uEmb, euv + vec2(ca, 0.)).a, texture(uEmb, euv).a, texture(uEmb, euv - vec2(ca, 0.)).a);
+  float sh = 0.; for (int i = 0; i < 6; i++){ float an = float(i) * 1.047; sh += texture(uEmb, euv + vec2(.004, -.009) + vec2(cos(an), sin(an)) * .004).a; } sh /= 6.;
+  vec2 ep = vec2((euv.x - .5) * asp, euv.y - .5) * 10. - vec2(0., 1.62); float hgt = clamp((ep.y + 2.9) / 5.8, 0., 1.), nz = fbm(ep * 1.7 + 3.);
+  float keep = smoothstep(uDis * 1.25 - .04, uDis * 1.25 + .04, hgt * .75 + nz * .45 + (1. - step(.001, uDis)) * 2.), edge = exp(-pow((hgt * .75 + nz * .45 - uDis * 1.25) / .03, 2.)) * step(.001, uDis);
+  float vis = (1. - abs(uSlide)) * keep;
+  col = mix(col, col * vec3(.6, .3, .52), sh * .7 * vis); col = mix(col, vec3(1.), ea * vis); col += vec3(1., .9, 1.) * edge * ea.g * 1.5;
+  for (int i = 0; i < 40; i++){ if (uDis <= .001) break; vec2 h = vec2(hash(vec2(float(i), 11.)), hash(vec2(float(i), 23.))); float life = fract(h.y + uT * (.12 + .2 * h.x)), y0 = -2.6 + uDis * 6.2 * h.y;
+    vec2 c = vec2((h.x - .5) * 3.4 + sin(uT * (1. + h.y) + h.x * 9.) * .4 * life, y0 + life * 3.5); float d = length(ep - c); col += vec3(1.) * exp(-d * d * 90.) * (1. - life) * .9 * (1. - abs(uSlide)); }   // 날아오르는 파편
+  col += vec3(.9, .1, .3) * uAnx * .1 * (.5 + .5 * sin(uT * 14.));                                 // 불안: 붉은 맥박
+  col = mix(col, vec3(1., .97, .99), uWhite);                                                     // 의식이 흐려짐 / 꿈에서 깸
+  o = vec4(max(col, 0.), 1.);
+}`;
+const FS_FINAL = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform sampler2D uScene, uBloom, uTxt; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uFlash, uCrt, uFade, uSlide, uBlur, uNoSig, uInk;
+${CSGL.NOISE}
+void main(){
+  float sy = clamp(uCrt * 1.7, .004, 1.), sx = clamp(uCrt * 5., .002, 1.); vec2 c = vUv - .5; c.x /= sx; c.y /= sy; if (abs(c.x) > .5 || abs(c.y) > .5){ o = vec4(0., 0., 0., 1.); return; }
+  vec2 uv = c / uZoom + .5 + uShake; if (uNoSig > .5) uv.x += (hash(vec2(floor(uv.y * 90.), floor(uT * 20.))) - .5) * .004;
+  vec2 dir = uv - .5; float ca = uCA * (.3 + length(dir) * 1.8); vec3 col = vec3(0.); float n = 0.;
+  for (int i = 0; i < 8; i++){ float f = 1. - uBlur * float(i) / 8.; vec2 u2 = .5 + dir * f; col += vec3(texture(uScene, u2 + dir * ca).r, texture(uScene, u2).g, texture(uScene, u2 - dir * ca).b); n += 1.; if (uBlur < .001) break; }   // 몽롱한 방사형 번짐
+  col /= n; vec3 bl = texture(uBloom, uv).rgb; col += bl * uBloomK;
+  vec2 tuv = uv - vec2(uSlide * .7, 0.); float ta = texture(uTxt, tuv).a, ts = (texture(uTxt, tuv + vec2(.0012, -.0024)).a + texture(uTxt, tuv + vec2(.0022, -.0042)).a + texture(uTxt, tuv + vec2(-.001, -.003)).a) / 3.; float tv = 1. - abs(uSlide);
+  col = mix(col, col * vec3(.5, .2, .45), ts * .75 * tv * (1. - uNoSig) * (1. - uInk)); col = mix(col, mix(vec3(1.), vec3(.72, .16, .5), uInk), ta * tv);
+  col += vec3(1.) * uFlash; col *= 1. + (1. - sy) * 5.;
+  col = pow(clamp(col, 0., 1.), vec3(1.06)); col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * .035;
+  if (uNoSig > .5) col *= .92 + .08 * sin(uv.y * uRes.y * 1.6);
+  float v = length((vUv - .5) * vec2(1., .85)); col *= 1. - smoothstep(.45, 1., v) * .35;
+  o = vec4(max(col, 0.) * (1. - uFade), 1.);
+}`;
+function initGL() { if (X) return; X = CSGL.create(glc); P.scene = X.compile(CSGL.VS_FULL, FS_SCENE); P.final = X.compile(CSGL.VS_FULL, FS_FINAL); embTex = X.canvasTexture(); txtTex = X.canvasTexture(); }
+function resize() {
+  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); Wd = glc.clientWidth || 1280; Hd = glc.clientHeight || 720; U = Math.min(Wd, Hd) / 10;        // 창이 숨겨져 0이어도 동작하게 기본값
+  const pw = Math.max(2, Math.round(Wd * DPR)), ph = Math.max(2, Math.round(Hd * DPR)); glc.width = ecv.width = tcv.width = pw; glc.height = ecv.height = tcv.height = ph;
+  initGL(); X.resize(pw, ph); X.free(RT.scene); RT.scene = X.target(pw, ph);
+}
+const TINTS = [[1, 1, 1], [.96, .95, 1.06], [1.04, .9, 1.04], [1.02, 1.0, 1.02]];
+function render(t) {
+  drawEmblem(t); drawText(t);
+  const gl = X.gl, pw = glc.width, ph = glc.height, ch = chapterAt(t), nosig = t >= T.NOSIG, bp = beatP(t) * clamp(dat(D.lvl, t) * 1.5), hitv = dat(D.hit, t);
+  X.upload(embTex, ecv, false); X.upload(txtTex, tcv, false);
+  let slide = 0; for (let i = 1; i < 4; i++) { if (t >= CUTS[i] - .42 && t < CUTS[i]) slide = -eIn(seg(t, CUTS[i] - .42, CUTS[i])); if (t >= CUTS[i] && t < CUTS[i] + .5) slide = 1 - eOut(seg(t, CUTS[i], CUTS[i] + .5)); }
+  const c = closeness(t), far = ch === 0 ? clamp((.3 - c) / .3) : 0, anx = ch === 0 ? clamp((c - .62) / .35) : 0;
+  const dis = ch === 3 ? .92 * eInOut(seg(t, CUTS[3] + 2.4, T.DREAM - .1)) : 0, wake = ch === 3 ? .82 * eInOut(seg(t, CUTS[3] + 3.5, T.DREAM + .6)) : 0, white = Math.max(.5 * far, wake, 1 - seg(t, 0, .7));
+  const tint = TINTS[ch];
+  X.pass(P.scene, RT.scene, (u) => { X.bindTex(0, embTex, u.uEmb); gl.uniform2f(u.uRes, pw, ph); gl.uniform3f(u.uTint, tint[0], tint[1], tint[2]); gl.uniform1f(u.uT, t); gl.uniform1f(u.uWhite, nosig ? 0 : white); gl.uniform1f(u.uAnx, anx);
+    gl.uniform1f(u.uDis, dis); gl.uniform1f(u.uSlide, slide); gl.uniform1f(u.uBeat, bp); gl.uniform1f(u.uNoSig, nosig ? 1 : 0); gl.uniform1f(u.uDream, 0); });
+  const bloomTex = X.bloom(RT.scene.tex, nosig ? .9 : .97), r0 = rng(Math.floor(t * 60));
+  let flash = 0; for (let i = 1; i < 4; i++) flash = Math.max(flash, .85 * pulse(t, CUTS[i] - .04, .04, .3)); flash = Math.max(flash, pulse(t, T.NOSIG - .06, .05, .0001));
+  const hit = .25 * anx + (nosig ? .0 : .04 * hitv), crt = t >= T.OFF ? 1 - eIn(seg(t, T.OFF, T.END - .12)) : 1, blur = nosig ? 0 : Math.max(.09 * far, ch === 2 ? .035 + .02 * Math.sin(t * 1.3) : 0, .5 * Math.abs(slide) * .3, .06 * wake);
+  X.pass(P.final, null, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); X.bindTex(2, txtTex, u.uTxt); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t);
+    gl.uniform2f(u.uShake, (r0() - .5) * hit * .012, (r0() - .5) * hit * .012); gl.uniform1f(u.uZoom, 1 + .012 * bp + .02 * anx); gl.uniform1f(u.uCA, nosig ? .002 : .0008 + .004 * anx + .003 * Math.abs(slide)); gl.uniform1f(u.uBloomK, nosig ? .5 : .35 + .15 * bp);
+    gl.uniform1f(u.uFlash, flash); gl.uniform1f(u.uCrt, crt); gl.uniform1f(u.uFade, t >= T.END - .1 ? 1 : 0); gl.uniform1f(u.uSlide, slide); gl.uniform1f(u.uBlur, blur); gl.uniform1f(u.uNoSig, nosig ? 1 : 0); gl.uniform1f(u.uInk, nosig ? 0 : clamp((wake - .3) / .3)); });
+}
+
+/* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
+const player = CSUI.create({
+  stage: $("cs"), audio: bgm, volume: .9, duration: T.END, theme: "dream", capBlend: false,
+  no: "04", title: "DREAMMETRIC", sub: "드림메트릭", hero: "/thumbs/dreammetric_hero.jpg",
+  tagline: "거리, 의미, 신탁, 그리고 남은 것. 꿈속에서 넘어가는 네 장의 슬라이드.\n당신이 빠져나온 그곳은 애초에 존재한 적이 없었다 — 이 모든 건 꿈이었다.",
+  meta: [["0:34", "Length"], ["140 BPM", "Tempo"], ["WebGL2", "Renderer"]],
+  chapters: [{ t: 0, name: "THE DISTANCE" }, { t: CUTS[1], name: "THE MEANING" }, { t: CUTS[2], name: "THE ORACLE" }, { t: CUTS[3], name: "THE LASTING" }, { t: T.NOSIG, name: "NO SIGNAL" }],
+  captions: [],
+  prepare() { resize(); },
+  simulate(tt) { time = tt; },
+  frame(t, dt, raw) { time = t; slow = raw > .03 ? slow + 1 : Math.max(0, slow - 1); if (slow > 45 && DPR_CAP > 1) { DPR_CAP = 1; slow = 0; resize(); } render(t); },
+});
+window.addEventListener("resize", () => { if (!$("cs").hidden && X) { resize(); render(time); } });
+window.playDreammetricCutscene = (o) => player.play(o);
+function renderStill(tt) { time = tt; render(tt); }
+</script>
+</body>
+</html>

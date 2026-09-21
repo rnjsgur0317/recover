@@ -15,6 +15,7 @@
   font-family: var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased;
 }
 .csui[data-theme="pixel"] { --bg: #05060e; --ink: #ffe95c; --dim: rgba(255,233,92,.62); --faint: rgba(255,233,92,.32); --line: rgba(255,233,92,.18); }
+.csui[data-theme="dream"] { --bg: #12060f; --ink: #ffe6f4; --dim: rgba(255,214,238,.66); --faint: rgba(255,214,238,.34); --line: rgba(255,214,238,.18); }
 .csui[data-theme="lumen"] { --bg: #04060b; --ink: #eef4fc; --dim: rgba(226,236,250,.62); --faint: rgba(226,236,250,.3); --line: rgba(226,236,250,.16); }
 body.csui-body { margin: 0; background: #000; overflow: hidden; }
 .csui button { font-family: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
