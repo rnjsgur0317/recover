@@ -43,6 +43,8 @@ h1 { margin: 16px 0 0; font-size: clamp(2rem, 5vw, 3.4rem); font-weight: 800; le
 .close { position: absolute; left: 18px; top: 16px; z-index: 2; background: rgba(0,0,0,.45); color: #f3f0e8; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 14px; font-size: .78rem; letter-spacing: .08em; cursor: pointer; font-family: inherit; }
 .close:hover { border-color: #fff; }
 .close[hidden] { display: none; }
+.dl { align-self: flex-start; margin-top: 8px; height: 34px; padding: 0 16px; border: 1px solid rgba(243,240,232,.3); border-radius: 999px; background: none; color: #f3f0e8; font-family: inherit; font-size: .76rem; letter-spacing: .08em; cursor: pointer; transition: border-color .15s, background .15s; }
+.dl:hover { border-color: #f3f0e8; background: rgba(255,255,255,.08); }
 </style>
 </head>
 <body>
@@ -51,7 +53,7 @@ h1 { margin: 16px 0 0; font-size: clamp(2rem, 5vw, 3.4rem); font-weight: 800; le
     <div>
       <div class="kicker">Cutscene Archive</div>
       <h1>CUTSCENES</h1>
-      <p class="lead">카드를 누르면 전체 화면으로 재생되고, 끝나면 이 목록으로 돌아옵니다.<br>재생 중 — Space 일시정지 · ←→ 탐색 · M 음소거 · F 전체화면 · Esc 닫기</p>
+      <p class="lead">카드를 누르면 전체 화면으로 재생되고, 끝나면 이 목록으로 돌아옵니다.<br>재생 중 — Space 일시정지 · ←→ 탐색 · M 음소거 · F 전체화면 · Esc 닫기<br>[영상 저장]을 누르면 컷씬을 끝까지 재생하면서 1080p 영상 파일로 내려받습니다 (녹화 중에는 이 탭을 켜 두세요).</p>
     </div>
     <label class="sound"><input type="checkbox" id="sound" checked> 사운드</label>
   </header>
@@ -70,12 +72,9 @@ h1 { margin: 16px 0 0; font-size: clamp(2rem, 5vw, 3.4rem); font-weight: 800; le
    (끝나면 parent 로 { type: "cutscene-done" } 메시지를 보냄)
    kit: true = 공용 인터페이스(cs_ui.js)를 쓰는 페이지 — 닫기·건너뛰기·탐색 HUD 가 페이지 안에 있으므로 갤러리의 닫기 버튼은 숨김 */
 const CUTSCENES = [
-  { id: "equinox-gl", title: "EQUINOX", ko: "陰陽 · WebGL 고품질판", page: "/equinox_gl.html", kit: true, thumb: "/thumbs/equinox_gl.jpg", dur: "0:22",
-    desc: "같은 연출을 GPU 파이프라인으로. 먹이 번지듯 일렁이는 경계, 바탕을 뒤집는 GPU 입자, 어두운 쪽에서만 빛나는 블룸·갓레이, 박자마다 출렁이는 충격파, 한지·먹 질감.",
+  { id: "equinox-gl", title: "EQUINOX", ko: "陰陽", page: "/equinox_gl.html", kit: true, thumb: "/thumbs/equinox_gl.jpg", dur: "0:22",
+    desc: "거대한 태극의 안쪽에서 시작해 음과 양이 하나로 맞물리는 순간까지. 먹이 번지듯 일렁이는 경계, 바탕을 뒤집는 GPU 입자, 어두운 쪽에서만 빛나는 블룸·갓레이, 박자마다 출렁이는 충격파, 한지·먹 질감.",
     tags: ["WebGL2", "음악 동기", "후처리"], needsAudio: true },
-  { id: "equinox", title: "EQUINOX", ko: "陰陽 · 2D 원본 (비교용)", page: "/equinox_preview.html", kit: true, thumb: "/thumbs/equinox.jpg", dur: "0:22",
-    desc: "거대한 태극의 안쪽에서 시작해, 음과 양이 맞물려 하나가 되는 순간. 90BPM 3/4박 음악에 박자 단위로 맞춘 흑백 연출.",
-    tags: ["음악 동기", "흑백", "태극 · 팔괘"], needsAudio: true },
   { id: "luminosity-gl", title: "LUMINOSITY", ko: "광휘", page: "/luminosity_gl.html", kit: true, thumb: "/thumbs/luminosity_gl.jpg", dur: "0:28",
     desc: "솔의 일식 코로나 아래 일곱 무기가 혼돈을 부수고, 하나씩 산산조각 난 끝에 마지막 검이 빛날개를 펼친다. 전부 셰이더로 그린 컷 편집 — 금속 질감 무기, 삼각 파편 파쇄, 혼돈의 연기, 빛날개.",
     tags: ["WebGL2", "컷 편집", "사운드 동기"], needsAudio: true },
@@ -88,9 +87,6 @@ const CUTSCENES = [
   { id: "breakthrough", title: "BREAKTHROUGH", ko: "돌파", page: "/breakthrough_gl.html", kit: true, thumb: "/thumbs/breakthrough.jpg", dur: "0:30",
     desc: "블록이 하나씩 빠져나가는 결정 모놀리스 — 끝내 아무것도 남지 않았다가, 밝은 안개 속 다섯 조각으로 돌아온다. 실시간 3D 레이마칭(유리 반사 · 피사계 심도 · 렌즈 플레어)으로 만든 최상급 컷씬.",
     tags: ["WebGL2", "3D 레이마칭", "사운드 동기"], needsAudio: true },
-  { id: "seal", title: "THE FIFTH SEAL", ko: "다섯 번째 봉인", page: "/cutscene_preview.html", thumb: "/thumbs/seal.jpg", dur: "0:21+",
-    desc: "별들 사이에 버려진 상자와 네 겹의 봉인, 그리고 아무도 본 적 없는 다섯 번째 봉인. 효과음은 브라우저에서 합성.",
-    tags: ["합성 효과음", "보상 카드", "진홍 · 금"], needsAudio: false },
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -98,21 +94,22 @@ const grid = $("grid"), stage = $("stage");
 let frame = null;
 
 grid.innerHTML = CUTSCENES.map((c) => `
-  <button class="card" data-id="${c.id}">
+  <div class="card" data-id="${c.id}" tabindex="0" role="button">
     <div class="thumb" style="background-image:url('${c.thumb}')"><span class="no">${String(CUTSCENES.indexOf(c) + 1).padStart(2, "0")}</span><span class="dur">${c.dur}</span></div>
     <div class="info">
       <div class="title">${c.title}<small>${c.ko}</small></div>
       <div class="desc">${c.desc}</div>
       <div class="tags">${c.tags.map((t) => `<span>${t}</span>`).join("")}${c.needsAudio ? '<span class="warn">음원 파일 필요</span>' : ""}</div>
+      ${c.kit ? `<button class="dl" data-dl="${c.id}" title="컷씬을 처음부터 끝까지 재생하면서 영상 파일로 저장합니다">⤓ 영상 저장</button>` : ""}
     </div>
-  </button>`).join("");
+  </div>`).join("");
 
-function play(id) {
+function play(id, record) {
   const c = CUTSCENES.find((x) => x.id === id); if (!c) return;
   stop();
   frame = document.createElement("iframe");
   frame.allow = "autoplay; fullscreen";
-  frame.src = `${c.page}?autoplay=1&sound=${$("sound").checked ? 1 : 0}`;
+  frame.src = `${c.page}?autoplay=1&sound=${$("sound").checked ? 1 : 0}${record ? "&record=1" : ""}`;
   $("close").hidden = !!c.kit;
   stage.append(frame); stage.hidden = false; frame.addEventListener("load", () => { try { frame.contentWindow.focus(); } catch (e) { /* 무시 */ } }); document.body.style.overflow = "hidden";
   history.replaceState(null, "", "#" + id);
@@ -122,7 +119,8 @@ function stop() {
   stage.hidden = true; document.body.style.overflow = "";
   history.replaceState(null, "", location.pathname);
 }
-grid.addEventListener("click", (e) => { const card = e.target.closest("[data-id]"); if (card) play(card.dataset.id); });
+grid.addEventListener("click", (e) => { const dl = e.target.closest("[data-dl]"); if (dl) return play(dl.dataset.dl, true); const card = e.target.closest("[data-id]"); if (card) play(card.dataset.id); });
+grid.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".card")) { e.preventDefault(); play(e.target.dataset.id); } });
 $("close").addEventListener("click", stop);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape" && frame) stop(); });
 window.addEventListener("message", (e) => { if (e.origin === location.origin && e.data && e.data.type === "cutscene-done") stop(); });

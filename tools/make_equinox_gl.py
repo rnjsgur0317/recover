@@ -2,7 +2,7 @@
 """equinox_preview.html → equinox_gl.html (공용 cs_gl.js 파이프라인 위로 이식)"""
 import io
 
-src = r"C:\Users\rnjsg\dev\recover\public\equinox_preview.html"
+src = r"C:\Users\rnjsg\dev\recover\tools\equinox_src.html"      # 2D 로직 원본 (공개 폴더에는 두지 않음 — 구버전 2D 페이지는 삭제됨)
 dst = r"C:\Users\rnjsg\dev\recover\public\equinox_gl.html"
 s = io.open(src, encoding="utf-8").read()
 

@@ -137,6 +137,15 @@ body.csui-body { margin: 0; background: #000; overflow: hidden; }
 @keyframes csui-toast { 0% { opacity: 0; transform: scale(.8); } 25% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.15); } }
 @media (max-width: 640px) { .csui-id span, .csui-chap { display: none; } .csui-hud-row { padding: 0 10px; } }
 
+/* 녹화 표시 */
+.csui-rec { position: absolute; left: 50%; top: calc(var(--bar) + 18px); transform: translateX(-50%); z-index: 9; display: flex; align-items: center; gap: 12px; padding: 9px 12px 9px 16px; border-radius: 999px; background: rgba(0,0,0,.72); border: 1px solid var(--faint); font-size: 20px; letter-spacing: .04em; white-space: nowrap; }
+.csui-rec i { width: 12px; height: 12px; border-radius: 50%; background: #ff4a5c; animation: csui-blink 1s steps(2, start) infinite; }
+.csui .csui-rec button { padding: 5px 14px; border: 1px solid var(--faint); border-radius: 999px; font-size: 17px; }
+@keyframes csui-blink { to { visibility: hidden; } }
+.csui-stage.rec .csui-hud, .csui-stage.rec .csui-mini, .csui-stage.rec .csui-toast { display: none; }
+.csui-stage.rec, .csui-stage.rec.idle { cursor: default; }
+.csui-end .csui-note { letter-spacing: .08em; padding-left: 0; font-family: var(--sans); font-size: .86rem; color: var(--ink); }
+
 /* 엔드카드 */
 .csui-end { position: absolute; inset: 0; z-index: 8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; background: rgba(0,0,0,.78); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); animation: csui-fade .6s ease both; text-align: center; padding: 24px; }
 @keyframes csui-fade { from { opacity: 0; } to { opacity: 1; } }
