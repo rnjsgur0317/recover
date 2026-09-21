@@ -24,8 +24,9 @@
      2.77  陽  The Positive, that you've taken         검은 세계 — 흰 구체를 올려다봄, 빛 조각이 흘러나온다
      5.43  衡  The Equinox, Everything from everywhere 낮과 밤이 반반(명암 경계선) — 두 구체가 도는 아우라 전경, 음악 막대
      8.10  無  And you, now having it all, …           네 구슬이 눈앞을 스치고, 물러나며 두 구체가 한 점(ZERO)으로 나선을 그린다
-     10.77 충돌 → 제목 EQUINOX                          아우라 전체 · 명암 경계선이 글자를 가로지른다
-     14.2  모든 것이 고리 하나로 닫힘 → 14.9 ZERO(완전한 정적) → 15.22 고리가 꺼짐 → 15.5 끝
+     10.77 충돌 → 제목 EQUINOX                          두 구체가 빠르게 돌며 큰 아우라(빛기둥 · 방사 광선 · 혜성 꼬리 · 바닥 충격 고리 · 소용돌이 파편)를 내뿜는다.
+                                                        명암 경계선은 화면에 고정 — 구체는 돌아서 경계선을 넘을 때마다 흰 구 ↔ 검은 구로 뒤바뀐다(픽셀 단위)
+     13.85 나선을 그리며 가운데로 → 14.6 두 구체가 부딪혀 터짐(섬광 · 파편 · 충격파) → 깔끔하게 암전 → 15.6 끝
    규칙: 두 구체 · 구슬 · 바닥의 큰 두 원은 '절대색'(뒤집히지 않음), 그 밖의 세계는 박자의 파동 · 장면 전환 파동 · 명암 경계선에 따라 뒤집힌다.
    패스: ① 장면(구·원반·고리·원통을 해석적으로 교차, 가장자리 면적 안티앨리어싱, 바닥 반사 1회, 알파 = 절대색 표시) ② 파편 입자(배타 블렌딩) ③ 블룸 ④ 최종(파동 굴절 · 뒤집기 · 글자 · 조리개)
    전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
@@ -40,7 +41,7 @@ const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / ri
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
 
 const BEAT = 1 / 3, B0 = .10, beatT = (n) => B0 + n * BEAT;
-const T = { YIN: beatT(0), YANG: beatT(8), HENG: beatT(16), MU: beatT(24), IMPACT: beatT(32), COLLAPSE: 14.2, ZERO: 14.9, TICK: 15.22, END: 15.5 };
+const T = { YIN: beatT(0), YANG: beatT(8), HENG: beatT(16), MU: beatT(24), IMPACT: beatT(32), SPIRAL: 13.85, BURST: 14.6, END: 15.6 };
 const LINES = [
   { g: "陰", en: "The Negative, that you've granted", ko: "음 — 네가 내어 준 부정", a: T.YIN, b: T.YANG },
   { g: "陽", en: "The Positive, that you've taken", ko: "양 — 네가 거두어 간 긍정", a: T.YANG, b: T.HENG },
@@ -63,9 +64,10 @@ const FS_SCENE = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
 uniform vec2 uRes; uniform float uT; ${GLSL_CAM}
 uniform vec4 uOrb[2], uBead[4]; uniform vec3 uRingN[6]; uniform float uSpec[24];
-uniform float uFloorRot, uOrbA, uDiscR, uBars, uFloorK, uStar, uRingK; uniform vec2 uGR, uGU; uniform sampler2D uGlyph; uniform int uZero;
+uniform float uFloorRot, uOrbA, uDiscR, uBars, uFloorK, uStar, uRingK, uSwap, uAura, uPulse, uTrail; uniform vec2 uGR, uGU, uCenterS, uTermN; uniform vec4 uSat[4]; uniform sampler2D uGlyph; uniform int uZero;
 ${CSGL.NOISE}
 #define PX (2. / (uRes.y * uFocal))
+vec2 gS; float gM;                                                                     // 이 픽셀의 화면 좌표 · (제목 구간) 경계선의 어느 쪽인가: 1 = 밤 쪽 → 흰 구, 0 = 낮 쪽 → 검은 구
 float ln(float d, float w, float aa){ return clamp((w - abs(d)) / aa + .5, 0., 1.); }
 float glyph(int i, vec2 p, float lod){ if (max(abs(p.x), abs(p.y)) >= 1.) return 0.; vec2 org = vec2(float(i & 1) * .5, .5 - float(i >> 1) * .5); return textureLod(uGlyph, org + (p * .5 + .5) * .5, lod).r; }
 
@@ -79,38 +81,57 @@ vec3 bg(vec3 rd){                                                               
 }
 float star4(vec2 v, float spin){ float c = cos(spin), s = sin(spin); v = vec2(c * v.x - s * v.y, s * v.x + c * v.y); float r = length(v);      // 네 갈래 네온 별
   float a = .006 / (abs(v.x * v.y) + .006) * exp(-r * 2.6); vec2 w = vec2(v.x + v.y, v.x - v.y) * .7071; float b = .004 / (abs(w.x * w.y) + .004) * exp(-r * 5.5);
-  return a * 1.1 + b * .5 + .016 / (r * r + .008); }
+  return a * 1.1 + b * .5 + .016 / (r * r + .008) * exp(-r * 2.2); }
 
-/* 구체: 0 = 검은 구체(흑요석 유리, 가는 흰 테두리), 1 = 흰 구체(대리석 달, 가장자리가 어두움). 둘 다 안에 흰 네온 별. 반환 rgb + 덮은 정도 */
+/* 구체: 0 = 검은 구체(흑요석 유리 · 속에 도는 은하 · 흰 새김선 · 가는 흰 테두리), 1 = 흰 구체(대리석 달 · 검은 새김선 · 속에서 새는 빛). 둘 다 안에 흰 네온 별.
+   새김: 도는 대원 셋 + 눈금 띠 — 유리라서 뒷면의 새김도 옅게 비친다. 제목 구간(uSwap)에서는 구체의 색이 번호가 아니라 '경계선의 어느 쪽 픽셀인가'로 정해진다 */
+float orbPattern(vec3 q, float aaS, float tt){
+  float c1 = cos(tt), s1 = sin(tt); vec3 a1 = vec3(c1, 0., s1), a2 = normalize(vec3(.35 * s1, 1., .35 * c1)), a3 = normalize(vec3(-s1 * .7, .62, c1 * .7));
+  float l = max(max(ln(dot(q, a1), .01, aaS), ln(dot(q, a3), .006, aaS)), ln(abs(dot(q, a1)) - .06, .003, aaS));
+  float lat = dot(q, a2); vec3 u = normalize(a1 - a2 * dot(a1, a2)), w = cross(a2, u); float lon = atan(dot(q, w), dot(q, u)) / 6.2832 + tt * .15, tk = abs(fract(lon * 48.) - .5) / 48. * 6.2832 * sqrt(max(1. - lat * lat, 0.));
+  float band = max(ln(abs(lat) - .135, .005, aaS), ln(tk, .005, aaS) * step(.035, abs(lat)) * step(abs(lat), .135) * step(.5, fract(lon * 6.)));
+  return max(l, max(band, ln(lat, .004, aaS)));
+}
 vec4 orb(int k, vec3 ro, vec3 rd, out float tHit){
   tHit = 1e9; vec3 c = uOrb[k].xyz; float R = uOrb[k].w; if (R < .002) return vec4(0.);
   vec3 oc = ro - c; float tca = -dot(oc, rd); if (tca < 0.) return vec4(0.);
   vec3 v = oc + rd * tca; float d = length(v), aa = tca * PX, cov = clamp((R - d) / aa + .5, 0., 1.); if (cov <= 0.) return vec4(0.);
-  float h = sqrt(max(R * R - d * d, 0.)); tHit = tca - h; vec3 n = normalize(v - rd * h); float ndv = clamp(dot(n, -rd), 0., 1.), fres = pow(1. - ndv, 3.);
+  float h = sqrt(max(R * R - d * d, 0.)); tHit = tca - h; vec3 n = normalize(v - rd * h), nb = normalize(v + rd * h); float ndv = clamp(dot(n, -rd), 0., 1.), fres = pow(1. - ndv, 3.);
   vec2 sv = vec2(dot(v, uCam[0]), dot(v, uCam[1])) / R; float rr = length(sv), st = star4(sv * (1. + .3 * (1. - ndv)), uT * (k == 0 ? .22 : -.18)) * uStar;
-  vec3 col;
-  if (k == 0){ vec3 rf = reflect(rd, n); float hor = exp(-abs(rf.y) * 6.) * .06, neb = fbm(sv * 3. + vec2(uT * .1, -uT * .07)) * smoothstep(1., .1, rr) * .05;
-    float shell = ln(rr - .78, .006, aa / R * 1.5) * .35 + ln(rr - .9, .003, aa / R * 1.5) * .25;                                                                    // 유리 속의 가는 동심원
-    col = vec3(.003 + hor + neb + shell * (.4 + .6 * uStar)) + vec3(1.1) * fres * fres + vec3(st) * smoothstep(1.02, .25, rr); }
-  else { vec3 q = n; float a = uT * .1, ca = cos(a), sa = sin(a); q.xz = vec2(ca * q.x - sa * q.z, sa * q.x + ca * q.z); float m = fbm(q.xy * 2.4 + q.z * 1.9 + 4.), m2 = fbm(q.zy * 7. - 2.);
-    float body = (.3 + .36 * m + .1 * m2) * mix(.06, 1., pow(ndv, .6)); col = vec3(body) + vec3(st) * .8; }
-  return vec4(col, cov);
+  float aaS = aa / R * 1.6 / max(ndv, .22), tt = uT * (k == 0 ? .55 : -.45) + float(k) * 2., pf = orbPattern(n, aaS, tt) * smoothstep(.0, .25, ndv), pb = orbPattern(nb, aaS * 1.6, tt);
+  float arms = pow(.5 + .5 * cos(2. * atan(sv.y, sv.x) + log(rr + .06) * 5. - uT * (k == 0 ? 1.5 : -1.2)), 7.) * smoothstep(.98, .3, rr) * smoothstep(.02, .22, rr), neb = fbm(sv * 4. + vec2(uT * .15, -uT * .1));
+  float wh = uSwap > .5 ? gM : float(k); vec3 cB = vec3(0.), cW = vec3(0.);
+  if (wh < .999){ vec3 rf = reflect(rd, n); float hor = exp(-abs(rf.y) * 6.) * .06, shell = ln(rr - .78, .006, aa / R * 1.5) * .3 + ln(rr - .9, .003, aa / R * 1.5) * .2;
+    cB = vec3(.003 + hor + arms * neb * neb * .7 * (.5 + .5 * uStar) + shell * (.4 + .6 * uStar) + pb * .12 + pf * .62) + vec3(1.2) * fres * fres + vec3(st) * smoothstep(1.02, .25, rr); }
+  if (wh > .001){ vec3 q = n; float a = uT * .1, ca = cos(a), sa = sin(a); q.xz = vec2(ca * q.x - sa * q.z, sa * q.x + ca * q.z); float m = fbm(q.xy * 2.4 + q.z * 1.9 + 4.), m2 = fbm(q.zy * 7. - 2.);
+    float body = (.3 + .36 * m + .1 * m2) * (1. - .45 * arms * (.4 + .6 * neb)) + .22 * pow(ndv, 4.); body = mix(body, body * .6, pb * .6); body = mix(body, .012, pf * .92); body *= mix(.06, 1., pow(ndv, .6)); cW = vec3(body) + vec3(st) * .8; }
+  return vec4(mix(cB, cW, wh), cov);
+}
+vec3 corona(int k, vec3 ro, vec3 rd){                                                  // 구체 바깥으로 새는 빛: 일렁이는 불꽃 테 + 십자 섬광 (세계와 함께 뒤집힌다 → 흰 세계에서는 검은 불꽃)
+  vec3 c = uOrb[k].xyz; float R = uOrb[k].w; if (R < .002) return vec3(0.); vec3 oc = ro - c; float tca = -dot(oc, rd); if (tca < 0.) return vec3(0.);
+  vec3 v = oc + rd * tca; vec2 sv = vec2(dot(v, uCam[0]), dot(v, uCam[1])) / R; float rr = length(sv); if (rr > 3. || rr < .9) return vec3(0.);
+  float an = atan(sv.y, sv.x), fl = .5 + .5 * sin(an * 9. + uT * 1.3 + float(k) * 3.) * sin(an * 4. - uT * .7), nz = fbm(sv * 2.4 - sv / rr * uT * .9 + float(k) * 7.);
+  float flame = exp(-(rr - 1.) * (8. - 4. * nz)) * (.25 + 1.4 * fl * nz), cr = exp(-abs(sv.y) * 22.) * exp(-abs(sv.x) * 1.5) + exp(-abs(sv.x) * 26.) * exp(-abs(sv.y) * 2.4);
+  return vec3(min((flame * .42 + cr * .3) * uStar, .75) * smoothstep(3., 1.6, rr));
 }
 
 /* 바닥: 떠 있는 정사각 판 — 소용돌이 · 눈금 고리 · 큰 검은 원(陰)과 흰 원(陽) · 가운데 흰 원과 衡 */
 vec4 floorShade(vec3 p, float t, vec3 rd, out float ex){ ex = 0.;
   vec2 q = p.xz; float r = length(q), aa = t * PX / max(abs(rd.y), .06), cov = clamp((4.7 - max(abs(q.x), abs(q.y))) / aa + .5, 0., 1.); if (cov <= 0.) return vec4(0.);
   float la = atan(q.y, q.x) + log(r + .08) * 1.7 - uFloorRot; vec2 sw = vec2(cos(la), sin(la)) * (r * .8 + .5);
-  float v = fbm(sw * 1.5 + 3.), v2 = fbm(sw * 4.2 - 7.), g = (pow(v, 1.7) * 1.2 + v2 * v2 * .3) * smoothstep(4.7, 1., r) * .42 + .02;
+  float v = fbm(sw * 1.5 + 3.), v2 = fbm(sw * 4.2 - 7.), g = (pow(v, 1.7) * 1.2 + v2 * v2 * .3) * smoothstep(4.7, 1., r) * .42 * (1. + 1.6 * uAura) + .02;
   float edge = 4.7 - max(abs(q.x), abs(q.y)); g += ln(edge - .05, .012, aa) * .8 + ln(edge - .22, .004, aa) * .4;
   float an = atan(q.y, q.x) / 6.2832 + uFloorRot * .02, tk = abs(fract(an * 96.) - .5) * (6.2832 * r / 96.), tk8 = abs(fract(an * 12.) - .5) * (6.2832 * r / 12.);
   g = mix(g, .85, ln(r - 3.12, .013, aa)); g = mix(g, .6, ln(r - 3.42, .005, aa)); g = mix(g, .7, ln(tk, .007, aa) * step(3.13, r) * step(r, 3.3)); g = mix(g, .9, ln(tk8, .012, aa) * step(3.13, r) * step(r, 3.42));
   vec2 dir = vec2(cos(uOrbA), sin(uOrbA)), c0 = dir * uDiscR, c1 = -dir * uDiscR; float d0 = length(q - c0) - 1.28, d1 = length(q - c1) - 1.28, lod = log2(max(1., aa * 256. / .7));
   vec2 g0 = vec2(dot(q - c0, uGR), dot(q - c0, uGU)) / .78, g1 = vec2(dot(q - c1, uGR), dot(q - c1, uGU)) / .78, gc = vec2(dot(q, uGR), dot(q, uGU)) / .4;
-  float w1 = .95 - .93 * max(ln(d1 + .13, .009, aa), ln(d1 + .19, .003, aa)); w1 = mix(w1, .015, glyph(1, g1, lod)); g = mix(g, w1, clamp(-d1 / aa + .5, 0., 1.));
-  float b0 = .0 + .9 * max(max(ln(d0 + .13, .009, aa), ln(d0 + .19, .003, aa)), ln(d0 + .012, .012, aa)); b0 = mix(b0, .92, glyph(0, g0, lod)); g = mix(g, b0, clamp(-d0 / aa + .5, 0., 1.)); ex = max(clamp(-d0 / aa + .5, 0., 1.), clamp(-d1 / aa + .5, 0., 1.));
+  float k0 = clamp(-d0 / aa + .5, 0., 1.), k1 = clamp(-d1 / aa + .5, 0., 1.), e1 = max(ln(d1 + .13, .009, aa), ln(d1 + .19, .003, aa)), e0 = max(ln(d0 + .13, .009, aa), ln(d0 + .19, .003, aa));
+  float w1 = .95 - .93 * e1, b1 = .9 * max(e1, ln(d1 + .012, .012, aa)), w0 = .95 - .93 * e0, b0 = .9 * max(e0, ln(d0 + .012, .012, aa));
+  float disc1 = uSwap > .5 ? mix(b1, w1, gM) : mix(w1, .015, glyph(1, g1, lod)), disc0 = uSwap > .5 ? mix(b0, w0, gM) : mix(b0, .92, glyph(0, g0, lod));           // 제목 구간: 원도 경계선의 어느 쪽이냐에 따라 흑 ↔ 백
+  g = mix(g, disc1, k1); g = mix(g, disc0, k0); ex = max(k0, k1);
+  if (uAura > .001){ float rp = .7 + 4.1 * uPulse; g = mix(g, 1., ln(r - rp, .08 * (1. - uPulse), aa) * (1. - uPulse) * uAura * (1. - ex)); }                       // 구체가 경계선을 넘을 때마다 바닥으로 번지는 충격 고리
   ex *= 1. - clamp((.68 - r) / aa + .5, 0., 1.); g = mix(g, .0, ln(r - .6, .02, aa)); g = mix(g, .85, ln(r - .66, .004, aa)); float cw = mix(.96, .01, glyph(2, gc, log2(max(1., aa * 256. / .4)))); g = mix(g, cw, clamp((.52 - r) / aa + .5, 0., 1.));
-  vec3 l1 = uOrb[1].xyz - p, l0 = uOrb[0].xyz - p; g = g * (.5 + 1.5 * uOrb[1].w / (.62 * (1. + 1.3 * dot(l1, l1)))) * (1. - .7 * uOrb[0].w / (.62 * (1. + 1.8 * dot(l0, l0))));      // 흰 구체는 빛을, 검은 구체는 어둠을 드리운다
+  vec3 l1 = uOrb[1].xyz - p, l0 = uOrb[0].xyz - p; g *= mix((.5 + 1.5 * uOrb[1].w / (.62 * (1. + 1.3 * dot(l1, l1)))) * (1. - .7 * uOrb[0].w / (.62 * (1. + 1.8 * dot(l0, l0)))), 1., uSwap);      // 흰 구체는 빛을, 검은 구체는 어둠을 드리운다
   return vec4(vec3(g), cov);
 }
 
@@ -126,9 +147,14 @@ void thin(vec3 ro, vec3 rd, float tmax, inout vec3 col, inout float flag){
   for (int k = uZero; k < 2; k++){ vec3 c = uOrb[k].xyz; float R = uOrb[k].w; if (R < .002 || uRingK < .001) continue;
     for (int j = uZero; j < 3; j++){ vec3 n = uRingN[k * 3 + j]; float dn = dot(rd, n); if (abs(dn) < 1e-4) continue; float t = dot(c - ro, n) / dn; if (t < .02 || t > tmax) continue;
       vec3 p = ro + rd * t - c; float r = length(p) / R, aa = t * PX / (max(abs(dn), .12) * R), rad = j == 0 ? 1.55 : j == 1 ? 1.95 : 1.3, w = (j == 0 ? .03 : j == 1 ? .007 : .012) * uRingK, cv = ln(r - rad, w, aa);
-      if (j == 0) cv = max(cv, ln(r - rad - .09, .005, aa));
+      if (j == 0) cv = max(max(cv, ln(r - rad - .09, .005, aa)), clamp((.15 - abs(r - 1.26)) / aa + .5, 0., 1.) * (.12 + .3 * step(.5, fract(r * 38.))) * uRingK);        // 굵은 고리 안쪽의 홈이 팬 넓은 원반
       if (j == 2){ vec3 u = normalize(cross(n, vec3(.31, .9, .22))), w2 = cross(n, u); float an = atan(dot(p, w2), dot(p, u)) / 6.2832 + uT * (k == 0 ? .05 : -.05); cv *= step(.45, fract(an * 28.)); }
       if (cv <= 0.) continue; vec3 ink = flag > .5 ? vec3(step(dot(col, vec3(.333)), .35)) : vec3(1.15); col = mix(col, ink, cv); } }
+  for (int i = uZero; i < 4; i++){ vec3 c = uSat[i].xyz; float R = uSat[i].w; if (R < .002) continue; vec3 oc = ro - c; float tca = -dot(oc, rd); if (tca < .02 || tca > tmax) continue;          // 굵은 고리를 따라 도는 위성
+    float d = length(oc + rd * tca), aa = tca * PX, cv = clamp((R - d) / aa + .5, 0., 1.); if (cv <= 0.) continue; vec3 ink = flag > .5 ? vec3(step(dot(col, vec3(.333)), .35)) : vec3(1.4); col = mix(col, ink, cv); }
+  if (uTrail > .001 && abs(rd.y) > 1e-4) for (int k = uZero; k < 2; k++){ float t = (uOrb[k].y - ro.y) / rd.y; if (t < .05 || t > tmax || uOrb[k].w < .002) continue;                                    // 빠르게 도는 구체가 끄는 혜성 꼬리
+    vec3 p = ro + rd * t; float r = length(p.xz), dl = mod(uOrbA + float(k) * 3.14159 - atan(p.z, p.x), 6.2832), a = clamp(1. - dl / uTrail, 0., 1.), aa = t * PX / max(abs(rd.y), .1), wd = .36 * uOrb[k].w * a + .004;
+    float cv = ln(r - uDiscR, wd, aa) * a * .85 * step(.02, dl) * (.5 + .5 * step(.35, fract((r - uDiscR) / wd * 2.5 + .5))); if (cv <= 0.) continue; vec3 ink = flag > .5 ? vec3(step(dot(col, vec3(.333)), .35)) : vec3(1.1); col = mix(col, ink, cv); }
   for (int i = uZero; i < 4; i++){ vec3 c = uBead[i].xyz; float R = uBead[i].w; if (R < .002) continue; vec3 oc = ro - c; float tca = -dot(oc, rd); if (tca < .02 || tca > tmax + R) continue;   // 구슬: 陰 검정 · 陽 흰색 · 衡 반반 · 無 빈 고리
     vec3 v = oc + rd * tca; float d = length(v), aa = tca * PX, cv = clamp((R - d) / aa + .5, 0., 1.); if (cv <= 0.) continue;
     vec2 sv = vec2(dot(v, uCam[0]), dot(v, uCam[1])) / R; float rr = length(sv), gl = glyph(i, sv / .66, log2(max(1., aa * 256. / (R * .66)))), rim = ln(rr - .94, .06, aa / R);
@@ -144,16 +170,21 @@ void shadeOrbs(vec3 ro, vec3 rd, inout vec3 col, inout float flag, inout float t
 }
 void main(){
   vec2 s = (vUv - .5) * vec2(uRes.x / uRes.y, 1.) * 2.; vec3 ro = uCamPos, rd = normalize(uCam * vec3(s, uFocal));
-  vec3 col = bg(rd); float flag = 0., tSolid = 1e9;
+  vec3 col = bg(rd); float flag = 0., tSolid = 1e9; gS = s; gM = 1. - clamp(dot(s - uCenterS, uTermN) / (3. / uRes.y) + .5, 0., 1.);
+  if (uAura > .001){ vec2 v = s - uCenterS; float r = length(v), an = atan(v.y, v.x), ry = pow(.5 + .5 * sin(an * 7. + uOrbA), 12.) * .7 + pow(.5 + .5 * sin(an * 13. - uOrbA * 1.7 + 2.), 18.) * .6 + pow(.5 + .5 * sin(an * 29. + uOrbA * 2.3), 24.) * .4;               // 큰 아우라: 구체와 함께 도는 방사 광선
+    col += vec3(ry * (.3 + .7 * fbm(vec2(r * 2.2 - uT * 3., 3.))) * exp(-r * 1.25) * .42 + .018 / (r * r + .06)) * uAura; }
   if (rd.y < -1e-4 && ro.y > 0. && uFloorK > .001){ float t = -ro.y / rd.y; vec3 p = ro + rd * t; float ex; vec4 f = floorShade(p, t, rd, ex);
     if (f.a > 0.){ vec3 rr = vec3(rd.x, -rd.y, rd.z), rc = f.rgb; float rf = 0., rt = 1e9; shadeOrbs(p, rr, rc, rf, rt); thin(p, rr, rt, rc, rf);                 // 바닥 반사 1회
       f.rgb = mix(f.rgb, rc, .05 + .55 * pow(1. - abs(rd.y), 3.)); col = mix(col, f.rgb, f.a * uFloorK); flag = ex * f.a * uFloorK; if (f.a > .5) tSolid = t; } }
+  if (uAura > .001){ vec3 cr = cross(rd, vec3(0., 1., 0.)); float l = length(cr); if (l > 1e-3){ float dist = abs(dot(ro, cr)) / l, ys = ro.y - rd.y * dot(ro.xz, rd.xz) / dot(rd.xz, rd.xz);                    // 가운데의 빛기둥
+    col += vec3((.014 / (dist * dist + .012) + exp(-dist * 1.3) * .07) * smoothstep(-.1, .5, ys) * smoothstep(10., 3., ys) * (.75 + .25 * sin(ys * 6. - uT * 14.)) * uAura); } }
+  col += corona(0, ro, rd) + corona(1, ro, rd);
   shadeOrbs(ro, rd, col, flag, tSolid); thin(ro, rd, tSolid, col, flag);
   o = vec4(max(col, 0.), flag);
 }`;
 /* 파편: 씨앗마다 출발점 → 도착점을 잇는 휜 길을 되풀이해 난다. 배타(exclusion) 블렌딩이라 어두운 곳에선 희게, 밝은 곳에선 검게 보인다 */
 const VS_PART = `#version 300 es
-precision highp float; layout(location = 0) in vec4 aSeed; out float vA; out float vRot; uniform vec2 uRes; uniform float uT, uSize, uAmt, uBurst; uniform int uMode; uniform vec4 uOrb[2]; ${GLSL_CAM}
+precision highp float; layout(location = 0) in vec4 aSeed; out float vA; out float vRot; uniform vec2 uRes; uniform float uT, uSize, uAmt, uBurst, uSpinA; uniform int uMode; uniform vec4 uOrb[2]; ${GLSL_CAM}
 void main(){
   float life = fract(uT * (.2 + .3 * aSeed.w) + aSeed.z * 9.), a = aSeed.x * 6.2832, al = smoothstep(0., .12, life) * smoothstep(1., .8, life);
   vec3 ctr = vec3(cos(a), .04, sin(a)) * (.1 + .42 * sqrt(aSeed.y)), rnd = normalize(vec3(cos(a * 3. + aSeed.z * 5.), aSeed.y * 2. - 1., sin(a * 3. + aSeed.z * 5.))), A, B;
@@ -164,6 +195,7 @@ void main(){
   float e = life * life * (3. - 2. * life); if (uMode == 0) e = 1. - (1. - life) * (1. - life);
   vec3 side = normalize(cross(B - A, vec3(.01, 1., .02))), p = mix(A, B, e) + side * sin(life * 3.1416) * (aSeed.w - .5) * 1.4 + vec3(0., sin(life * 3.1416) * .5 * (aSeed.z - .3), 0.);
   if (uMode == 6){ p = vec3(0., 1.4, 0.) + rnd * (7. * (1. - exp(-uBurst * 2.2))) * (.25 + aSeed.w) + vec3(0., -.6 * uBurst * uBurst, 0.); al = exp(-uBurst * 1.5); }     // 충돌의 파편
+  if (uMode == 7){ float rad = mix(.5, 4.8, life) * (.55 + .65 * aSeed.y), ang = a + uSpinA * (1.15 - .13 * rad) - life * 2.; p = vec3(cos(ang) * rad, .15 + life * (.8 + 3.6 * aSeed.w), sin(ang) * rad); }   // 제목: 구체를 따라 도는 소용돌이
   vec3 v = p - uCamPos; float z = dot(v, uCam[2]); if (z < .15 || al * uAmt < .004){ gl_Position = vec4(2., 2., 0., 1.); gl_PointSize = 0.; vA = 0.; return; }
   float L = length(v); vec3 dv = v / L; for (int k = 0; k < 2; k++){ vec3 oc = uCamPos - uOrb[k].xyz; float bb = dot(oc, dv), dd = bb * bb - dot(oc, oc) + uOrb[k].w * uOrb[k].w; if (dd > 0. && -bb - sqrt(dd) > 0. && -bb - sqrt(dd) < L) al = 0.; }
   vec2 s = vec2(dot(v, uCam[0]), dot(v, uCam[1])) / z * uFocal; gl_Position = vec4(s / vec2(uRes.x / uRes.y, 1.), 0., 1.);
@@ -186,7 +218,7 @@ void main(){
   col = (col * (2.51 * col + .03)) / (col * (2.43 * col + .59) + .14); col = vec3(pow(clamp(dot(col, vec3(.3333)), 0., 1.), 1. / 2.2));
   float par = mix(worldPar(uWorldA, sc), worldPar(uWorldB, sc), clamp((uTrans.z - length(sc - uTrans.xy)) / px + .5, 0., 1.));
   for (int i = 0; i < 8; i++){ vec4 w = uWave[i]; if (w.z <= 0.) continue; float d = length(sc - w.xy), band = clamp((w.z - d) / px + .5, 0., 1.) * (1. - clamp((w.w - d) / px + .5, 0., 1.)); par = par + band - 2. * par * band; }
-  col = mix(col, 1. - col, par * (1. - s0.a));                                                          // 뒤집기 (두 구체 · 구슬은 절대색)
+  col = mix(col, 1. - col, par * (1. - s0.a)); col = mix(col, vec3(1.), clamp(uFlash * .85, 0., 1.));                                                          // 뒤집기 (두 구체 · 구슬은 절대색)
   vec4 tx = texture(uTxt, vUv); float plate = tx.g * tx.a, tcov = tx.r * tx.a; vec3 pc = vec3(1. - par), au = vec3(smoothstep(.62, .38, col.r));   // 글자: 판(초록 채널)은 세계의 반대색, 글자(빨강 채널)는 바탕의 반대색
   col = mix(col, pc, plate); col = mix(col, plate > .5 ? 1. - pc : au, tcov);
   col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * .04; col *= 1. - smoothstep(.55, 1.25, length((vUv - .5) * vec2(1.1, 1.))) * .35;
@@ -234,7 +266,7 @@ function drawText(t) {
     const kk = eOut(seg(t, L.a + .45, L.a + .9)) * out; if (kk > 0) { tg.font = `400 ${.215 * U}px ${KSERIF}`; tg.textAlign = "center"; const track = .05 * U, kw = [...L.ko].reduce((a, c) => a + tg.measureText(c).width + track, -track), kh = .5 * U, ky = y + ph / 2 + kh / 2 + .08 * U;
       tg.globalAlpha = 1; tg.fillStyle = PLATE; tg.fillRect(cx - (kw / 2 + .3 * U) * kk, ky - kh / 2, (kw + .6 * U) * kk, kh); tg.fillStyle = ONPLATE; tg.globalAlpha = kk; spaced(L.ko, cx, ky + .01 * U, track); }
     tg.fillStyle = tg.strokeStyle = INK; });
-  if (t >= T.IMPACT && t < T.ZERO) {                                                                    // 제목
+  if (t >= T.IMPACT && t < T.END) {                                                                    // 제목
     const s = t - T.IMPACT, name = "EQUINOX", px = 1.3 * U, track = .62 * U; tg.font = `500 ${px}px ${DIDONE}`; tg.textAlign = "center";
     const ws = [...name].map((c) => tg.measureText(c).width), tw = ws.reduce((a, b) => a + b, 0) + track * (name.length - 1); let x = cx - tw / 2; const y = cy - 2.55 * U;
     [...name].forEach((c, i) => { const born = .06 + Math.abs(i - 3) * .07, k = eOut(seg(s, born, born + .5)); tg.globalAlpha = k; tg.font = `500 ${px * (1.25 - .25 * k)}px ${DIDONE}`; tg.lineWidth = .02 * U; tg.lineJoin = "round"; tg.strokeText(c, x + ws[i] / 2, y + (1 - k) * -.3 * U); tg.fillText(c, x + ws[i] / 2, y + (1 - k) * -.3 * U); x += ws[i] + track; });
@@ -255,14 +287,17 @@ function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross
 function aim(pos, tgt, sx, sy, focal, roll) { const c0 = camera(pos, tgt, 0), d = Math.hypot(...sub(tgt, pos)); return camera(pos, sub(sub(tgt, mul(c0.r, d * sx / focal)), mul(c0.u, d * sy / focal)), roll); }
 function proj(S, p) { const v = sub(p, S.cam.pos), z = Math.max(.05, dot(v, S.cam.f)); return [dot(v, S.cam.r) / z * S.focal, dot(v, S.cam.u) / z * S.focal]; }
 const ORB_R = .62, ORBIT = 1.75, ORB_H = 1.5, HEAD = [0, 1.7, 0];
-function orbitAngle(t) { if (t >= T.IMPACT) return .95 + PI / 2 + .25 + .2 * (t - T.IMPACT); const x = Math.max(0, t - T.MU); return .9 + .42 * t + .5 * x * x * x; }
+const TH0 = .95, spinW = (s) => 4.71 + 1.6 * s + 14 * Math.max(0, s - (T.SPIRAL - T.IMPACT)), spinA = (s) => 4.71 * s + .8 * s * s + 7 * Math.pow(Math.max(0, s - (T.SPIRAL - T.IMPACT)), 2);   // 제목 구간의 회전: 처음부터 빠르고 점점 더 빨라진다
+function orbitAngle(t) { if (t >= T.IMPACT) return TH0 + PI / 2 + spinA(Math.min(t, T.BURST) - T.IMPACT); const x = Math.max(0, t - T.MU); return .9 + .42 * t + .5 * x * x * x; }
 function state(t) {
-  const S = { focal: 1.6, mode: 0, amt: 1, bars: 1, floorK: 1, ringK: 1, beadR: .1, beadOrbit: .5 };
+  const S = { focal: 1.6, mode: 0, amt: 1, bars: 1, floorK: 1, ringK: 1, beadR: .1, beadOrbit: .5, swap: 0, aura: 0, trail: 0, pulse: 0, omega: 5, termN: [1, 0] };
   const A = orbitAngle(t), bp = Math.exp(-((((t - B0) / BEAT) % 1 + 1) % 1) * 5) * (t < T.IMPACT ? 1 : Math.max(0, 1 - (t - T.IMPACT) / 3));
   let orbit = ORBIT, R0 = ORB_R, R1 = ORB_R, h = ORB_H, cam;
   if (t < T.MU) { R0 *= eBack(seg(t, T.YIN, T.YIN + .3)); }
   else if (t < T.IMPACT) { const x = seg(t, T.MU, T.IMPACT); orbit = lerp(ORBIT, .0, eIn(x)); h = lerp(ORB_H, 1.4, x); }
-  else { const s = t - T.IMPACT, k = eBack(seg(s, 0, .5)), c = eIn(seg(t, T.COLLAPSE, T.ZERO)); orbit = ORBIT * eOut(seg(s, 0, .7)) * (1 - c); R0 = R1 = ORB_R * k * (1 - c); h = lerp(1.4, ORB_H, eOut(seg(s, 0, .7))); S.bars = 1 - c; }
+  else { const s = t - T.IMPACT, k = eBack(seg(s, 0, .5)), c = eIn(seg(t, T.SPIRAL, T.BURST)), gone = t >= T.BURST; orbit = ORBIT * eOut(seg(s, 0, .7)) * (1 - c); R0 = R1 = gone ? 0 : ORB_R * k * (1 + .25 * c); h = lerp(1.4, ORB_H, eOut(seg(s, 0, .7))); S.bars = gone ? 1 - seg(t, T.BURST, T.BURST + .2) : 1;
+    S.swap = 1; S.aura = gone ? 1 - seg(t, T.BURST, T.BURST + .3) : eOut(seg(s, .05, .9)) * (1 + .6 * c); S.trail = gone ? 0 : 2.5 * eOut(seg(s, .1, .8)); const ze = .2 * Math.sin(s * .8); S.termN = [Math.cos(ze), Math.sin(ze)];
+    const ph = (A - (TH0 + .07 * s)) / PI; S.pulse = ph - Math.floor(ph); S.omega = spinW(s); }
   const dir = [Math.cos(A), 0, Math.sin(A)]; S.A = A; S.orbit = orbit;
   S.orb = [[dir[0] * orbit, h + .08 * Math.sin(t * 1.3), dir[2] * orbit, R0], [-dir[0] * orbit, h + .08 * Math.sin(t * 1.3 + 2), -dir[2] * orbit, R1]];
   const hand = [Math.sin(t * 1.3) * .015 + Math.sin(t * 3.1) * .006, Math.cos(t * 1.1) * .012, Math.sin(t * .9) * .01];
@@ -275,12 +310,13 @@ function state(t) {
   else if (t < T.IMPACT) { const x = seg(t, T.MU, T.IMPACT), psi = 1.2 + .55 * (t - T.MU), f = [Math.cos(psi), 0, Math.sin(psi)], back = eIn(seg(x, .3, 1));   // 無: '나'의 자리에서 구슬을 보다가, 뒤로 물러나 한 점을 내려다봄
     const pos = add(add(HEAD, mul(f, -8.5 * back)), [0, 3.4 * back, 0]); cam = camera(pos, mix3(add(pos, f), [0, 1.2, 0], eInOut(seg(x, .25, .7))), .05 * (1 - back)); S.focal = lerp(1.15, 1.8, back); S.mode = 4; S.amt = 1.4; S.beadOrbit = .62; S.beadR = .085; }
   else { const s = t - T.IMPACT, th = .95 + .07 * s;                                                                              // 제목: 아우라 전체
-    cam = camera([Math.cos(th) * (6.7 + .3 * s), 3.5 + .08 * s, Math.sin(th) * (6.7 + .3 * s)], [0, 2.25, 0], 0); S.focal = 1.85; S.mode = 0; S.amt = 1 - eIn(seg(t, T.COLLAPSE, T.ZERO)); }
+    cam = camera([Math.cos(th) * (6.7 + .3 * s), 3.5 + .08 * s, Math.sin(th) * (6.7 + .3 * s)], [0, 2.25, 0], 0); S.focal = 1.85; S.mode = 7; S.amt = t >= T.BURST ? 0 : 1.2; }
   cam.pos = add(cam.pos, hand); S.cam = cam; S.bp = bp;
-  const ba = -t * 1.15; S.bead = [0, 1, 2, 3].map((i) => { const a = ba + i * TAU / 4, c = t >= T.COLLAPSE ? 1 - eIn(seg(t, T.COLLAPSE, T.ZERO)) : 1; return [HEAD[0] + Math.cos(a) * S.beadOrbit * c, HEAD[1] + .06 * Math.sin(t * 2 + i * 1.7), HEAD[2] + Math.sin(a) * S.beadOrbit * c, S.beadR * c * (t < T.HENG ? 0 : 1)]; });
+  const ba = -t * 1.15; S.bead = [0, 1, 2, 3].map((i) => { const a = ba + i * TAU / 4, c = t >= T.BURST ? 0 : t >= T.SPIRAL ? 1 - eIn(seg(t, T.SPIRAL, T.BURST)) : 1; return [HEAD[0] + Math.cos(a) * S.beadOrbit * c, HEAD[1] + .06 * Math.sin(t * 2 + i * 1.7), HEAD[2] + Math.sin(a) * S.beadOrbit * c, S.beadR * c * (t < T.HENG ? 0 : 1)]; });
   const tilt = (n, ax, ang) => { const c = Math.cos(ang), s = Math.sin(ang), d = dot(ax, n), cr = cross(ax, n); return norm([n[0] * c + cr[0] * s + ax[0] * d * (1 - c), n[1] * c + cr[1] * s + ax[1] * d * (1 - c), n[2] * c + cr[2] * s + ax[2] * d * (1 - c)]); };
-  S.ringN = []; for (let k = 0; k < 2; k++) { const sg = k ? -1 : 1, sp = 1 + 1.5 * (t >= T.MU && t < T.IMPACT ? eIn(seg(t, T.MU, T.IMPACT)) : 0);                          // 구체마다 고리 셋: 굵은 고리 · 큰 실고리 · 점선 고리
+  S.ringN = []; for (let k = 0; k < 2; k++) { const sg = k ? -1 : 1, sp = t >= T.IMPACT ? 3 : 1 + 1.5 * (t >= T.MU ? eIn(seg(t, T.MU, T.IMPACT)) : 0);                          // 구체마다 고리 셋: 굵은 고리 · 큰 실고리 · 점선 고리
     S.ringN.push(tilt(tilt([0, 1, 0], [1, 0, 0], .42 * sg), [0, 1, 0], t * .5 * sg * sp + k * 2), tilt(tilt([0, 1, 0], [0, 0, 1], 1.05), [0, 1, 0], -t * .8 * sg * sp + k), tilt(tilt([0, 1, 0], [1, 0, 0], -1.25 * sg), [0, 1, 0], t * 1.1 * sp + k * 4)); }
+  S.sat = []; for (let k = 0; k < 2; k++) { const n = S.ringN[k * 3], u = norm(cross(n, [.31, .9, .22])), w = cross(n, u), o = S.orb[k]; for (let m = 0; m < 2; m++) { const a = t * (1.7 + .6 * k) * (k ? -1 : 1) + m * PI + k, r = 1.55 * o[3]; S.sat.push([o[0] + (u[0] * Math.cos(a) + w[0] * Math.sin(a)) * r, o[1] + (u[1] * Math.cos(a) + w[1] * Math.sin(a)) * r, o[2] + (u[2] * Math.cos(a) + w[2] * Math.sin(a)) * r, .085 * o[3]]); } }   // 굵은 고리 위를 도는 위성 둘씩
   S.orbS = [proj(S, S.orb[0]), proj(S, S.orb[1])]; S.centerS = proj(S, [0, 1.2, 0]);
   return S;
 }
@@ -289,35 +325,37 @@ const WORLDS = [{ t: -9, w: [0, 0] }, { t: T.YIN, w: [1, 0], src: 0 }, { t: T.YA
 function fx(t, S) {
   const srcs = [S.orbS[0], S.orbS[1], S.centerS], W = [];
   let ci = 0; for (let i = 0; i < WORLDS.length; i++) if (t >= WORLDS[i].t) ci = i; const cur = WORLDS[ci], prev = WORLDS[Math.max(0, ci - 1)], tk = seg(t, cur.t, cur.t + .5), tc = srcs[cur.src || 0];
-  let dn = sub([S.orbS[0][0], S.orbS[0][1], 0], [S.orbS[1][0], S.orbS[1][1], 0]); const dl = Math.hypot(dn[0], dn[1]); dn = dl > .02 ? [dn[0] / dl, dn[1] / dl] : [1, 0];                   // 경계선: 검은 구체 쪽이 낮(흰 세계)
+  let dn = sub([S.orbS[0][0], S.orbS[0][1], 0], [S.orbS[1][0], S.orbS[1][1], 0]); const dl = Math.hypot(dn[0], dn[1]); dn = dl > .02 ? [dn[0] / dl, dn[1] / dl] : [1, 0]; if (S.swap) dn = S.termN;                   // 제목 구간: 경계선은 화면에 고정(오른쪽이 낮)                   // 경계선: 검은 구체 쪽이 낮(흰 세계)
   const beats = []; for (let n = 1; n < 40; n++) if (n % 8 || n >= 24) beats.push(n); beats.push(30.5, 31.5, 29.5);
-  for (const n of beats) { const tb = beatT(n), age = (t - tb) / .7; if (age < 0 || age >= 1 || t >= T.COLLAPSE) continue; if (n >= 32 && t < T.IMPACT) continue; if (n < 32 && t >= T.IMPACT) continue;
+  for (const n of beats) { const tb = beatT(n), age = (t - tb) / .7; if (age < 0 || age >= 1 || n > 32) continue; if (n >= 32 && t < T.IMPACT) continue; if (n < 32 && t >= T.IMPACT) continue;
     const amp = n < 32 ? (n % 1 ? .6 : 1) : Math.max(0, 1 - (n - 32) / 6) * 1.3, src = n < 8 ? srcs[0] : n < 16 ? srcs[1] : n < 24 ? srcs[n % 2] : n < 32 ? S.centerS : n === 32 ? S.centerS : srcs[n % 2];
     const rOut = (n === 32 ? 5 : 3.7) * age * (1.15 - .15 * age), th = (n === 32 ? .6 : .32) * (1 - age) * amp; if (th > .004 && W.length < 8) W.push([src[0], src[1], rOut, Math.max(.0005, rOut - th)]); }
+  if (t >= T.IMPACT + .2 && t < T.BURST) for (let j = 0; j < 3; j++) { const ageT = (S.pulse + j) * PI / S.omega, age = ageT / .55; if (age >= 1 || t - ageT < T.IMPACT + .1 || W.length >= 8) continue; const rOut = 4.4 * age; W.push([S.centerS[0], S.centerS[1], rOut, Math.max(.0005, rOut - .3 * (1 - age))]); }   // 구체가 경계선을 넘을 때마다(반 바퀴) 가운데에서 뒤집힘의 파동
+  if (t >= T.BURST) for (let j = 0; j < 3; j++) { const age = (t - T.BURST - j * .08) / .5; if (age < 0 || age >= 1 || W.length >= 8) continue; const rOut = 6.5 * age; W.push([S.centerS[0], S.centerS[1], rOut, Math.max(.0005, rOut - .9 * (1 - age))]); }                                        // 터지는 충격파
   return { waves: W, worldA: [prev.w[0], prev.w[1], dn[0], dn[1]], worldB: [cur.w[0], cur.w[1], dn[0], dn[1]], trans: [tc[0], tc[1], tk >= 1 ? 9 : 5 * eOut(tk)] };
 }
 function render(t) {
   drawText(t);
   const S = state(t), F = fx(t, S), gl = X.gl, pw = glc.width, ph = glc.height, sw = RT.scene.w, sh = RT.scene.h, lvl = dat(D.lvl, t), hitv = dat(D.hit, t), sp = spectrum(t);
   X.upload(txtTex, tcv, false); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
-  const camM = new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f]), orbs = new Float32Array([...S.orb[0], ...S.orb[1]]), beads = new Float32Array(S.bead.flat()), rn = new Float32Array(S.ringN.flat());
+  const spun = t >= T.IMPACT ? spinA(Math.min(t, T.BURST) - T.IMPACT) : 0, camM = new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f]), sats = new Float32Array(S.sat.flat()), orbs = new Float32Array([...S.orb[0], ...S.orb[1]]), beads = new Float32Array(S.bead.flat()), rn = new Float32Array(S.ringN.flat());
   const setCam = (u) => { gl.uniform3f(u.uCamPos, S.cam.pos[0], S.cam.pos[1], S.cam.pos[2]); gl.uniformMatrix3fv(u.uCam, false, camM); gl.uniform1f(u.uFocal, S.focal); };
   const fr = norm([S.cam.f[0], 0, S.cam.f[2]]), rr = norm([S.cam.r[0], 0, S.cam.r[2]]);
   X.pass(P.scene(), RT.scene, (u) => { gl.uniform2f(u.uRes, sw, sh); gl.uniform1f(u.uT, t); setCam(u); gl.uniform4fv(u.uOrb, orbs); gl.uniform4fv(u.uBead, beads); gl.uniform3fv(u.uRingN, rn); gl.uniform1fv(u.uSpec, sp); gl.uniform1i(u.uZero, 0);
-    gl.uniform1f(u.uFloorRot, t * .25); gl.uniform1f(u.uOrbA, S.A); gl.uniform1f(u.uDiscR, S.orbit); gl.uniform1f(u.uBars, S.bars * (.85 + .3 * S.bp)); gl.uniform1f(u.uFloorK, S.floorK * seg(t, 0, T.YIN + .05)); gl.uniform1f(u.uStar, .85 + .7 * S.bp + .5 * lvl); gl.uniform1f(u.uRingK, S.ringK);
+    gl.uniform1f(u.uFloorRot, t * .25 + spun * .35); gl.uniform1f(u.uSwap, S.swap); gl.uniform1f(u.uAura, S.aura); gl.uniform1f(u.uPulse, S.pulse); gl.uniform1f(u.uTrail, S.trail); gl.uniform2f(u.uCenterS, S.centerS[0], S.centerS[1]); gl.uniform2f(u.uTermN, S.termN[0], S.termN[1]); gl.uniform4fv(u.uSat, sats); gl.uniform1f(u.uOrbA, S.A); gl.uniform1f(u.uDiscR, S.orbit); gl.uniform1f(u.uBars, S.bars * (.85 + .3 * S.bp)); gl.uniform1f(u.uFloorK, S.floorK * seg(t, 0, T.YIN + .05)); gl.uniform1f(u.uStar, .85 + .7 * S.bp + .5 * lvl + .25 * S.aura); gl.uniform1f(u.uRingK, S.ringK);
     gl.uniform2f(u.uGR, rr[0], rr[2]); gl.uniform2f(u.uGU, fr[0], fr[2]); X.bindTex(0, glyTex, u.uGlyph); });
   { X.bind(RT.scene); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE_MINUS_DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); const pp = P.part(); gl.useProgram(pp.p); gl.bindVertexArray(seedVAO); gl.uniform2f(pp.u.uRes, sw, sh); gl.uniform1f(pp.u.uT, t); gl.uniform1f(pp.u.uSize, 26 * sh / 720 * S.focal);
-    gl.uniform4fv(pp.u.uOrb, orbs); setCam(pp.u); gl.uniform1i(pp.u.uMode, S.mode); gl.uniform1f(pp.u.uAmt, S.amt * seg(t, T.YIN, T.YIN + .4)); gl.uniform1f(pp.u.uBurst, 0); gl.drawArrays(gl.POINTS, 0, S.mode === 0 ? 420 : 700);
-    if (t >= T.IMPACT && t < T.IMPACT + 3) { gl.uniform1i(pp.u.uMode, 6); gl.uniform1f(pp.u.uAmt, 1); gl.uniform1f(pp.u.uBurst, t - T.IMPACT); gl.drawArrays(gl.POINTS, 700, 700); }
+    gl.uniform4fv(pp.u.uOrb, orbs); setCam(pp.u); gl.uniform1i(pp.u.uMode, S.mode); gl.uniform1f(pp.u.uAmt, S.amt * seg(t, T.YIN, T.YIN + .4)); gl.uniform1f(pp.u.uBurst, 0); gl.uniform1f(pp.u.uSpinA, S.A); gl.drawArrays(gl.POINTS, 0, 700);
+    for (const b of [T.IMPACT, T.BURST]) if (t >= b && t < b + 2.5) { gl.uniform1i(pp.u.uMode, 6); gl.uniform1f(pp.u.uAmt, 1); gl.uniform1f(pp.u.uBurst, (t - b) * (b === T.BURST ? 1.6 : 1)); gl.drawArrays(gl.POINTS, 700, 700); }
     gl.bindVertexArray(null); gl.disable(gl.BLEND); }
   const bloomTex = X.bloom(RT.scene.tex, .9), r0 = rng(Math.floor(t * 60));
-  const flash = Math.max(pulse(t, T.IMPACT, .03, .7), .3 * pulse(t, T.YIN, .02, .3)), hit = .5 * pulse(t, T.IMPACT, .02, .9) + .08 * hitv * (t < T.IMPACT ? 1 : .4), zc = t >= T.COLLAPSE;
-  const ir = zc ? (t < T.ZERO ? lerp(2.6, .11, eInOut(seg(t, T.COLLAPSE, T.ZERO))) : t < T.TICK ? .11 : .11 * (1 - eOut(seg(t, T.TICK, T.TICK + .09)))) : 99;
+  const flash = Math.max(pulse(t, T.IMPACT, .03, .7), 1.25 * pulse(t, T.BURST, .03, .55), .3 * pulse(t, T.YIN, .02, .3)), hit = .5 * pulse(t, T.IMPACT, .02, .9) + .8 * pulse(t, T.BURST, .02, .6) + .25 * eIn(seg(t, T.SPIRAL, T.BURST)) * (t < T.BURST ? 1 : 0) + .08 * hitv * (t < T.IMPACT ? 1 : .4);
+  const ir = 99, cross = t >= T.IMPACT && t < T.BURST ? Math.exp(-S.pulse * PI / S.omega * 9) : 0;                          // 경계선을 넘는 순간의 출렁임
   const wv = new Float32Array(32); F.waves.forEach((w, i) => wv.set(w, i * 4));
   X.pass(P.final(), null, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); X.bindTex(2, txtTex, u.uTxt); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t);
-    gl.uniform2f(u.uShake, (r0() - .5) * hit * .016, (r0() - .5) * hit * .016 - .004 * S.bp); gl.uniform1f(u.uZoom, 1 + .022 * S.bp + .05 * pulse(t, T.IMPACT, .02, .6)); gl.uniform1f(u.uBloomK, .45);
-    gl.uniform1f(u.uFlash, flash * flash); gl.uniform1f(u.uFade, t < T.YIN - .02 || t >= T.END - .12 ? 1 : 0); gl.uniform4fv(u.uWave, wv); gl.uniform4fv(u.uWorldA, F.worldA); gl.uniform4fv(u.uWorldB, F.worldB); gl.uniform3fv(u.uTrans, F.trans);
-    gl.uniform2f(u.uCenterS, S.centerS[0], S.centerS[1]); gl.uniform3f(u.uIris, S.centerS[0], S.centerS[1], ir); gl.uniform1f(u.uZeroRing, t >= T.ZERO ? 1 : 0); });
+    gl.uniform2f(u.uShake, (r0() - .5) * hit * .016, (r0() - .5) * hit * .016 - .004 * S.bp); gl.uniform1f(u.uZoom, 1 + .022 * S.bp + .018 * cross + .05 * pulse(t, T.IMPACT, .02, .6) + .07 * pulse(t, T.BURST, .02, .5)); gl.uniform1f(u.uBloomK, .45);
+    gl.uniform1f(u.uFlash, flash * flash); gl.uniform1f(u.uFade, t < T.YIN - .02 ? 1 : eInOut(seg(t, T.BURST + .22, T.BURST + .8))); gl.uniform4fv(u.uWave, wv); gl.uniform4fv(u.uWorldA, F.worldA); gl.uniform4fv(u.uWorldB, F.worldB); gl.uniform3fv(u.uTrans, F.trans);
+    gl.uniform2f(u.uCenterS, S.centerS[0], S.centerS[1]); gl.uniform3f(u.uIris, S.centerS[0], S.centerS[1], ir); gl.uniform1f(u.uZeroRing, 0); });
 }
 
 /* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
