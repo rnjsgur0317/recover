@@ -58,7 +58,10 @@ h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
 /* 컷씬 목록 — 새로 만들면 여기에 추가. page 는 ?autoplay=1 을 지원하는 컷씬 페이지여야 함
    (끝나면 parent 로 { type: "cutscene-done" } 메시지를 보냄) */
 const CUTSCENES = [
-  { id: "equinox", title: "EQUINOX", ko: "이쿼녹스 · 陰陽", page: "/equinox_preview.html", thumb: "/thumbs/equinox.jpg", dur: "0:21",
+  { id: "equinox-gl", title: "EQUINOX", ko: "陰陽 · WebGL 고품질판", page: "/equinox_gl.html", thumb: "/thumbs/equinox_gl.jpg", dur: "0:21",
+    desc: "같은 연출을 GPU 파이프라인으로. 먹이 번지듯 일렁이는 경계, 바탕을 뒤집는 GPU 입자, 어두운 쪽에서만 빛나는 블룸·갓레이, 박자마다 출렁이는 충격파, 한지·먹 질감.",
+    tags: ["WebGL2", "음악 동기", "후처리"], needsAudio: true },
+  { id: "equinox", title: "EQUINOX", ko: "陰陽 · 2D 원본 (비교용)", page: "/equinox_preview.html", thumb: "/thumbs/equinox.jpg", dur: "0:21",
     desc: "거대한 태극의 안쪽에서 시작해, 음과 양이 맞물려 하나가 되는 순간. 90BPM 3/4박 음악에 박자 단위로 맞춘 흑백 연출.",
     tags: ["음악 동기", "흑백", "태극 · 팔괘"], needsAudio: true },
   { id: "luminosity-gl", title: "LUMINOSITY", ko: "광휘 · WebGL 고품질판", page: "/luminosity_gl.html", thumb: "/thumbs/luminosity_gl.jpg", dur: "0:28",
