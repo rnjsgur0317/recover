@@ -24,8 +24,8 @@
      2.77  陽  The Positive, that you've taken         검은 세계 — 흰 구체를 올려다봄, 빛 조각이 흘러나온다
      5.43  衡  The Equinox, Everything from everywhere 낮과 밤이 반반(명암 경계선) — 두 구체가 도는 아우라 전경, 음악 막대
      8.10  無  And you, now having it all, …           네 구슬이 눈앞을 스치고, 물러나며 두 구체가 한 점(ZERO)으로 나선을 그린다
-     10.77 충돌 → 제목 EQUINOX                          두 구체가 멈추지 않고 돌되 박마다 힘을 받아 출렁이듯(한 박에 1/4 바퀴) 돌며 큰 아우라(빛기둥 · 방사 광선 · 혜성 꼬리 · 바닥 충격 고리 · 소용돌이 파편)를 내뿜는다.
-                                                        명암 경계선은 화면에 고정 — 구체는 돌아서 경계선을 넘을 때마다 흰 구 ↔ 검은 구로 뒤바뀐다(픽셀 단위)
+     10.77 충돌 → 제목 EQUINOX                          두 구체가 멈추지 않고 돌되 박마다 힘을 받아 출렁이듯(한 박에 1/3 바퀴) 돌며 큰 아우라(빛기둥 · 방사 광선 · 혜성 꼬리 · 바닥 충격 고리 · 소용돌이 파편)를 내뿜는다.
+                                                        튕길 때마다(박마다) 가운데에서 퍼지는 파동이 세계와 구체의 흑백을 통째로 뒤집는다: 흰 구 → 검은 구, 검은 구 → 흰 구
      13.77 두 배 빠르게 돌며 가운데로 → 14.43 두 구체가 부딪혀 터짐(섬광 · 파편 · 충격파, 효과음 없이 원곡 잔향만) → 깔끔하게 암전 → 15.4 끝
    규칙: 두 구체 · 구슬 · 바닥의 큰 두 원은 '절대색'(뒤집히지 않음), 그 밖의 세계는 박자의 파동 · 장면 전환 파동 · 명암 경계선에 따라 뒤집힌다.
    패스: ① 장면(구·원반·고리·원통을 해석적으로 교차, 가장자리 면적 안티앨리어싱, 바닥 반사 1회, 알파 = 절대색 표시) ② 파편 입자(배타 블렌딩) ③ 블룸 ④ 최종(파동 굴절 · 뒤집기 · 글자 · 조리개)
@@ -64,10 +64,10 @@ const FS_SCENE = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
 uniform vec2 uRes; uniform float uT; ${GLSL_CAM}
 uniform vec4 uOrb[2], uBead[4]; uniform vec3 uRingN[6]; uniform float uSpec[24];
-uniform float uFloorRot, uOrbA, uDiscR, uBars, uFloorK, uStar, uRingK, uSwap, uAura, uPulse, uTrail; uniform vec2 uGR, uGU, uCenterS, uTermN; uniform vec4 uSat[4]; uniform sampler2D uGlyph; uniform int uZero;
+uniform float uFloorRot, uOrbA, uDiscR, uBars, uFloorK, uStar, uRingK, uSwap, uAura, uPulse, uTrail; uniform vec2 uGR, uGU, uCenterS; uniform vec4 uSat[4], uWorldA, uWorldB; uniform vec3 uTrans; uniform sampler2D uGlyph; uniform int uZero;
 ${CSGL.NOISE}
 #define PX (2. / (uRes.y * uFocal))
-vec2 gS; float gM;                                                                     // 이 픽셀의 화면 좌표 · (제목 구간) 경계선의 어느 쪽인가: 1 = 밤 쪽 → 흰 구, 0 = 낮 쪽 → 검은 구
+vec2 gS; float gM;                                                                     // 이 픽셀의 화면 좌표 · (제목 구간) 이 픽셀의 세계: 1 = 밤 → 흰 구, 0 = 낮 → 검은 구
 float ln(float d, float w, float aa){ return clamp((w - abs(d)) / aa + .5, 0., 1.); }
 float glyph(int i, vec2 p, float lod){ if (max(abs(p.x), abs(p.y)) >= 1.) return 0.; vec2 org = vec2(float(i & 1) * .5, .5 - float(i >> 1) * .5); return textureLod(uGlyph, org + (p * .5 + .5) * .5, lod).r; }
 
@@ -170,7 +170,8 @@ void shadeOrbs(vec3 ro, vec3 rd, inout vec3 col, inout float flag, inout float t
 }
 void main(){
   vec2 s = (vUv - .5) * vec2(uRes.x / uRes.y, 1.) * 2.; vec3 ro = uCamPos, rd = normalize(uCam * vec3(s, uFocal));
-  vec3 col = bg(rd); float flag = 0., tSolid = 1e9; gS = s; gM = 1. - clamp(dot(s - uCenterS, uTermN) / (3. / uRes.y) + .5, 0., 1.);
+  vec3 col = bg(rd); float flag = 0., tSolid = 1e9; gS = s; { float pw = 3. / uRes.y, sd = clamp(dot(s - uCenterS, uWorldA.zw) / pw + .5, 0., 1.), pa = uWorldA.x + sd - 2. * uWorldA.x * sd, pb = uWorldB.x + sd - 2. * uWorldB.x * sd;
+    gM = 1. - mix(pa, pb, clamp((uTrans.z - length(s - uTrans.xy)) / pw + .5, 0., 1.)); }                                   // 이 픽셀의 세계가 밤이면 흰 구, 낮이면 검은 구
   if (uAura > .001){ vec2 v = s - uCenterS; float r = length(v), an = atan(v.y, v.x), ry = pow(.5 + .5 * sin(an * 7. + uOrbA), 12.) * .7 + pow(.5 + .5 * sin(an * 13. - uOrbA * 1.7 + 2.), 18.) * .6 + pow(.5 + .5 * sin(an * 29. + uOrbA * 2.3), 24.) * .4;               // 큰 아우라: 구체와 함께 도는 방사 광선
     col += vec3(ry * (.3 + .7 * fbm(vec2(r * 2.2 - uT * 3., 3.))) * exp(-r * 1.25) * .42 + .018 / (r * r + .06)) * uAura; }
   if (rd.y < -1e-4 && ro.y > 0. && uFloorK > .001){ float t = -ro.y / rd.y; vec3 p = ro + rd * t; float ex; vec4 f = floorShade(p, t, rd, ex);
@@ -288,9 +289,9 @@ function aim(pos, tgt, sx, sy, focal, roll) { const c0 = camera(pos, tgt, 0), d 
 function proj(S, p) { const v = sub(p, S.cam.pos), z = Math.max(.05, dot(v, S.cam.f)); return [dot(v, S.cam.r) / z * S.focal, dot(v, S.cam.u) / z * S.focal]; }
 const ORB_R = .62, ORBIT = 1.75, ORB_H = 1.5, HEAD = [0, 1.7, 0];
 const TH0 = .95, surge = (f) => .3 * f + .7 * (1 - Math.exp(-3.2 * f)) / (1 - Math.exp(-3.2));                                    // 박마다 받는 힘: 박 머리에서 빠르고 점점 느려지지만 멈추지는 않는다
-function spin(t) {                                                                                       // 제목 구간의 회전: 한 박에 1/4 바퀴(나선 구간은 반 박에 1/4 바퀴) — 두 구체는 두 박마다 경계선을 넘는다(항상 박 위에서)
-  const tt = Math.min(t, T.BURST - 1e-4), fast = tt >= T.SPIRAL, len = fast ? BEAT / 2 : BEAT, base = fast ? T.SPIRAL : T.IMPACT, n0 = fast ? Math.round((T.SPIRAL - T.IMPACT) / BEAT) : 0, q = (tt - base) / len, n = Math.floor(q), f = q - n, g = n0 + n;
-  const since = g % 2 ? f * len : g === 0 ? 9 : (f + 1) * len; return { turns: (g + surge(f)) / 2, since: since + Math.max(0, t - T.BURST), len: len * 2 };   // turns = 반 바퀴 단위, since = 마지막으로 경계선을 넘은 뒤 흐른 시간
+function spin(t) {                                                                                       // 제목 구간의 회전: 한 박에 1/3 바퀴(나선 구간은 반 박에 1/3 바퀴). g = 지금까지 튕긴 횟수 → 튕길 때마다 흑백이 뒤집힌다
+  const tt = Math.min(t, T.BURST - 1e-4), fast = tt >= T.SPIRAL, len = fast ? BEAT / 2 : BEAT, base = fast ? T.SPIRAL : T.IMPACT, n0 = fast ? Math.round((T.SPIRAL - T.IMPACT) / BEAT) : 0, q = (tt - base) / len, n = Math.floor(q), f = q - n;
+  return { turns: (n0 + n + surge(f)) * 2 / 3, g: n0 + n, since: f * len + Math.max(0, t - T.BURST), len };                                                   // turns = 반 바퀴 단위
 }
 function orbitAngle(t) { if (t >= T.IMPACT) return TH0 + PI / 2 + PI * spin(t).turns; const x = Math.max(0, t - T.MU); return .9 + .42 * t + .5 * x * x * x; }
 function state(t) {
@@ -300,8 +301,8 @@ function state(t) {
   if (t < T.MU) { R0 *= eBack(seg(t, T.YIN, T.YIN + .3)); }
   else if (t < T.IMPACT) { const x = seg(t, T.MU, T.IMPACT); orbit = lerp(ORBIT, .0, eIn(x)); h = lerp(ORB_H, 1.4, x); }
   else { const s = t - T.IMPACT, k = eBack(seg(s, 0, .5)), c = eIn(seg(t, T.SPIRAL, T.BURST)), gone = t >= T.BURST; orbit = ORBIT * eOut(seg(s, 0, .7)) * (1 - c); R0 = R1 = gone ? 0 : ORB_R * k * (1 + .25 * c); h = lerp(1.4, ORB_H, eOut(seg(s, 0, .7))); S.bars = gone ? 1 - seg(t, T.BURST, T.BURST + .2) : 1;
-    S.swap = 1; S.aura = gone ? 1 - seg(t, T.BURST, T.BURST + .3) : eOut(seg(s, .05, .9)) * (1 + .6 * c); S.trail = gone ? 0 : clamp(Math.abs(A - orbitAngle(t - .02)) / .02 * .1, 0, 2.6);                                      // 꼬리는 돌고 있을 때만(빠를수록 길게) const ze = .2 * Math.sin(s * .8); S.termN = [Math.cos(ze), Math.sin(ze)];
-    const sp = spin(t); S.since = sp.since; S.pulse = clamp(sp.since / .6); S.beatLen = sp.len; }
+    S.swap = 1; S.aura = gone ? 1 - seg(t, T.BURST, T.BURST + .3) : eOut(seg(s, .05, .9)) * (1 + .6 * c); S.trail = gone ? 0 : clamp(Math.abs(A - orbitAngle(t - .02)) / .02 * .1, 0, 2.6);                                      // 꼬리는 돌고 있을 때만(빠를수록 길게) 
+    const sp = spin(t); S.since = sp.since; S.pulse = clamp(sp.since / (sp.len * 1.15)); S.beatLen = sp.len; S.g = sp.g; }
   const dir = [Math.cos(A), 0, Math.sin(A)]; S.A = A; S.orbit = orbit;
   S.orb = [[dir[0] * orbit, h + .08 * Math.sin(t * 1.3), dir[2] * orbit, R0], [-dir[0] * orbit, h + .08 * Math.sin(t * 1.3 + 2), -dir[2] * orbit, R1]];
   const hand = [Math.sin(t * 1.3) * .015 + Math.sin(t * 3.1) * .006, Math.cos(t * 1.1) * .012, Math.sin(t * .9) * .01];
@@ -329,13 +330,14 @@ const WORLDS = [{ t: -9, w: [0, 0] }, { t: T.YIN, w: [1, 0], src: 0 }, { t: T.YA
 function fx(t, S) {
   const srcs = [S.orbS[0], S.orbS[1], S.centerS], W = [];
   let ci = 0; for (let i = 0; i < WORLDS.length; i++) if (t >= WORLDS[i].t) ci = i; const cur = WORLDS[ci], prev = WORLDS[Math.max(0, ci - 1)], tk = seg(t, cur.t, cur.t + .5), tc = srcs[cur.src || 0];
-  let dn = sub([S.orbS[0][0], S.orbS[0][1], 0], [S.orbS[1][0], S.orbS[1][1], 0]); const dl = Math.hypot(dn[0], dn[1]); dn = dl > .02 ? [dn[0] / dl, dn[1] / dl] : [1, 0]; if (S.swap) dn = S.termN;                   // 제목 구간: 경계선은 화면에 고정(오른쪽이 낮)                   // 경계선: 검은 구체 쪽이 낮(흰 세계)
+  let dn = sub([S.orbS[0][0], S.orbS[0][1], 0], [S.orbS[1][0], S.orbS[1][1], 0]); const dl = Math.hypot(dn[0], dn[1]); dn = dl > .02 ? [dn[0] / dl, dn[1] / dl] : [1, 0];                   // 경계선: 검은 구체 쪽이 낮(흰 세계)
   const beats = []; for (let n = 1; n < 40; n++) if (n % 8 || n >= 24) beats.push(n); beats.push(30.5, 31.5, 29.5);
   for (const n of beats) { const tb = beatT(n), age = (t - tb) / .7; if (age < 0 || age >= 1 || n > 32) continue; if (n >= 32 && t < T.IMPACT) continue; if (n < 32 && t >= T.IMPACT) continue;
     const amp = n < 32 ? (n % 1 ? .6 : 1) : Math.max(0, 1 - (n - 32) / 6) * 1.3, src = n < 8 ? srcs[0] : n < 16 ? srcs[1] : n < 24 ? srcs[n % 2] : n < 32 ? S.centerS : n === 32 ? S.centerS : srcs[n % 2];
     const rOut = (n === 32 ? 5 : 3.7) * age * (1.15 - .15 * age), th = (n === 32 ? .6 : .32) * (1 - age) * amp; if (th > .004 && W.length < 8) W.push([src[0], src[1], rOut, Math.max(.0005, rOut - th)]); }
-  if (t >= T.IMPACT + .2 && t < T.BURST) for (let j = 0; j < 3; j++) { const ageT = S.since + j * S.beatLen, age = ageT / .55; if (age >= 1 || t - ageT < T.IMPACT + .1 || W.length >= 8) continue; const rOut = 4.4 * age; W.push([S.centerS[0], S.centerS[1], rOut, Math.max(.0005, rOut - .3 * (1 - age))]); }   // 구체가 경계선을 넘을 때마다(반 바퀴) 가운데에서 뒤집힘의 파동
   if (t >= T.BURST) for (let j = 0; j < 3; j++) { const age = (t - T.BURST - j * .08) / .5; if (age < 0 || age >= 1 || W.length >= 8) continue; const rOut = 6.5 * age; W.push([S.centerS[0], S.centerS[1], rOut, Math.max(.0005, rOut - .9 * (1 - age))]); }                                        // 터지는 충격파
+  if (S.swap) { const b = S.g % 2, pb = S.g ? (S.g - 1) % 2 : b, k = S.since / .2;                                                                       // 제목 구간: 튕길 때마다(박마다) 가운데에서 퍼지는 파동이 세계와 구체의 흑백을 통째로 뒤집는다
+    return { waves: W, worldA: [pb, 1, dn[0], dn[1]], worldB: [b, 1, dn[0], dn[1]], trans: [S.centerS[0], S.centerS[1], k >= 1 ? 9 : 5 * eOut(k)] }; }
   return { waves: W, worldA: [prev.w[0], prev.w[1], dn[0], dn[1]], worldB: [cur.w[0], cur.w[1], dn[0], dn[1]], trans: [tc[0], tc[1], tk >= 1 ? 9 : 5 * eOut(tk)] };
 }
 function render(t) {
@@ -346,7 +348,7 @@ function render(t) {
   const setCam = (u) => { gl.uniform3f(u.uCamPos, S.cam.pos[0], S.cam.pos[1], S.cam.pos[2]); gl.uniformMatrix3fv(u.uCam, false, camM); gl.uniform1f(u.uFocal, S.focal); };
   const fr = norm([S.cam.f[0], 0, S.cam.f[2]]), rr = norm([S.cam.r[0], 0, S.cam.r[2]]);
   X.pass(P.scene(), RT.scene, (u) => { gl.uniform2f(u.uRes, sw, sh); gl.uniform1f(u.uT, t); setCam(u); gl.uniform4fv(u.uOrb, orbs); gl.uniform4fv(u.uBead, beads); gl.uniform3fv(u.uRingN, rn); gl.uniform1fv(u.uSpec, sp); gl.uniform1i(u.uZero, 0);
-    gl.uniform1f(u.uFloorRot, t * .25 + spun * .35); gl.uniform1f(u.uSwap, S.swap); gl.uniform1f(u.uAura, S.aura); gl.uniform1f(u.uPulse, S.pulse); gl.uniform1f(u.uTrail, S.trail); gl.uniform2f(u.uCenterS, S.centerS[0], S.centerS[1]); gl.uniform2f(u.uTermN, S.termN[0], S.termN[1]); gl.uniform4fv(u.uSat, sats); gl.uniform1f(u.uOrbA, S.A); gl.uniform1f(u.uDiscR, S.orbit); gl.uniform1f(u.uBars, S.bars * (.85 + .3 * S.bp)); gl.uniform1f(u.uFloorK, S.floorK * seg(t, 0, T.YIN + .05)); gl.uniform1f(u.uStar, .85 + .7 * S.bp + .5 * lvl + .25 * S.aura); gl.uniform1f(u.uRingK, S.ringK);
+    gl.uniform1f(u.uFloorRot, t * .25 + spun * .35); gl.uniform1f(u.uSwap, S.swap); gl.uniform1f(u.uAura, S.aura); gl.uniform1f(u.uPulse, S.pulse); gl.uniform1f(u.uTrail, S.trail); gl.uniform2f(u.uCenterS, S.centerS[0], S.centerS[1]); gl.uniform4fv(u.uWorldA, F.worldA); gl.uniform4fv(u.uWorldB, F.worldB); gl.uniform3fv(u.uTrans, F.trans); gl.uniform4fv(u.uSat, sats); gl.uniform1f(u.uOrbA, S.A); gl.uniform1f(u.uDiscR, S.orbit); gl.uniform1f(u.uBars, S.bars * (.85 + .3 * S.bp)); gl.uniform1f(u.uFloorK, S.floorK * seg(t, 0, T.YIN + .05)); gl.uniform1f(u.uStar, .85 + .7 * S.bp + .5 * lvl + .25 * S.aura); gl.uniform1f(u.uRingK, S.ringK);
     gl.uniform2f(u.uGR, rr[0], rr[2]); gl.uniform2f(u.uGU, fr[0], fr[2]); X.bindTex(0, glyTex, u.uGlyph); });
   { X.bind(RT.scene); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE_MINUS_DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); const pp = P.part(); gl.useProgram(pp.p); gl.bindVertexArray(seedVAO); gl.uniform2f(pp.u.uRes, sw, sh); gl.uniform1f(pp.u.uT, t); gl.uniform1f(pp.u.uSize, 26 * sh / 720 * S.focal);
     gl.uniform4fv(pp.u.uOrb, orbs); setCam(pp.u); gl.uniform1i(pp.u.uMode, S.mode); gl.uniform1f(pp.u.uAmt, S.amt * seg(t, T.YIN, T.YIN + .4)); gl.uniform1f(pp.u.uBurst, 0); gl.uniform1f(pp.u.uSpinA, S.A); gl.drawArrays(gl.POINTS, 0, 700);
