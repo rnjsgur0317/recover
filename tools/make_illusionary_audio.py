@@ -9,8 +9,12 @@ SRC = r"C:\Users\rnjsg\Downloads\IllusionaryCutscene.mp4.mp4"
 PUB = r"C:\Users\rnjsg\dev\recover\public" + "\\"
 SR, OFF, END = 44100, 2.3, 26.7
 
+import os, sys
+if not os.path.exists(SRC):
+    sys.exit("원본 영상이 없습니다: " + SRC + "  (Downloads 에 다시 넣고 실행하세요)")
 raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(OFF), "-i", SRC, "-vn", "-t", str(END), "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True).stdout
 x = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).astype(np.float64)
+assert len(x) > SR * 20, "원본에서 소리를 읽지 못했습니다"
 N = int(END * SR); y = np.zeros((N, 2)); y[:min(N, len(x))] = x[:N]
 t = np.arange(N) / SR; rng = np.random.default_rng(23)
 # 잡음 바닥: 음악이 없는 곳에서만 들리게 (음악 구간 0.2~9.0, 12.2~18.1)
