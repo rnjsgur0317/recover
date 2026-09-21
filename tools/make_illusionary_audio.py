@@ -5,7 +5,9 @@ import subprocess, json
 import numpy as np
 from scipy.signal import stft, butter, sosfilt
 
-SRC = r"C:\Users\rnjsg\Downloads\IllusionaryCutscene.mp4.mp4"
+import os
+SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src_media", "IllusionaryCutscene.mp4.mp4")          # 받은 원본의 사본(gitignore)
+if not os.path.exists(SRC): SRC = r"C:\Users\rnjsg\Downloads\IllusionaryCutscene.mp4.mp4"
 PUB = r"C:\Users\rnjsg\dev\recover\public" + "\\"
 SR, OFF, END = 44100, 2.3, 26.7
 
@@ -32,6 +34,11 @@ for t0, f, g in [(9.6, 1318, .05), (10.9, 988, .04), (11.55, 1568, .035), (18.9,
     ding(t0, f, g)
 for t0 in [10.2, 19.2, 22.2]:                                              # 삐 소리
     n = int(.12 * SR); i = int(t0 * SR); y[i:i + n] += (np.sign(np.sin(2 * np.pi * 2000 * np.arange(n) / SR)) * .018)[:, None]
+for t0 in [7.05, 15.95]:                                                     # 치지직: 꼭두각시가 앉은 모습 → 무너진 모습으로 끊겨 넘어가는 순간의 잡음 (화면 ZAP 과 같은 시각)
+    n = int(.24 * SR); i = int(t0 * SR); gate = np.repeat(rng.random(n // 220 + 1) ** 2, 220)[:n]; cr = sosfilt(butter(2, [900, 9500], "bandpass", fs=SR, output="sos"), rng.standard_normal((n, 2)), axis=0)
+    y[i:i + n] = y[i:i + n] * .35 + cr * (gate * .34)[:, None]
+for dt in [.1, .25, .42, .58, .76]:                                            # 줄이 하나씩 다시 걸리는 틱 (C4 16.5~)
+    n = int(.06 * SR); i = int((16.5 + dt) * SR); tt = np.arange(n) / SR; y[i:i + n] += (np.sin(2 * np.pi * (1500 + 900 * dt) * tt) * np.exp(-tt / .008) * .16)[:, None]
 y[:int(.05 * SR)] *= np.linspace(0, 1, int(.05 * SR))[:, None]; k = int(.35 * SR); y[-k:] *= np.linspace(1, 0, k)[:, None]
 y = np.clip(y, -1, 1).astype(np.float32)
 p = subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", "-c:a", "libmp3lame", "-b:a", "192k", PUB + "illusionary_cut.mp3"], input=y.tobytes())
