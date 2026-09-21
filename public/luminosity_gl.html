@@ -18,15 +18,15 @@
 /* ═══════════════════════════════════════════════════════════════
    [ LUMINOSITY ] 광휘 — 전면 재제작판 (WebGL2, 컷 편집)
    화면은 전부 셰이더로 그린다: 일식 코로나(솔) · 금속 질감 SDF 무기(베벨/스펙큘러/각인 발광) · 도메인 워핑 혼돈 연기 ·
-   삼각 파편 파쇄 · 휜 빛가시 · 빛기둥 · 아나모픽 플레어. 2D 캔버스는 타이틀 글자 텍스처에만 쓴다.
+   삼각 파편 파쇄 · 빛조각(휜 마름모) · 빛기둥 · 아나모픽 플레어. 2D 캔버스는 타이틀 글자 텍스처에만 쓴다.
    컷 구성 (사운드 타격점에 맞춤)
      A 0~6.0      솔의 일식 코로나 아래, 일곱 무기가 원초의 혼돈으로 내리꽂힌다 (3.13 파쇄 → 붕괴)
      B 6.0~8.3    남겨진 파편 — 혼돈의 씨앗 매크로 숏
      C 8.3~10.4   일곱 무기에 의식이 깃들고(8.65), 솔이 잠든다(9.66)
      D 10.4~14.77 무기별 클로즈업 — 타격점마다 하나씩 산산조각 (중간 11.62~12.5 는 전경)
      E 14.77~19.62 홀로 남은 검 — 16.44 혼돈이 조여 오고, 검신에 빛이 차오른다
-     F 19.62~24.52 점화 — 부서진 여섯 무기가 휜 빛가시로 돌아온다
-     G 24.52~     타이틀
+     F 19.62~24.52 점화 — 부서진 여섯 무기가 곧게 뻗는 빛조각(휜 마름모 두 겹)으로 돌아온다
+     G 24.52~     타이틀 — 여섯 빛조각이 꼭짓점을 마주 보는 고리로 모인다
    상태가 없다(모든 것이 시간의 함수) → 탐색·정지 화면이 그대로 재현된다. 시계·HUD·자막은 cs_ui.js
    ═══════════════════════════════════════════════════════════════ */
 const TAU = Math.PI * 2, PI = Math.PI;
@@ -223,16 +223,44 @@ vec4 shatter(int id, vec2 q, float ang, float px, float a, float energy, vec2 I,
 vec3 over(vec3 col, vec4 w){ return col * (1. - w.a) + w.rgb; }
 
 /* ── 빛날개: 검 뒤에서 좌우로 펼쳐지는 여섯 가닥 ── */
-vec3 wings(vec2 p, vec2 base){                                              // 검 뒤에서 좌우로 뻗는 여섯 개의 휜 빛가시 — 뿌리는 굵고 끝은 바늘처럼
-  vec2 v = p - base; float r = length(v); vec3 acc = vec3(0.);
+/* ── 빛조각: 네 변이 안으로 휜 길쭉한 마름모 두 겹(바깥 유리빛 + 안쪽 빛의 심). q 는 조각 중심 기준(긴 축 = x), a 반길이, b 반폭 ── */
+vec3 shard(vec2 q, float a, float b, float px, float I){
+  if (I <= 0. || a <= .002) return vec3(0.);
+  const float k = .7;
+  vec2 n = abs(q) / vec2(a, b); float f = pow(n.x, k) + pow(n.y, k); if (f > 3.5) return vec3(0.);
+  vec2 g1 = k * pow(max(n, vec2(.1)), vec2(k - 1.)) / vec2(a, b); float d = (f - 1.) / length(g1);
+  vec2 ab2 = vec2(a * .66, b * .5), n2 = abs(q - vec2(a * .05, 0.)) / ab2; float f2 = pow(n2.x, k) + pow(n2.y, k);
+  vec2 g2 = k * pow(max(n2, vec2(.1)), vec2(k - 1.)) / ab2; float d2 = (f2 - 1.) / length(g2);
+  float inO = smoothstep(px, -px, d), inI = smoothstep(px, -px, d2), lw = px * 1.2 + .005;
+  vec3 c = LIGHT * inO * (.035 + .09 * clamp(1. - f, 0., 1.));                                    // 바깥 조각: 옅은 유리빛
+  c += mix(LIGHT, vec3(1.), .6) * inI * (.1 + .38 * clamp(1. - f2, 0., 1.));                      // 안쪽 조각: 빛의 심
+  c += vec3(1.) * (exp(-pow(d / lw, 2.)) * 1.25 + exp(-pow(d2 / lw, 2.)) * 1.);                 // 또렷한 두 겹 윤곽
+  c += LIGHT * exp(-pow(q.y / lw, 2.)) * inO * .45 * smoothstep(1., .45, n.x);                   // 긴 축을 따라 흐르는 능선
+  c += LIGHT * (exp(-max(d, 0.) * 8.) * .09 + exp(-max(d, 0.) * 2.) * .015) * (1. - inO);        // 후광
+  return c * I;
+}
+/* 점화: 검 뒤에서 곧게 뻗는 여섯 빛조각 (위에서부터 35° · 78° · 128°, 좌우 대칭) */
+vec3 spikes(vec2 p, vec2 base, float px){
+  vec3 acc = vec3(0.);
   for (int i = 0; i < 6; i++){
     float grow = uWing[i]; if (grow <= 0.) continue;
-    float sgn = (i % 2 == 0) ? -1. : 1., j = float(i / 2), Lw = (5.7 - j * 1.05) * grow, th0 = .42 + j * .46, bend = .55 + j * .12;
-    float u = r / max(Lw, 1e-3), da = atan(v.x * sgn, v.y) - (th0 + bend * u * u), dp = r * sin(da);
-    float w = (.17 - j * .02) * pow(max(1. - u, 0.), 1.25) * smoothstep(0., .1, u) + .003;
-    float m = smoothstep(1., .9, u) * smoothstep(0., .05, u) * step(0., cos(da));
-    float body = exp(-pow(dp / w, 2.)), corew = exp(-pow(dp / (w * .28), 2.));
-    acc += (mix(LIGHT, GOLD, .15 + .15 * j) * body * .75 + vec3(1.) * corew * 1.3 + LIGHT * exp(-abs(dp) * 2.2) * .05 * (1. - u)) * m * (.8 + .4 * grow * (1. - u));
+    float sgn = (i % 2 == 0) ? -1. : 1.; int j = i / 2;
+    float th = j == 0 ? .61 : j == 1 ? 1.36 : 2.23, a = (j == 0 ? 2.8 : j == 1 ? 2.3 : 1.65) * grow;
+    vec2 dir = vec2(sin(th) * sgn, cos(th)), c = base + dir * (.32 + a), q = vec2(dot(p - c, dir), dot(p - c, vec2(-dir.y, dir.x)));
+    acc += shard(q, a, a * .25, px, .8 + .25 * grow);
+  }
+  return acc;
+}
+/* 타이틀: 밤하늘의 여섯 빛조각 — 안쪽 꼭짓점이 서로를 마주 보는 고리. 하나씩 돌며 날아와 자리를 잡는다 */
+vec3 emblem(vec2 p, vec2 C, float px, float appear, float spin){
+  vec3 acc = vec3(0.);
+  for (int i = 0; i < 6; i++){
+    float ki = smoothstep(0., 1., clamp(appear * 1.7 - float(i) * .14, 0., 1.)); if (ki <= 0.) continue;
+    float ang = float(i) * 1.0472 + 1.5708 + spin + (1. - ki) * .9, out1 = (1. - ki) * (1. - ki);
+    vec2 dir = vec2(cos(ang), sin(ang)), c = C + dir * (.5 + .95 + out1 * 3.2), q = vec2(dot(p - c, dir), dot(p - c, vec2(-dir.y, dir.x)));
+    acc += shard(q, .95, .31, px, ki * (1. + 1.6 * (1. - ki)));
+    vec2 dr2 = vec2(cos(ang + .5236), sin(ang + .5236)), c2 = C + dr2 * (1.55 + out1 * 2.), q2 = vec2(dot(p - c2, dr2), dot(p - c2, vec2(-dr2.y, dr2.x)));
+    acc += shard(q2, .2, .075, px, ki * .8);                                                     // 사이사이의 작은 조각
   }
   return acc;
 }
@@ -319,15 +347,15 @@ void main(){
     col += GOLD * rings * uK[3] * .16;
     float beam = exp(-abs(p.x) * 6.) * .2 + exp(-abs(p.x) * 1.2) * .04 + exp(-p.x * p.x * 260.) * .4;
     col += LIGHT * beam * (.75 + .25 * noise(vec2(p.x * 6., p.y * .7 - uT * 2.2))) * uK[2];
-    col += wings(p, sb + vec2(0., -.35));
+    col += spikes(p, sb + vec2(0., -.35), pix);
     col = over(col, shadeW(0, (p - sb) / sc, 0., pix / sc, uK[0], 1., mix(LIGHT, vec3(1.), .35)));
     col += flare(p - (sb + vec2(0., -.8 * sc)), .13 * uK[0]) + flare(p - (sb + vec2(0., 2.25 * sc)), .07 * uK[0]);
     vec2 sf = smokeField(p + 5.); float rr = length(p * vec2(.82, 1.)), dens = smoothstep(.3, .75, sf.x * .8 + (rr - uK[1]) * .3) * (1. - smoothstep(9., 16., uK[1]));
     col = mix(col, smokeCol(sf, dens) * 1.25, dens * .96) + vec3(1.) * uK[4];
   }
 #else
-  {                                                      /* G — 타이틀.  K: 0 별빛 1 제목 펼침 2 빛 훑기 3 부제 */
-    vec2 fc = vec2(0., 1.15); col += flare(p - fc, uK[0]) + LIGHT * exp(-pow((p.x - fc.x) * 30., 2.)) * exp(-abs(p.y - fc.y) * .5) * uK[0] * .8;
+  {                                                      /* G — 타이틀.  K: 0 별빛 1 제목 펼침 2 빛 훑기 3 부제 4 빛조각 등장 5 빛조각 회전 */
+    vec2 fc = vec2(0., 1.45); col += emblem(p, fc, pix, uK[4], uK[5]) + flare(p - fc, uK[0]) + LIGHT * exp(-pow((p.x - fc.x) * 30., 2.)) * exp(-abs(p.y - fc.y) * .5) * uK[0] * .8;
     vec3 tx = texture(uText, vUv).rgb; float rev = smoothstep(uK[1], uK[1] - .08, abs(vUv.x - .5) * 2.);
     float sweep = exp(-pow((vUv.x - mix(.12, .88, uK[2]) + (vUv.y - .5) * .2) * 13., 2.));
     col += vec3(.93, .96, 1.) * tx.r * rev * (1.05 + 2.6 * sweep) + LIGHT * tx.g * uK[3] * 1.5 + LIGHT * tx.b * rev * .75;
@@ -415,13 +443,13 @@ function drawText() {                                                        // 
   tg.setTransform(1, 0, 0, 1, 0, 0); tg.globalCompositeOperation = "source-over"; tg.fillStyle = "#000"; tg.fillRect(0, 0, tcv.width, tcv.height); tg.globalCompositeOperation = "lighter";
   tg.textAlign = "center"; tg.textBaseline = "middle";
   const spaced = (s, y, px, gap, weight, color) => { tg.font = `${weight} ${px}px Cinzel, "Trajan Pro", Georgia, "Times New Roman", "Noto Serif KR", "Batang", serif`; tg.fillStyle = color; const chars = [...s]; chars.forEach((ch, i) => tg.fillText(ch, cx + (i - (chars.length - 1) / 2) * gap, y)); };
-  spaced("LUMINOSITY", cy + 1.2 * U, .92 * U * sc, .9 * U * sc, "500", "#f00");
-  spaced("광휘", cy + 2.3 * U, .46 * U * sc, 1.15 * U * sc, "400", "#0f0");
+  spaced("LUMINOSITY", cy + 1.6 * U, .92 * U * sc, .9 * U * sc, "500", "#f00");
+  spaced("광휘", cy + 2.7 * U, .46 * U * sc, 1.15 * U * sc, "400", "#0f0");
   tg.strokeStyle = "#00f"; tg.fillStyle = "#00f"; tg.lineWidth = Math.max(1, U * .012);
   for (const s of [-1, 1]) {
-    tg.beginPath(); tg.moveTo(cx + s * 1.25 * U * sc, cy + 2.3 * U); tg.lineTo(cx + s * 4.1 * U * sc, cy + 2.3 * U); tg.stroke();
-    tg.save(); tg.translate(cx + s * 4.1 * U * sc, cy + 2.3 * U); tg.rotate(PI / 4); tg.fillRect(-U * .045, -U * .045, U * .09, U * .09); tg.restore();
-    const bx = cx + s * 4.95 * U * sc, y0 = cy + .62 * U, y1 = cy + 1.78 * U;                                              // [ ] 괄호
+    tg.beginPath(); tg.moveTo(cx + s * 1.25 * U * sc, cy + 2.7 * U); tg.lineTo(cx + s * 4.1 * U * sc, cy + 2.7 * U); tg.stroke();
+    tg.save(); tg.translate(cx + s * 4.1 * U * sc, cy + 2.7 * U); tg.rotate(PI / 4); tg.fillRect(-U * .045, -U * .045, U * .09, U * .09); tg.restore();
+    const bx = cx + s * 4.95 * U * sc, y0 = cy + 1.02 * U, y1 = cy + 2.18 * U;                                              // [ ] 괄호
     tg.beginPath(); tg.moveTo(bx - s * .16 * U, y0); tg.lineTo(bx, y0); tg.lineTo(bx, y1); tg.lineTo(bx - s * .16 * U, y1); tg.stroke();
   }
   X.upload(textTex, tcv, false);
@@ -478,20 +506,20 @@ function state(t) {
   } else if (t < T.FINAL) {                                                  // F
     const k = seg(t, T.IGNITE, T.FINAL), open = eOut(seg(t, T.IGNITE, T.IGNITE + .7));
     S.shot = 5; S.cam = [0, lerp(.1, .75, eInOut(k)), lerp(1.22, .9, eOut(k))]; S.roll = .015 * Math.sin(t * .6);
-    T.WINGS.forEach((wt, i) => { wing[i] = eOut(seg(t, wt, wt + .55)); });
+    T.WINGS.forEach((wt, i) => { const k = seg(t, wt, wt + .5); wing[i] = k <= 0 ? 0 : 1 + 2.4 * Math.pow(k - 1, 3) + 1.4 * Math.pow(k - 1, 2); });   // 살짝 튕기며 뻗음
     const wp = T.WINGS.reduce((m, wt) => Math.max(m, pulse(t, wt, .02, .35)), 0);
     K[0] = .6 + .9 * Math.exp(-(t - T.IGNITE) * 3) + .2 * wp + .12 * v; K[1] = lerp(1.55, 30, open); K[2] = 1.1 * eOut(seg(t, T.IGNITE, T.IGNITE + .5)) * (1 + .25 * wp);
     K[3] = eInOut(seg(t, 21.7, 23.4)); K[4] = 2.2 * eIn(seg(t, 23.75, T.FINAL));
-    S.mood = eOut(seg(t, T.IGNITE, T.IGNITE + 1.2)); S.taint = .5 * (1 - open); S.light = [0, .4]; S.raysK = .22 + .15 * wp; S.bloomK = .7 + .2 * wp;
+    S.mood = eOut(seg(t, T.IGNITE, T.IGNITE + 1.2)); S.taint = .5 * (1 - open); S.light = [0, .4]; S.raysK = .12 + .12 * wp; S.bloomK = .55 + .2 * wp;
     burst(T.IGNITE, 2, { origin: [0, -.2], speed: 16, col: C_WHITE, first: 0, n: 7000, size: 1.7 });
     burst(T.IGNITE, 2.4, { origin: [0, -.2], speed: 8, col: C_MAG, first: 7000, n: 2500, size: 2.2, pow: .8 });
-    T.WINGS.forEach((wt, i) => burst(wt, 1, { origin: [0, -.9], dir: PI / 2 + (i % 2 ? -1 : 1) * (.5 + .45 * Math.floor(i / 2)), spread: .5, speed: 11, col: C_GOLD, first: 9500 + i * 500, n: 500, size: 1.6 }));
+    T.WINGS.forEach((wt, i) => burst(wt, 1, { origin: [0, -.9], dir: PI / 2 + (i % 2 ? -1 : 1) * [.61, 1.36, 2.23][Math.floor(i / 2)], spread: .35, speed: 11, col: C_GOLD, first: 9500 + i * 500, n: 500, size: 1.6 }));
     parts.push({ mode: 2, first: 11000, n: 3200, pow: K[2], size: 1.7, col: C_LIGHT, origin: [0, 0] });
   } else {                                                                   // G
     const s = t - T.FINAL;
-    S.shot = 6; S.cam = [0, 0, 1 + .05 * seg(t, T.FINAL, T.END)]; K[0] = (.75 + 1.2 * Math.exp(-s * 2.2)) * (.94 + .06 * Math.sin(t * 2.1));
+    S.shot = 6; S.cam = [0, 0, 1 + .05 * seg(t, T.FINAL, T.END)]; K[0] = (.16 + 1.3 * Math.exp(-s * 2.4)) * (.94 + .06 * Math.sin(t * 2.1)); K[4] = seg(t, T.FINAL + .12, T.FINAL + 1.7); K[5] = .035 * s;
     K[1] = 1.2 * eOut(seg(t, T.FINAL + .35, T.FINAL + 1.6)); K[2] = eInOut(seg(t, T.FINAL + 1.2, T.FINAL + 2.5)); K[3] = seg(t, T.FINAL + 1.35, T.FINAL + 2.1);
-    S.mood = .5; S.light = [0, 1.15]; S.raysK = .2; S.bloomK = .8;
+    S.mood = .5; S.light = [0, 1.45]; S.raysK = .1; S.bloomK = .55;
     parts.push({ mode: 2, first: 11000, n: 900, pow: .5, size: 1.5, col: C_LIGHT, origin: [0, 0] });
   }
   return S;
