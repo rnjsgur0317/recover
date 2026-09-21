@@ -18,14 +18,14 @@
 /* ═══════════════════════════════════════════════════════════════
    [ LUMINOSITY ] 광휘 — 전면 재제작판 (WebGL2, 컷 편집)
    화면은 전부 셰이더로 그린다: 일식 코로나(솔) · 금속 질감 SDF 무기(베벨/스펙큘러/각인 발광) · 도메인 워핑 혼돈 연기 ·
-   삼각 파편 파쇄 · 빛날개 · 빛기둥 · 아나모픽 플레어. 2D 캔버스는 타이틀 글자 텍스처에만 쓴다.
+   삼각 파편 파쇄 · 휜 빛가시 · 빛기둥 · 아나모픽 플레어. 2D 캔버스는 타이틀 글자 텍스처에만 쓴다.
    컷 구성 (사운드 타격점에 맞춤)
      A 0~6.0      솔의 일식 코로나 아래, 일곱 무기가 원초의 혼돈으로 내리꽂힌다 (3.13 파쇄 → 붕괴)
      B 6.0~8.3    남겨진 파편 — 혼돈의 씨앗 매크로 숏
      C 8.3~10.4   일곱 무기에 의식이 깃들고(8.65), 솔이 잠든다(9.66)
      D 10.4~14.77 무기별 클로즈업 — 타격점마다 하나씩 산산조각 (중간 11.62~12.5 는 전경)
      E 14.77~19.62 홀로 남은 검 — 16.44 혼돈이 조여 오고, 검신에 빛이 차오른다
-     F 19.62~24.52 점화 — 부서진 여섯 무기가 빛날개로 돌아온다
+     F 19.62~24.52 점화 — 부서진 여섯 무기가 휜 빛가시로 돌아온다
      G 24.52~     타이틀
    상태가 없다(모든 것이 시간의 함수) → 탐색·정지 화면이 그대로 재현된다. 시계·HUD·자막은 cs_ui.js
    ═══════════════════════════════════════════════════════════════ */
@@ -223,20 +223,16 @@ vec4 shatter(int id, vec2 q, float ang, float px, float a, float energy, vec2 I,
 vec3 over(vec3 col, vec4 w){ return col * (1. - w.a) + w.rgb; }
 
 /* ── 빛날개: 검 뒤에서 좌우로 펼쳐지는 여섯 가닥 ── */
-vec3 wings(vec2 p, vec2 base){                                              // 가닥마다 깃 3장 · 앞전은 날카롭고 뒷전은 부드럽게 풀림
+vec3 wings(vec2 p, vec2 base){                                              // 검 뒤에서 좌우로 뻗는 여섯 개의 휜 빛가시 — 뿌리는 굵고 끝은 바늘처럼
   vec2 v = p - base; float r = length(v); vec3 acc = vec3(0.);
   for (int i = 0; i < 6; i++){
     float grow = uWing[i]; if (grow <= 0.) continue;
-    float sgn = (i % 2 == 0) ? -1. : 1., j = float(i / 2), ang = atan(v.x * sgn, v.y);
-    for (int k = 0; k < 3; k++){
-      float fk = float(k), Lw = (5.9 - j * 1.1) * (1. - .2 * fk) * grow, th0 = .42 + j * .4 + fk * .13, bend = .26 + j * .08 + fk * .06;
-      float u = r / max(Lw, 1e-3), da = ang - (th0 + bend * u * u), dp = r * sin(da);
-      float w = (.3 - j * .04) * (1. - .25 * fk) * pow(max(sin(PI * clamp(u, 0., 1.)), 0.), .6) * (1. - .4 * u) + .004;
-      float m = smoothstep(1., .8, u) * smoothstep(0., .08, u) * step(0., cos(da)) * (1. - .3 * fk);
-      float prof = dp > 0. ? exp(-pow(dp / (w * 1.7), 2.)) : exp(-pow(dp / (w * .4), 2.));
-      float barb = .5 + .5 * noise(vec2(dp / w * 7., r * 1.3 - uT * 1.6 + float(i * 3 + k) * 7.));
-      acc += (mix(LIGHT, GOLD, .2 + .2 * j) * prof * barb * .42 + vec3(1.) * exp(-pow(dp / (w * .16), 2.)) * .9) * m * (.7 + .5 * grow * (1. - u));
-    }
+    float sgn = (i % 2 == 0) ? -1. : 1., j = float(i / 2), Lw = (5.7 - j * 1.05) * grow, th0 = .42 + j * .46, bend = .55 + j * .12;
+    float u = r / max(Lw, 1e-3), da = atan(v.x * sgn, v.y) - (th0 + bend * u * u), dp = r * sin(da);
+    float w = (.17 - j * .02) * pow(max(1. - u, 0.), 1.25) * smoothstep(0., .1, u) + .003;
+    float m = smoothstep(1., .9, u) * smoothstep(0., .05, u) * step(0., cos(da));
+    float body = exp(-pow(dp / w, 2.)), corew = exp(-pow(dp / (w * .28), 2.));
+    acc += (mix(LIGHT, GOLD, .15 + .15 * j) * body * .75 + vec3(1.) * corew * 1.3 + LIGHT * exp(-abs(dp) * 2.2) * .05 * (1. - u)) * m * (.8 + .4 * grow * (1. - u));
   }
   return acc;
 }
