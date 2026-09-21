@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUMINOSITY 컷씬 테스트 — 광휘</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: #05070d; color: #e6edf7; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.demo { max-width: 470px; width: 100%; background: #0c111b; border: 1px solid #1d2738; border-radius: 16px; padding: 26px 24px; }
+.demo h1 { margin: 0 0 6px; font-size: 1.15rem; letter-spacing: .06em; }
+.demo p { margin: 0 0 16px; color: #8593a8; font-size: .86rem; line-height: 1.65; }
+.demo .row { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: #b3c0d3; }
+.demo button.play { width: 100%; margin-top: 16px; border: 0; border-radius: 11px; padding: 14px; font-size: 1rem; font-weight: 800; cursor: pointer; color: #06101f; background: linear-gradient(180deg, #ffffff, #bcdcff); box-shadow: 0 8px 28px rgba(125,184,255,.35); font-family: inherit; }
+.demo .note { margin-top: 14px; font-size: .76rem; color: #5f6c80; line-height: 1.6; }
+.cs { position: fixed; inset: 0; z-index: 9999; background: #000; overflow: hidden; }
+.cs[hidden] { display: none; }
+.cs canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.cs-bar { position: absolute; left: 0; right: 0; height: 9vh; background: #000; z-index: 3; }
+.cs-bar.top { top: 0; } .cs-bar.bottom { bottom: 0; }
+.cs-skip { position: absolute; right: 18px; top: calc(9vh + 14px); z-index: 6; background: rgba(0,0,0,.4); color: #d5deea; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 14px; font-size: .78rem; cursor: pointer; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="demo">
+  <h1>[ LUMINOSITY ] — 광휘 컷씬 테스트</h1>
+  <p>주신 설정(솔 · 의식을 얻은 무기들 · 혼돈의 씨앗 · 마지막 남은 검)을 서사로, 영상의 사운드(28초)에 타격점을 맞춘 컷씬입니다.</p>
+  <div class="row"><input type="checkbox" id="demoSound" checked> <label for="demoSound">사운드 재생</label></div>
+  <button class="play" id="demoPlay">▶ 컷씬 재생</button>
+  <div class="note">주소 뒤에 <code>?t=20.3</code> 처럼 붙이면 그 시점의 정지 화면을 볼 수 있어요.<br>사운드 파일(<code>luminosity_cut.mp3</code>)은 원작자가 있는 음원이라 이 PC에만 두고 깃허브에는 올리지 않습니다.</div>
+</div>
+<div class="cs" id="cs" hidden>
+  <canvas id="cv"></canvas>
+  <div class="cs-bar top"></div><div class="cs-bar bottom"></div>
+  <button class="cs-skip" id="csSkip">건너뛰기 ▸▸</button>
+</div>
+<audio id="bgm" src="/luminosity_cut.mp3" preload="auto"></audio>
+<script src="/luminosity_data.js"></script>
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   [ LUMINOSITY ] 광휘 — 사운드 동기 컷씬 (28.1초)
+   사운드 타격점(초): 3.13 큰 타격 · 9.66 · 10.59/11.26/12.82/13.37/13.89/14.33/14.77 연타 · 16.44 · 19.62/19.90/20.22 · 24.52 최종
+   0.0  솔의 명령 (어둠, 솔과 원초의 혼돈이 마주함)
+   3.13 솔이 혼돈을 부순다 → 파편이 흩어져 '씨앗'으로 남음
+   6.0  일곱 무기가 빚어지고 의식이 깃든다 · 9.66 솔이 스러지며 빛을 무기에 물려줌
+   10.59~14.33 혼돈의 씨앗이 자라 무기를 하나씩 부순다 · 14.77 단 하나만 남는다
+   15~19.6 어둠이 조여 온다 · 16.44 혼돈이 덮친다 · "가장 밝은 빛을 품은 검"
+   19.62 광휘 점화 — 빛기둥, 여섯 빛날개, 동족의 잔해가 후광이 됨 → 24.52 백광 → 타이틀
+   API: playLuminosityCutscene({ sound: true, onDone(){} })
+   ═══════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2, PI = Math.PI;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (t) => 1 - Math.pow(1 - t, 3), eIn = (t) => t * t * t;
+const eInOut = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const eBack = (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+
+const T = { HIT1: 3.13, FORGE: 6.0, AWAKE: 8.65, SOLFADE: 9.66, BREAKS: [10.59, 11.26, 12.82, 13.37, 13.89, 14.33], ONE: 14.77, SURGE: 16.44,
+  IGNITE: 19.62, WINGS: [19.62, 19.9, 20.22, 20.46, 21.07, 21.44], FINAL: 24.52, FADE: 26.5, END: 28.1 };
+const BREAK_ORDER = [3, 5, 1, 6, 2, 4];             // 부서지는 무기 순서 (0 = 검은 끝까지 남음)
+const CAPS = [
+  { a: .45, b: 3.0, s: "“들으라, 나의 무기들이여.\n혼돈의 씨앗을 찾아내어, 혼돈의 물결을 정화하라.”" },
+  { a: 3.5, b: 5.7, s: "원초적인 혼돈의 시대는 솔의 손에 종말을 고했다." },
+  { a: 5.9, b: 8.2, s: "그러나 혼돈의 파편은 세상에 남았고," },
+  { a: 8.3, b: 10.4, s: "솔은 자신의 무기에 의식을 부여해, 유산으로 남겼다." },
+  { a: 10.8, b: 14.5, s: "혼돈은 예상보다 빠르게 자라났다.\n무기들은 하나씩 부서졌고 —" },
+  { a: 14.95, b: 17.3, s: "마침내, 단 하나만 남았다." },
+  { a: 17.55, b: 19.45, s: "가장 밝은 빛을 품은 검." },
+  { a: 20.0, b: 24.1, s: "솔의 마지막 유산이자,\n그가 잠든 무덤으로 통하는 유일한 열쇠." },
+];
+const LIGHT = "#cfe6ff", BLUE = "#7db8ff", SOL = "#fff1c9", CHAOS = "#b14dff", CHAOS2 = "#ff2d78";
+
+const $ = (id) => document.getElementById(id);
+const cv = $("cv"), g = cv.getContext("2d"), bgm = $("bgm");
+const D = window.LUM_DATA || { fps: 30, total: [], high: [], onsets: [] };
+let W = 0, H = 0, U = 0, DPR = 1, stars = [], seeds = [], parts = [], pillars = [], halo = [], events = [], massShape = [], time = 0, running = false, raf = 0, anchor = 0, useAudio = false, opts = {};
+
+function resize() { DPR = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; U = Math.min(W, H) / 10; cv.width = W * DPR; cv.height = H * DPR; }
+function band(arr, t) { const i = t * D.fps, i0 = Math.floor(i); if (i0 < 0 || !arr.length) return .3; const a = arr[Math.min(arr.length - 1, i0)], b = arr[Math.min(arr.length - 1, i0 + 1)]; return a + (b - a) * (i - i0); }
+const vol = (t) => clamp(band(D.total, t) * 1.6), hi = (t) => clamp(band(D.high, t) * 1.5);
+
+function ringPos(i) { const a = -PI / 2 + i / 7 * TAU; return [Math.cos(a) * 3.15 * U, Math.sin(a) * 3.15 * U, a + PI / 2]; }
+function solPos(t) { const k = eInOut(seg(t, 3.7, 5.8)); return [lerp(-4.4 * U, 0, k), lerp(-.2 * U, 0, k)]; }
+function swordState(t) { const k = eInOut(seg(t, 14.95, 17.6)), [x, y] = ringPos(0), tk = eInOut(seg(t, T.FINAL + .15, T.FINAL + .9));
+  return { x: lerp(x, 0, k), y: lerp(lerp(y, .25 * U, k), -1.15 * U, tk), s: lerp(lerp(.95 * U, 2.75 * U, k), 1.55 * U, tk) }; }
+
+function init() {
+  const r = rng(31);
+  stars = Array.from({ length: 300 }, () => ({ x: (r() * 2 - 1) * 1.15, y: (r() * 2 - 1) * 1.15, z: .25 + r() * .75, ph: r() * TAU }));
+  seeds = Array.from({ length: 9 }, (_, i) => { const a = i / 9 * TAU + r() * .5, d = 5.2 + r() * 2.6; return { x: Math.cos(a) * d * U * 1.25, y: Math.sin(a) * d * U * .62, ph: r() * TAU }; });
+  massShape = Array.from({ length: 56 }, () => [r() * TAU, .5 + r(), .5 + r()]);
+  pillars = Array.from({ length: 16 }, (_, i) => ({ x: (r() * 2 - 1) * 8.4 * U, w: (.12 + r() * r() * 1.1) * U, born: T.IGNITE + .1 + i * .29, a: .35 + r() * .5 }));
+  halo = Array.from({ length: 46 }, () => ({ a: r() * TAU, d: 2.6 + r() * 1.5, sp: .25 + r() * .5, sz: .04 + r() * .09, tilt: r() * .4 }));
+  parts = []; events = [];
+  events.push({ t: T.HIT1, fn: shatterMass });
+  T.BREAKS.forEach((bt, n) => events.push({ t: bt, fn: () => breakWeapon(BREAK_ORDER[n], bt) }));
+  events.push({ t: T.SURGE, fn: () => ringAt(0, .25 * U, 9 * U, 2.5 * U, .7, CHAOS, .14) });
+  events.push({ t: T.IGNITE, fn: () => { ringAt(0, .25 * U, 1 * U, 17 * U, 1.2, "#fff", .3); ringAt(0, .25 * U, .5 * U, 11 * U, 1.6, BLUE, .12); sparkBurst(0, .25 * U, 120, 1.5, T.IGNITE); } });
+  T.WINGS.slice(1).forEach((wt) => events.push({ t: wt, fn: () => { ringAt(0, .25 * U, 1.5 * U, 8 * U, .8, LIGHT, .07); sparkBurst(0, .25 * U, 26, .9, wt); } }));
+  events.push({ t: T.FINAL, fn: () => ringAt(0, 0, 1 * U, 20 * U, 1.4, "#fff", .25) });
+  D.onsets.forEach(([ot, s]) => { if (ot > T.IGNITE + 1 && ot < T.FINAL - .2 && s > .38) events.push({ t: ot, fn: () => sparkBurst(0, .25 * U, 12, .7, ot) }); });
+  events.sort((a, b) => a.t - b.t); events.forEach((e) => (e.done = false));
+}
+
+/* ── 파티클 ── */
+function ringAt(x, y, r0, r1, life, color, lw) { parts.push({ type: "ring", x, y, r0, r1, life, max: life, color, lw }); }
+function sparkBurst(x, y, n, pw, seed) { const r = rng(Math.round(seed * 100)); for (let i = 0; i < n; i++) { const a = r() * TAU, sp = (2 + r() * r() * 20) * pw * U / 60; parts.push({ type: "spark", x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: .6 + r() * 1.4, max: 2, size: (.012 + r() * r() * .05) * U, color: r() < .3 ? "#fff" : r() < .6 ? LIGHT : BLUE, drag: .965, grav: 0 }); } }
+function shatterMass() {
+  const r = rng(77), cx = 3.7 * U, cy = .1 * U;
+  ringAt(cx, cy, 1 * U, 15 * U, 1.1, SOL, .28); ringAt(cx, cy, .5 * U, 9 * U, 1.4, CHAOS, .1);
+  for (let i = 0; i < 64; i++) { const a = r() * TAU, d = r() * 3.2 * U, sp = (3 + r() * 13) * U / 60;
+    parts.push({ type: "shard", x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: Math.cos(a) * sp + (r() - .5) * U / 40, vy: Math.sin(a) * sp, life: 1.6 + r() * 2.2, max: 3.8, size: (.12 + r() * r() * .6) * U, rot: r() * TAU, vr: (r() - .5) * .25, drag: .985, grav: 0, dark: true, shape: [r(), r(), r()] }); }
+  sparkBurst(cx, cy, 70, 1.4, 3.13);
+}
+function breakWeapon(i, bt) {
+  const [x, y] = ringPos(i), r = rng(i * 13 + 3);
+  ringAt(x, y, .3 * U, 3.2 * U, .6, CHAOS2, .1);
+  for (let k = 0; k < 34; k++) { const a = r() * TAU, sp = (1.2 + r() * 6.5) * U / 60; parts.push({ type: "shard", x: x + (r() - .5) * U * .8, y: y + (r() - .5) * U * .8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - U / 50, life: 1.5 + r() * 2, max: 3.5, size: (.03 + r() * r() * .13) * U, rot: r() * TAU, vr: (r() - .5) * .3, drag: .975, grav: U / 2600, dark: false, shape: [r(), r(), r()] }); }
+  // 혼돈의 벼락: 가장 가까운 씨앗에서 무기로
+  let best = seeds[0], bd = 1e9; for (const s of seeds) { const d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; best = s; } }
+  const pts = [[best.x, best.y]]; for (let k = 1; k < 9; k++) { const f = k / 9; pts.push([lerp(best.x, x, f) + (r() - .5) * U * .9, lerp(best.y, y, f) + (r() - .5) * U * .9]); } pts.push([x, y]);
+  parts.push({ type: "bolt", pts, life: .42, max: .42 });
+}
+function update(t, dt) {
+  for (const e of events) { if (e.done || t < e.t) continue; e.done = true; e.fn(); }
+  if (t > T.IGNITE && t < T.FINAL) { const n = 1 + Math.round(hi(t) * 2); for (let k = 0; k < n; k++) if (Math.random() < .45) parts.push({ type: "spark", x: (Math.random() - .5) * 16 * U, y: 5 * U, vx: (Math.random() - .5) * U / 40, vy: -(1.5 + Math.random() * 3.5) * U / 60, life: 1.6 + Math.random() * 2, max: 3.6, size: (.01 + Math.random() * .03) * U, color: Math.random() < .5 ? "#fff" : LIGHT, drag: .998, grav: 0 }); }
+  for (const p of parts) { p.life -= dt; if (p.type === "ring" || p.type === "bolt") continue; p.vx *= p.drag; p.vy = p.vy * p.drag + p.grav; p.x += p.vx * dt * 60; p.y += p.vy * dt * 60; if (p.vr) p.rot += p.vr; }
+  if (parts.length > 1100) parts.splice(0, parts.length - 1100);
+  parts = parts.filter((p) => p.life > 0);
+}
+
+/* ── 무기 실루엣 (단위 좌표: 위 -1 ~ 아래 +1) ── */
+const WEAPONS = [
+  (c) => { c.moveTo(0, -1); c.lineTo(.085, -.8); c.lineTo(.07, .27); c.lineTo(0, .33); c.lineTo(-.07, .27); c.lineTo(-.085, -.8); c.closePath();           // 검
+    c.moveTo(-.4, .24); c.lineTo(-.13, .31); c.lineTo(0, .27); c.lineTo(.13, .31); c.lineTo(.4, .24); c.lineTo(.3, .39); c.lineTo(-.3, .39); c.closePath(); c.rect(-.035, .39, .07, .4); c.moveTo(.08, .86); c.arc(0, .86, .08, 0, TAU); },
+  (c) => { c.rect(-.02, -.55, .04, 1.55); c.moveTo(0, -1); c.lineTo(.11, -.72); c.lineTo(0, -.5); c.lineTo(-.11, -.72); c.closePath(); },                  // 창
+  (c) => { c.rect(-.025, -.8, .05, 1.8); c.moveTo(.025, -.78); c.quadraticCurveTo(.58, -.82, .52, -.18); c.quadraticCurveTo(.3, -.42, .025, -.36); c.closePath(); c.moveTo(-.025, -.7); c.lineTo(-.24, -.58); c.lineTo(-.025, -.46); c.closePath(); },   // 도끼
+  (c) => { c.moveTo(0, -.95); c.quadraticCurveTo(.66, 0, 0, .95); c.quadraticCurveTo(.5, 0, 0, -.95); c.closePath(); c.rect(-.008, -.95, .016, 1.9); },   // 활
+  (c) => { c.rect(-.025, -.44, .05, 1.44); c.moveTo(.25, -.7); c.arc(0, -.7, .25, 0, TAU); c.moveTo(.15, -.7); c.arc(0, -.7, .15, 0, TAU, true); c.moveTo(.06, -.7); c.arc(0, -.7, .06, 0, TAU); },   // 지팡이
+  (c) => { c.rect(-.025, -.86, .05, 1.86); c.moveTo(.02, -.86); c.quadraticCurveTo(.78, -.96, .88, -.24); c.quadraticCurveTo(.56, -.68, .02, -.68); c.closePath(); },   // 낫
+  (c) => { c.rect(-.03, -.52, .06, 1.52); c.rect(-.36, -.94, .72, .42); },                                                                                // 망치
+];
+function drawWeapon(i, x, y, s, rot, alpha, color, glow, reveal) {
+  if (alpha <= .003) return;
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  if (reveal < 1) { g.beginPath(); g.rect(-1.2, 1.1 - 2.3 * reveal, 2.4, 2.4); g.clip(); }
+  g.beginPath(); WEAPONS[i](g);
+  g.globalAlpha = alpha * .22; g.fillStyle = color; g.fill("evenodd");
+  g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = Math.max(1.2, U * .028) / s; g.lineJoin = "round"; g.shadowColor = color; g.shadowBlur = glow; g.stroke();
+  g.restore(); g.shadowBlur = 0; g.globalAlpha = 1;
+  if (reveal > 0 && reveal < 1) { g.save(); g.translate(x, y); g.rotate(rot); g.globalCompositeOperation = "lighter"; g.fillStyle = "#fff"; g.globalAlpha = .9; g.fillRect(-.6 * s, (1.1 - 2.3 * reveal) * s - 1.5, 1.2 * s, 3); g.restore(); g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; }
+}
+function glowDisc(x, y, r, rgb, a) { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(.35, `rgba(${rgb},${a * .35})`); gr.addColorStop(1, `rgba(${rgb},0)`); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); }
+function caption(s, a) { const lines = s.split("\n"), px = .42 * U; const bg = g.createLinearGradient(0, 2.6 * U, 0, 4.6 * U); bg.addColorStop(0, "rgba(0,0,0,0)"); bg.addColorStop(.5, `rgba(0,0,0,${.55 * a})`); bg.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = bg; g.fillRect(-W, 2.6 * U, 2 * W, 2 * U); g.font = `${px}px "Nanum Myeongjo","Batang","바탕",serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.shadowColor = "#000"; g.shadowBlur = 14;
+  lines.forEach((ln, i) => { g.globalAlpha = a; g.fillStyle = "#f2f6fc"; g.fillText(ln, 0, 3.55 * U + (i - (lines.length - 1) / 2) * px * 1.5); }); g.shadowBlur = 0; g.globalAlpha = 1; }
+
+/* ── 한 프레임 ── */
+function draw(t) {
+  g.setTransform(DPR, 0, 0, DPR, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
+  const bgG = g.createLinearGradient(0, 0, 0, H); bgG.addColorStop(0, "#02040a"); bgG.addColorStop(1, "#060a14"); g.fillStyle = bgG; g.fillRect(0, 0, W, H);
+  const v = vol(t), h = hi(t), lit = eOut(seg(t, T.IGNITE, T.IGNITE + .6)) * (1 - seg(t, T.FINAL, T.FINAL + .3)), title = seg(t, T.FINAL, T.FINAL + .01);
+  const hitShake = .45 * pulse(t, T.HIT1, .02, .7) + .12 * pulse(t, T.SOLFADE, .02, .4) + T.BREAKS.reduce((m, b) => Math.max(m, .16 * pulse(t, b, .02, .3)), 0) + .2 * pulse(t, T.SURGE, .02, .5) + .4 * pulse(t, T.IGNITE, .02, .8) + .5 * pulse(t, T.FINAL, .02, .6) + .05 * seg(t, 22.5, T.FINAL);
+  const zoom = 1 + .1 * pulse(t, T.HIT1, .01, .6) + .05 * seg(t, 15, T.IGNITE) + .16 * pulse(t, T.IGNITE, .01, .7) + .06 * seg(t, T.IGNITE, T.FINAL) * lit;
+  const r0 = rng(Math.floor(t * 60));
+  g.translate(W / 2 + (r0() - .5) * hitShake * U, H / 2 + (r0() - .5) * hitShake * U); g.scale(zoom, zoom);
+
+  // 별
+  const M = Math.max(W, H) * .6;
+  for (const s of stars) { g.globalAlpha = (.25 + .75 * s.z) * (.5 + .5 * Math.sin(t * (1 + s.z) + s.ph)) * seg(t, .1, 1.5) * (1 - .6 * seg(t, 15, 19) * (1 - lit)); g.fillStyle = "#dfeaff"; g.beginPath(); g.arc(s.x * M, s.y * M - t * s.z * 1.2, s.z * 1.2, 0, TAU); g.fill(); }
+  g.globalAlpha = 1;
+
+  const sw = swordState(t);
+  g.globalCompositeOperation = "lighter";
+  /* 빛기둥 (점화 후) */
+  if (t >= T.IGNITE && !title) for (const p of pillars) { if (t < p.born) continue; const k = eOut(seg(t, p.born, p.born + .55)), a = p.a * (.6 + .4 * h) * (.75 + .25 * Math.sin(t * 9 + p.x));
+    const gr = g.createLinearGradient(p.x - p.w, 0, p.x + p.w, 0); gr.addColorStop(0, "rgba(125,184,255,0)"); gr.addColorStop(.3, `rgba(150,200,255,${a * .45})`); gr.addColorStop(.5, `rgba(240,248,255,${Math.min(1, a * 1.5)})`); gr.addColorStop(.7, `rgba(150,200,255,${a * .45})`); gr.addColorStop(1, "rgba(125,184,255,0)"); g.fillStyle = gr; g.fillRect(p.x - p.w, -H, p.w * 2, 2 * H * k);
+    g.fillStyle = `rgba(255,255,255,${Math.min(1, a * 1.4)})`; g.fillRect(p.x - Math.max(1, p.w * .06), -H, Math.max(2, p.w * .12), 2 * H * k); }
+
+  /* 솔 */
+  const solA = seg(t, .2, 2.2) * (1 - eIn(seg(t, T.SOLFADE, T.SOLFADE + .7)));
+  if (solA > .003) { const [sx, sy] = solPos(t), sr = U * (.62 + .25 * v + .5 * pulse(t, T.HIT1 - .25, .25, .5)) * (1 - .8 * eIn(seg(t, T.SOLFADE, T.SOLFADE + .7)));
+    glowDisc(sx, sy, sr * 6, "255,236,190", .55 * solA); g.fillStyle = "#fff"; g.globalAlpha = solA; g.beginPath(); g.arc(sx, sy, sr, 0, TAU); g.fill();
+    g.fillStyle = SOL; g.beginPath(); for (let i = 0; i < 16; i++) { const a = i / 16 * TAU + t * .22, l = sr * (2.1 + (i % 2) * 1.1 + .6 * v), w = .07; g.moveTo(sx + Math.cos(a - w) * sr * 1.15, sy + Math.sin(a - w) * sr * 1.15); g.lineTo(sx + Math.cos(a) * l, sy + Math.sin(a) * l); g.lineTo(sx + Math.cos(a + w) * sr * 1.15, sy + Math.sin(a + w) * sr * 1.15); } g.globalAlpha = solA * .7; g.fill();
+    g.globalAlpha = solA * .6; g.strokeStyle = SOL; g.lineWidth = Math.max(1, U * .02); g.beginPath(); g.arc(sx, sy, sr * 1.75, 0, TAU); g.stroke(); g.globalAlpha = 1;
+    // 파쇄 직전: 혼돈을 겨누는 빛의 창
+    const lance = pulse(t, T.HIT1 - .55, .55, .35); if (lance > 0) { const gr = g.createLinearGradient(sx, 0, 3.7 * U, 0); gr.addColorStop(0, `rgba(255,245,215,${lance})`); gr.addColorStop(1, `rgba(255,245,215,${lance * .4})`); g.fillStyle = gr; const hw = U * (.03 + .25 * eIn(seg(t, T.HIT1 - .1, T.HIT1 + .1))); g.fillRect(sx, sy - hw, 3.7 * U - sx, hw * 2); }
+  }
+  g.globalCompositeOperation = "source-over";
+
+  /* 원초의 혼돈 (3.13에 산산조각) */
+  if (t < T.HIT1) { const cx = 3.7 * U, cy = .1 * U, a = seg(t, .1, 1.6), R = 3.5 * U * (1 + .04 * Math.sin(t * 2));
+    const path = () => { g.beginPath(); for (let i = 0; i <= 140; i++) { const an = i / 140 * TAU, rr = R * (1 + .07 * Math.sin(an * 3 + t * 1.1) + .05 * Math.sin(an * 5 - t * 1.7) + .03 * Math.sin(an * 11 + t * 2.6) + .02 * Math.sin(an * 17 - t * 3.3)); const x = cx + Math.cos(an) * rr, y = cy + Math.sin(an) * rr; i ? g.lineTo(x, y) : g.moveTo(x, y); } g.closePath(); };
+    g.globalCompositeOperation = "lighter"; glowDisc(cx, cy, R * 1.5, "150,50,255", .35 * a); g.globalCompositeOperation = "source-over";
+    path(); const gr = g.createRadialGradient(cx, cy, R * .2, cx, cy, R * 1.05); gr.addColorStop(0, "#020006"); gr.addColorStop(.75, "#12031f"); gr.addColorStop(1, "#3a0d5e"); g.globalAlpha = a; g.fillStyle = gr; g.fill();
+    g.strokeStyle = CHAOS2; g.lineWidth = Math.max(1.5, U * .035); g.shadowColor = CHAOS; g.shadowBlur = U * .5; g.stroke(); g.shadowBlur = 0;
+    // 솔을 향해 뻗는 촉수
+    const [sx, sy] = solPos(t), reach = eInOut(seg(t, .8, 2.9)); g.lineCap = "round";
+    for (let k = 0; k < 6; k++) { const off = (k - 2.5) * .55 * U, ex = lerp(cx - R * .9, sx + 1.4 * U, reach * (.75 + .25 * Math.sin(t * 1.7 + k))), ey = sy + off * .5 + Math.sin(t * 2.2 + k) * .3 * U;
+      g.strokeStyle = k % 2 ? CHAOS : "#5a1a8a"; g.lineWidth = U * (.1 - .01 * k); g.globalAlpha = a * .85; g.beginPath(); g.moveTo(cx - R * .85, cy + off); g.bezierCurveTo(cx - R * 1.4, cy + off * 1.8, ex + 1.5 * U, ey - off * .6, ex, ey); g.stroke(); }
+    g.globalAlpha = 1; }
+
+  /* 혼돈의 씨앗 — 끝까지 사라지지 않는다 */
+  if (t > T.HIT1 + .8) { const grow = seg(t, 10.2, 14.5) * (1 - lit * .7) * (title ? .45 : 1), a0 = seg(t, T.HIT1 + .8, 6);
+    g.globalCompositeOperation = "lighter";
+    for (const s of seeds) { const pl = .6 + .4 * Math.sin(t * 2.4 + s.ph), sz = U * (.07 + .2 * grow) * pl; glowDisc(s.x, s.y, sz * (5 + 6 * grow), "177,77,255", (.3 + .35 * grow) * a0);
+      g.fillStyle = CHAOS2; g.globalAlpha = a0; g.beginPath(); g.moveTo(s.x, s.y - sz * 1.6); g.lineTo(s.x + sz, s.y); g.lineTo(s.x, s.y + sz * 1.6); g.lineTo(s.x - sz, s.y); g.closePath(); g.fill(); g.globalAlpha = 1; }
+    g.globalCompositeOperation = "source-over"; }
+
+  /* 여섯 빛날개 + 동족의 잔해가 이룬 후광 */
+  if (t >= T.IGNITE && !title) { g.globalCompositeOperation = "lighter"; const gx = sw.x, gy = sw.y + sw.s * .3, ANG = [-35, 35, -78, 78, -128, 128], LEN = [5.4, 5.4, 4.4, 4.4, 3.1, 3.1];
+    for (let i = 0; i < 6; i++) { const k = eBack(seg(t, T.WINGS[i], T.WINGS[i] + .45)); if (k <= 0) continue; const a = (ANG[i] - 90) * PI / 180 + Math.sin(t * 1.3 + i) * .03, L = LEN[i] * U * k * (1 + .06 * v), wd = .2 * U * k;
+      const ex = gx + Math.cos(a) * L, ey = gy + Math.sin(a) * L, nx = -Math.sin(a), ny = Math.cos(a), mx = gx + Math.cos(a) * L * .22, my = gy + Math.sin(a) * L * .22;
+      const gr = g.createLinearGradient(gx, gy, ex, ey); gr.addColorStop(0, "rgba(255,255,255,.95)"); gr.addColorStop(.5, "rgba(190,222,255,.6)"); gr.addColorStop(1, "rgba(125,184,255,0)"); g.fillStyle = gr;
+      g.beginPath(); g.moveTo(gx, gy); g.lineTo(mx + nx * wd, my + ny * wd); g.lineTo(ex, ey); g.lineTo(mx - nx * wd, my - ny * wd); g.closePath(); g.fill();
+      g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = Math.max(1, U * .02); g.beginPath(); g.moveTo(gx, gy); g.lineTo(lerp(gx, ex, .8), lerp(gy, ey, .8)); g.stroke(); }
+    const ha = seg(t, 21.3, 22.8); if (ha > 0) for (const m of halo) { const a = m.a + t * m.sp, x = sw.x + Math.cos(a) * m.d * U * 1.25, y = sw.y - .2 * U + Math.sin(a) * m.d * U * (.32 + m.tilt * .2), depth = .55 + .45 * Math.sin(a);
+      g.globalAlpha = ha * depth; g.fillStyle = LIGHT; g.beginPath(); g.moveTo(x, y - m.sz * U * 1.8); g.lineTo(x + m.sz * U, y); g.lineTo(x, y + m.sz * U * 1.8); g.lineTo(x - m.sz * U, y); g.closePath(); g.fill(); }
+    g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; }
+
+  /* 일곱 무기 */
+  if (t >= T.FORGE && !title) {
+    const awakeSweep = seg(t, T.AWAKE, T.AWAKE + .9);
+    if (awakeSweep > 0 && awakeSweep < 1) { g.globalCompositeOperation = "lighter"; g.strokeStyle = SOL; g.shadowColor = SOL; g.shadowBlur = U * .4; g.globalAlpha = (1 - awakeSweep); g.lineWidth = Math.max(1.5, U * .025); g.beginPath(); g.arc(0, 0, 4.6 * U * eOut(awakeSweep), 0, TAU); g.stroke(); g.shadowBlur = 0; g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; }
+    // 솔 → 무기로 흘러드는 빛
+    const flow = seg(t, T.SOLFADE, T.SOLFADE + .75); if (flow > 0 && flow < 1) { g.globalCompositeOperation = "lighter"; for (let i = 0; i < 7; i++) { const [x, y] = ringPos(i), f0 = clamp(flow * 1.3 - .3), f1 = clamp(flow * 1.3); g.strokeStyle = SOL; g.lineWidth = U * .05; g.globalAlpha = .9; g.beginPath(); g.moveTo(x * f0, y * f0); g.lineTo(x * f1, y * f1); g.stroke(); } g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; }
+    for (let i = 6; i >= 0; i--) {
+      const born = T.FORGE + (i === 0 ? 6 : i - 1) * .42, reveal = eOut(seg(t, born, born + .55)); if (reveal <= 0) continue;
+      const bi = BREAK_ORDER.indexOf(i), bt = bi >= 0 ? T.BREAKS[bi] : Infinity, [rx, ry, rrot] = ringPos(i);
+      const awake = seg(t, T.AWAKE + .25, T.AWAKE + .9), inherit = pulse(t, T.SOLFADE + .6, .1, .8);
+      if (i === 0) {                                              // 광휘 — 마지막까지 남는 검
+        const dim = seg(t, 15.2, 18.6) * (1 - lit), core = Math.max(seg(t, 17.3, 19.5), lit), one = pulse(t, T.ONE, .03, 1.2);
+        g.globalCompositeOperation = "lighter"; glowDisc(sw.x, sw.y, sw.s * (1.5 + 2.2 * lit + .8 * one), "190,222,255", (.22 + .5 * lit + .4 * one + .2 * inherit) * (1 - dim * .6)); g.globalCompositeOperation = "source-over";
+        drawWeapon(0, sw.x, sw.y, sw.s, 0, 1 - dim * .55, lit > .5 ? "#fff" : LIGHT, U * (.35 + 1.1 * lit + .6 * inherit), reveal);
+        if (core > 0) { g.globalCompositeOperation = "lighter"; g.strokeStyle = "#fff"; g.lineCap = "round"; g.shadowColor = "#fff"; g.shadowBlur = U * (.4 + .8 * core); g.globalAlpha = core; g.lineWidth = Math.max(1.5, sw.s * .028 * (1 + lit)); g.beginPath(); g.moveTo(sw.x, sw.y - sw.s * .93); g.lineTo(sw.x, sw.y + sw.s * .24); g.stroke();
+          g.fillStyle = "#fff"; g.beginPath(); g.moveTo(sw.x, sw.y + sw.s * .2); g.lineTo(sw.x + sw.s * .05, sw.y + sw.s * .3); g.lineTo(sw.x, sw.y + sw.s * .4); g.lineTo(sw.x - sw.s * .05, sw.y + sw.s * .3); g.closePath(); g.fill(); g.shadowBlur = 0; g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; }
+        continue; }
+      if (t < bt) { drawWeapon(i, rx, ry, .95 * U, rrot, 1, LIGHT, U * (.3 + .5 * inherit), reveal);
+        if (awake > 0) { g.globalCompositeOperation = "lighter"; glowDisc(rx, ry, U * (.35 + .25 * inherit), "255,255,255", .9 * awake); g.globalCompositeOperation = "source-over"; } }
+      else { const age = t - bt, fall = age * age * .05 * U, a = Math.max(0, .42 - age * .085); if (a <= 0) continue;          // 부서진 동족의 잔해 (위/아래 두 동강)
+        for (const half of [-1, 1]) { g.save(); g.translate(rx + half * age * .12 * U, ry + fall + half * .06 * U); g.rotate(rrot + half * age * .22); g.beginPath(); g.rect(-U, half < 0 ? -1.2 * U : 0, 2 * U, 1.2 * U); g.clip(); g.rotate(-rrot); drawWeapon(i, 0, 0, .95 * U, rrot, a, "#7f93ad", 0, 1); g.restore(); } }
+    }
+  }
+
+  /* 파티클 */
+  for (const p of parts) { const k = clamp(p.life / p.max);
+    if (p.type === "ring") { const q = 1 - p.life / p.max; g.globalCompositeOperation = "lighter"; g.globalAlpha = k * k; g.strokeStyle = p.color; g.lineWidth = Math.max(1, p.lw * U * .55 * (1.3 - q)); g.beginPath(); g.arc(p.x, p.y, lerp(p.r0, p.r1, eOut(q)), 0, TAU); g.stroke(); }
+    else if (p.type === "bolt") { g.globalCompositeOperation = "lighter"; g.lineJoin = "round"; for (const [col, lw, al] of [[CHAOS, .16, .5], ["#ffd9f0", .045, 1]]) { g.strokeStyle = col; g.lineWidth = lw * U; g.globalAlpha = al * Math.min(1, k * 2.5); g.shadowColor = CHAOS2; g.shadowBlur = U * .5; g.beginPath(); p.pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); } g.shadowBlur = 0; }
+    else if (p.type === "shard") { g.globalCompositeOperation = "source-over"; g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.globalAlpha = Math.min(1, k * 2); g.beginPath(); g.moveTo(-p.size * (.6 + p.shape[0]), p.size * .7); g.lineTo(p.size * (.7 + p.shape[1]), p.size * .2 * p.shape[2]); g.lineTo(-p.size * .2, -p.size * (.6 + p.shape[2])); g.closePath();
+      g.fillStyle = p.dark ? "#14042a" : "#9fb4cf"; g.fill(); g.strokeStyle = p.dark ? CHAOS : "#e8f2ff"; g.lineWidth = Math.max(1, U * .018); g.stroke(); g.restore(); }
+    else { g.globalCompositeOperation = "lighter"; g.globalAlpha = Math.min(1, k * 1.8); g.fillStyle = p.color; g.beginPath(); g.arc(p.x, p.y, p.size, 0, TAU); g.fill(); g.globalAlpha *= .1; g.beginPath(); g.arc(p.x, p.y, p.size * 2.4, 0, TAU); g.fill(); }
+    g.globalAlpha = 1; }
+  g.globalCompositeOperation = "source-over";
+
+  /* 조여 오는 어둠 (15~19.62) — 점화와 함께 밀려난다 */
+  const dark = seg(t, 10.4, 14.6) * .35 + seg(t, 14.9, 19.2) * .65;
+  if (dark > 0 && t < T.IGNITE + .7) { const push = eOut(seg(t, T.IGNITE, T.IGNITE + .7)), rr = lerp(lerp(13 * U, 3.0 * U, eInOut(seg(t, 14.9, 19.4))) * (1 - .22 * pulse(t, T.SURGE, .05, .9)), 26 * U, push), cy = .25 * U;
+    const gr = g.createRadialGradient(0, cy, rr * .7, 0, cy, rr * 1.9); gr.addColorStop(0, "rgba(10,2,22,0)"); gr.addColorStop(.55, `rgba(24,5,48,${.85 * dark})`); gr.addColorStop(1, `rgba(3,0,8,${.97 * dark})`); g.fillStyle = gr; g.fillRect(-W, -H, 2 * W, 2 * H);
+    g.globalCompositeOperation = "lighter"; for (let k = 0; k < 14; k++) { const a = k / 14 * TAU + t * .18 * (k % 2 ? 1 : -1), d = rr * (1.05 + .12 * Math.sin(t * 1.6 + k * 2)); glowDisc(Math.cos(a) * d * 1.2, cy + Math.sin(a) * d * .8, U * 1.5, k % 3 ? "120,40,220" : "255,45,120", .16 * dark * (1 - push)); }
+    g.globalCompositeOperation = "source-over"; }
+
+  /* 자막 */
+  for (const c of CAPS) { const a = Math.min(seg(t, c.a, c.a + .5), 1 - seg(t, c.b - .5, c.b)); if (a > 0) caption(c.s, a); }
+
+  /* 타이틀 */
+  if (title) { const tk = t - T.FINAL; g.globalCompositeOperation = "lighter"; const fy = -1.15 * U, fl = .8 + .2 * Math.sin(t * 3);
+    glowDisc(0, fy, 5.5 * U, "150,200,255", .35 * eOut(seg(tk, .1, 1)));
+    for (const [ang, len, wd] of [[0, 8.5, .1], [PI / 2, 4.2, .1], [PI / 4, 2.2, .06], [-PI / 4, 2.2, .06]]) { const L = len * U * eOut(seg(tk, .1, .9)) * fl; g.save(); g.translate(0, fy); g.rotate(ang); const gr = g.createLinearGradient(-L, 0, L, 0); gr.addColorStop(0, "rgba(190,222,255,0)"); gr.addColorStop(.5, "rgba(255,255,255,.95)"); gr.addColorStop(1, "rgba(190,222,255,0)"); g.fillStyle = gr; g.beginPath(); g.ellipse(0, 0, L, wd * U, 0, 0, TAU); g.fill(); g.restore(); }
+    g.globalCompositeOperation = "source-over"; drawWeapon(0, sw.x, sw.y, sw.s, 0, eOut(seg(tk, .1, .8)), "#fff", U * .9, 1);
+    g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "#fff"; g.shadowColor = BLUE; g.shadowBlur = U * .6;
+    const L = "LUMINOSITY", track = .3 * U; g.font = `600 ${.95 * U}px "Times New Roman","Batang",serif`;
+    const ws = [...L].map((ch) => g.measureText(ch).width), total = ws.reduce((a, b) => a + b, 0) + track * (L.length - 1); let x = -total / 2;
+    for (let i = 0; i < L.length; i++) { const k = eOut(seg(tk, .35 + i * .045, .9 + i * .045)); g.globalAlpha = k; g.fillText(L[i], x + ws[i] / 2, 1.35 * U + (1 - k) * .3 * U); x += ws[i] + track; }
+    const bk = eOut(seg(tk, .8, 1.3)), bx = total / 2 + .75 * U + (1 - bk) * U; g.globalAlpha = bk; g.font = `300 ${1.05 * U}px "Times New Roman","Batang",serif`; g.fillText("[", -bx, 1.3 * U); g.fillText("]", bx, 1.3 * U);
+    g.globalAlpha = eOut(seg(tk, 1.0, 1.6)); g.font = `${.56 * U}px "Nanum Myeongjo","Batang","바탕",serif`; g.fillText("[ 광 휘 ]", 0, 2.4 * U);
+    g.shadowBlur = 0; g.globalAlpha = eOut(seg(tk, 1.5, 2.2)) * .85; g.fillStyle = "#b9c8dc"; g.font = `${.34 * U}px "Nanum Myeongjo","Batang","바탕",serif`; g.fillText("수많은 세월, 검은 아직도 혼돈의 씨앗을 찾아 헤매고 있다.", 0, 3.35 * U); g.globalAlpha = 1; }
+
+  /* 후처리: 섬광 · 백광 · 비네트 · 페이드 */
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const white = Math.max(pulse(t, T.HIT1, .04, .9), .45 * pulse(t, T.SOLFADE, .04, .5), .9 * pulse(t, T.IGNITE, .04, .8), (t < T.FINAL ? eIn(seg(t, 22.8, T.FINAL)) * .9 : 0), pulse(t, T.FINAL, .01, 1.1));
+  if (white > 0) { g.fillStyle = `rgba(240,247,255,${Math.min(1, white)})`; g.fillRect(0, 0, W, H); }
+  const chaosFlash = T.BREAKS.reduce((m, b) => Math.max(m, pulse(t, b, .02, .25)), 0); if (chaosFlash > 0) { g.fillStyle = `rgba(150,40,220,${chaosFlash * .22})`; g.fillRect(0, 0, W, H); }
+  const vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .3, W / 2, H / 2, Math.hypot(W, H) * .62); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.6)"); g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  const black = Math.max(1 - seg(t, 0, .5), seg(t, T.FADE, T.END)); if (black > 0) { g.fillStyle = `rgba(0,0,0,${black})`; g.fillRect(0, 0, W, H); }
+}
+
+/* ── 재생 ── */
+const now = () => performance.now() / 1000;
+function frame() {
+  if (!running) return;
+  if (useAudio && !bgm.paused && bgm.currentTime > 0) { const diff = (now() - bgm.currentTime) - anchor; anchor += Math.abs(diff) > .25 ? diff : diff * .1; }
+  const t = now() - anchor, dt = Math.min(.05, Math.max(0, t - time)); time = t;
+  update(t, dt); draw(t);
+  if (t >= T.END) return endCutscene();
+  raf = requestAnimationFrame(frame);
+}
+function playLuminosityCutscene(o = {}) {
+  opts = o; $("cs").hidden = false; resize(); init(); time = 0; running = true; anchor = now(); useAudio = o.sound !== false;
+  if (useAudio) { try { bgm.currentTime = 0; bgm.volume = 1; const p = bgm.play(); if (p) p.catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
+}
+function endCutscene() { running = false; cancelAnimationFrame(raf); try { bgm.pause(); } catch (e) { /* 무시 */ } $("cs").hidden = true; if (opts.onDone) opts.onDone(); }
+$("csSkip").addEventListener("click", endCutscene);
+$("demoPlay").addEventListener("click", () => playLuminosityCutscene({ sound: $("demoSound").checked }));
+window.addEventListener("resize", () => { if (!$("cs").hidden) resize(); });
+window.playLuminosityCutscene = playLuminosityCutscene;
+function renderStill(tt) { init(); for (let t = 0; t < tt; t += 1 / 60) { time = t; update(t, 1 / 60); } time = tt; draw(tt); }
+{ const q = new URLSearchParams(location.search).get("t"); if (q !== null) { $("cs").hidden = false; resize(); renderStill(parseFloat(q) || 0); } }
+</script>
+</body>
+</html>
