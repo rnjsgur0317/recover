@@ -11,3 +11,6 @@ public/luminosity_cut.mp3
 
 # 음원 백업·재편집 산출물
 *.mp3
+
+# 받은 원본 영상·음원 사본 (저작권 — 올리지 않음)
+tools/src_media/
