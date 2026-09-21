@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>컷씬 갤러리</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: #08090c; color: #e8e8ea; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; padding: 40px 20px 80px; }
+.wrap { max-width: 1040px; margin: 0 auto; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 26px; }
+h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
+.lead { margin: 6px 0 0; color: #8a8c93; font-size: .88rem; }
+.sound { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: #b5b7bd; border: 1px solid #25272d; border-radius: 999px; padding: 8px 14px; cursor: pointer; user-select: none; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+.card { background: #101116; border: 1px solid #22242b; border-radius: 16px; overflow: hidden; cursor: pointer; transition: transform .16s, border-color .16s, box-shadow .16s; display: flex; flex-direction: column; text-align: left; color: inherit; font-family: inherit; padding: 0; }
+.card:hover, .card:focus-visible { transform: translateY(-3px); border-color: #f1f1f3; box-shadow: 0 14px 40px rgba(0,0,0,.5); outline: none; }
+.thumb { position: relative; aspect-ratio: 16 / 9; background: #000 center / cover no-repeat; }
+.thumb::after { content: "▶"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; color: #fff; background: rgba(0,0,0,.35); opacity: 0; transition: opacity .16s; }
+.card:hover .thumb::after, .card:focus-visible .thumb::after { opacity: 1; }
+.dur { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,.72); border-radius: 6px; padding: 3px 8px; font-size: .74rem; font-weight: 700; }
+.info { padding: 15px 17px 17px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.title { font-size: 1.08rem; font-weight: 800; letter-spacing: .02em; }
+.title small { font-weight: 600; color: #9c9ea6; font-size: .84rem; margin-left: 6px; }
+.desc { color: #9a9ca3; font-size: .84rem; line-height: 1.6; flex: 1; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.tags span { font-size: .7rem; font-weight: 700; color: #c9cbd1; border: 1px solid #2c2e36; border-radius: 999px; padding: 3px 9px; }
+.tags span.warn { color: #f2c46d; border-color: #574520; }
+.foot { margin-top: 26px; color: #5f6169; font-size: .78rem; line-height: 1.7; }
+.foot code { background: #15161b; border-radius: 5px; padding: 1px 6px; color: #9ea0a8; }
+.stage { position: fixed; inset: 0; z-index: 100; background: #000; }
+.stage[hidden] { display: none; }
+.stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.close { position: absolute; left: 18px; top: 16px; z-index: 2; background: rgba(0,0,0,.45); color: #e4e4e7; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 14px; font-size: .8rem; cursor: pointer; font-family: inherit; }
+.close:hover { border-color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>컷씬 갤러리</h1>
+      <p class="lead">카드를 누르면 전체 화면으로 재생됩니다. 끝나면 자동으로 이 화면으로 돌아와요. (ESC 또는 ← 목록으로 중단)</p>
+    </div>
+    <label class="sound"><input type="checkbox" id="sound" checked> 사운드 켜기</label>
+  </header>
+  <div class="grid" id="grid"></div>
+  <p class="foot">새 컷씬을 추가하려면 이 파일의 <code>CUTSCENES</code> 배열에 한 줄만 넣으면 됩니다 (제목 · 설명 · 페이지 주소 · 썸네일).<br>
+  음원이 필요한 컷씬은 mp3 파일이 이 PC에만 있어서, 다른 곳에 올리면 소리 없이 재생됩니다.</p>
+</div>
+
+<div class="stage" id="stage" hidden>
+  <button class="close" id="close">← 목록으로</button>
+</div>
+
+<script>
+"use strict";
+/* 컷씬 목록 — 새로 만들면 여기에 추가. page 는 ?autoplay=1 을 지원하는 컷씬 페이지여야 함
+   (끝나면 parent 로 { type: "cutscene-done" } 메시지를 보냄) */
+const CUTSCENES = [
+  { id: "equinox", title: "EQUINOX", ko: "이쿼녹스 · 陰陽", page: "/equinox_preview.html", thumb: "/thumbs/equinox.jpg", dur: "0:21",
+    desc: "거대한 태극의 안쪽에서 시작해, 음과 양이 맞물려 하나가 되는 순간. 90BPM 3/4박 음악에 박자 단위로 맞춘 흑백 연출.",
+    tags: ["음악 동기", "흑백", "태극 · 팔괘"], needsAudio: true },
+  { id: "luminosity", title: "LUMINOSITY", ko: "루미노시티 · 광휘", page: "/luminosity_preview.html", thumb: "/thumbs/luminosity.jpg", dur: "0:28",
+    desc: "솔이 남긴 일곱 무기 중 마지막까지 남은 검. 혼돈의 씨앗에 동족이 부서지고, 가장 밝은 빛이 점화된다.",
+    tags: ["사운드 동기", "서사 자막", "빛 · 혼돈"], needsAudio: true },
+  { id: "seal", title: "THE FIFTH SEAL", ko: "다섯 번째 봉인", page: "/cutscene_preview.html", thumb: "/thumbs/seal.jpg", dur: "0:21+",
+    desc: "별들 사이에 버려진 상자와 네 겹의 봉인, 그리고 아무도 본 적 없는 다섯 번째 봉인. 효과음은 브라우저에서 합성.",
+    tags: ["합성 효과음", "보상 카드", "진홍 · 금"], needsAudio: false },
+];
+
+const $ = (id) => document.getElementById(id);
+const grid = $("grid"), stage = $("stage");
+let frame = null;
+
+grid.innerHTML = CUTSCENES.map((c) => `
+  <button class="card" data-id="${c.id}">
+    <div class="thumb" style="background-image:url('${c.thumb}')"><span class="dur">${c.dur}</span></div>
+    <div class="info">
+      <div class="title">${c.title}<small>${c.ko}</small></div>
+      <div class="desc">${c.desc}</div>
+      <div class="tags">${c.tags.map((t) => `<span>${t}</span>`).join("")}${c.needsAudio ? '<span class="warn">음원 파일 필요</span>' : ""}</div>
+    </div>
+  </button>`).join("");
+
+function play(id) {
+  const c = CUTSCENES.find((x) => x.id === id); if (!c) return;
+  stop();
+  frame = document.createElement("iframe");
+  frame.allow = "autoplay; fullscreen";
+  frame.src = `${c.page}?autoplay=1&sound=${$("sound").checked ? 1 : 0}`;
+  stage.append(frame); stage.hidden = false; document.body.style.overflow = "hidden";
+  history.replaceState(null, "", "#" + id);
+}
+function stop() {
+  if (frame) { frame.remove(); frame = null; }          // iframe 을 없애면 소리도 같이 멈춤
+  stage.hidden = true; document.body.style.overflow = "";
+  history.replaceState(null, "", location.pathname);
+}
+grid.addEventListener("click", (e) => { const card = e.target.closest("[data-id]"); if (card) play(card.dataset.id); });
+$("close").addEventListener("click", stop);
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && frame) stop(); });
+window.addEventListener("message", (e) => { if (e.origin === location.origin && e.data && e.data.type === "cutscene-done") stop(); });
+</script>
+</body>
+</html>

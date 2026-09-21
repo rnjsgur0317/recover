@@ -309,6 +309,11 @@ window.addEventListener("resize", () => { if (!$("cs").hidden) resize(); });
 window.playLuminosityCutscene = playLuminosityCutscene;
 function renderStill(tt) { init(); for (let t = 0; t < tt; t += 1 / 60) { time = t; update(t, 1 / 60); } time = tt; draw(tt); }
 { const q = new URLSearchParams(location.search).get("t"); if (q !== null) { $("cs").hidden = false; resize(); renderStill(parseFloat(q) || 0); } }
+
+/* 갤러리(cutscenes.html)에서 ?autoplay=1 로 열리면 바로 재생하고, 끝나면 부모 창에 알림 */
+{ const q = new URLSearchParams(location.search); if (q.get("autoplay")) { const demo = document.querySelector(".demo"); if (demo) demo.style.display = "none"; document.body.style.background = "#000";
+  const done = () => { try { parent.postMessage({ type: "cutscene-done" }, location.origin); } catch (e) { /* 단독 실행 */ } };
+  playLuminosityCutscene({ sound: q.get("sound") !== "0", onDone: done }); } }
 </script>
 </body>
 </html>
