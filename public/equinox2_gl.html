@@ -24,9 +24,9 @@
      2.77  陽  The Positive, that you've taken         검은 세계 — 흰 구체를 올려다봄, 빛 조각이 흘러나온다
      5.43  衡  The Equinox, Everything from everywhere 낮과 밤이 반반(명암 경계선) — 두 구체가 도는 아우라 전경, 음악 막대
      8.10  無  And you, now having it all, …           네 구슬이 눈앞을 스치고, 물러나며 두 구체가 한 점(ZERO)으로 나선을 그린다
-     10.77 충돌 → 제목 EQUINOX                          두 구체가 음악의 박마다 반 바퀴씩 튕기듯 돌며 큰 아우라(빛기둥 · 방사 광선 · 혜성 꼬리 · 바닥 충격 고리 · 소용돌이 파편)를 내뿜는다.
+     10.77 충돌 → 제목 EQUINOX                          두 구체가 멈추지 않고 돌되 박마다 힘을 받아 출렁이듯(한 박에 1/4 바퀴) 돌며 큰 아우라(빛기둥 · 방사 광선 · 혜성 꼬리 · 바닥 충격 고리 · 소용돌이 파편)를 내뿜는다.
                                                         명암 경계선은 화면에 고정 — 구체는 돌아서 경계선을 넘을 때마다 흰 구 ↔ 검은 구로 뒤바뀐다(픽셀 단위)
-     13.77 반 박마다 튕기며 가운데로 → 14.43 두 구체가 부딪혀 터짐(섬광 · 파편 · 충격파, 효과음 없이 원곡 잔향만) → 깔끔하게 암전 → 15.4 끝
+     13.77 두 배 빠르게 돌며 가운데로 → 14.43 두 구체가 부딪혀 터짐(섬광 · 파편 · 충격파, 효과음 없이 원곡 잔향만) → 깔끔하게 암전 → 15.4 끝
    규칙: 두 구체 · 구슬 · 바닥의 큰 두 원은 '절대색'(뒤집히지 않음), 그 밖의 세계는 박자의 파동 · 장면 전환 파동 · 명암 경계선에 따라 뒤집힌다.
    패스: ① 장면(구·원반·고리·원통을 해석적으로 교차, 가장자리 면적 안티앨리어싱, 바닥 반사 1회, 알파 = 절대색 표시) ② 파편 입자(배타 블렌딩) ③ 블룸 ④ 최종(파동 굴절 · 뒤집기 · 글자 · 조리개)
    전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
@@ -287,10 +287,10 @@ function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross
 function aim(pos, tgt, sx, sy, focal, roll) { const c0 = camera(pos, tgt, 0), d = Math.hypot(...sub(tgt, pos)); return camera(pos, sub(sub(tgt, mul(c0.r, d * sx / focal)), mul(c0.u, d * sy / focal)), roll); }
 function proj(S, p) { const v = sub(p, S.cam.pos), z = Math.max(.05, dot(v, S.cam.f)); return [dot(v, S.cam.r) / z * S.focal, dot(v, S.cam.u) / z * S.focal]; }
 const ORB_R = .62, ORBIT = 1.75, ORB_H = 1.5, HEAD = [0, 1.7, 0];
-const TH0 = .95, snapE = (x) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2), SNAP = .62, XC = .144;                 // 튕기는 반 바퀴: 박의 앞 62% 동안 휙 돌고(살짝 지나쳤다 돌아옴) 나머지는 멈춤. XC = 경계선을 넘는 지점
-function spin(t) {                                                                                       // 제목 구간의 회전: 박마다(나선 구간은 반 박마다) 반 바퀴 → { 누적 반 바퀴 수, 마지막으로 경계선을 넘은 뒤 흐른 시간, 박 길이 }
-  const tt = Math.min(t, T.BURST - 1e-4), fast = tt >= T.SPIRAL, len = fast ? BEAT / 2 : BEAT, base = fast ? T.SPIRAL : T.IMPACT, n0 = fast ? Math.round((T.SPIRAL - T.IMPACT) / BEAT) : 0, q = (tt - base) / len, n = Math.floor(q), f = q - n;
-  const since = f >= XC * SNAP ? (f - XC * SNAP) * len : (f + 1 - XC * SNAP) * len; return { turns: n0 + n + snapE(clamp(f / SNAP)), since: since + Math.max(0, t - T.BURST), len };
+const TH0 = .95, surge = (f) => .3 * f + .7 * (1 - Math.exp(-3.2 * f)) / (1 - Math.exp(-3.2));                                    // 박마다 받는 힘: 박 머리에서 빠르고 점점 느려지지만 멈추지는 않는다
+function spin(t) {                                                                                       // 제목 구간의 회전: 한 박에 1/4 바퀴(나선 구간은 반 박에 1/4 바퀴) — 두 구체는 두 박마다 경계선을 넘는다(항상 박 위에서)
+  const tt = Math.min(t, T.BURST - 1e-4), fast = tt >= T.SPIRAL, len = fast ? BEAT / 2 : BEAT, base = fast ? T.SPIRAL : T.IMPACT, n0 = fast ? Math.round((T.SPIRAL - T.IMPACT) / BEAT) : 0, q = (tt - base) / len, n = Math.floor(q), f = q - n, g = n0 + n;
+  const since = g % 2 ? f * len : g === 0 ? 9 : (f + 1) * len; return { turns: (g + surge(f)) / 2, since: since + Math.max(0, t - T.BURST), len: len * 2 };   // turns = 반 바퀴 단위, since = 마지막으로 경계선을 넘은 뒤 흐른 시간
 }
 function orbitAngle(t) { if (t >= T.IMPACT) return TH0 + PI / 2 + PI * spin(t).turns; const x = Math.max(0, t - T.MU); return .9 + .42 * t + .5 * x * x * x; }
 function state(t) {
@@ -301,7 +301,7 @@ function state(t) {
   else if (t < T.IMPACT) { const x = seg(t, T.MU, T.IMPACT); orbit = lerp(ORBIT, .0, eIn(x)); h = lerp(ORB_H, 1.4, x); }
   else { const s = t - T.IMPACT, k = eBack(seg(s, 0, .5)), c = eIn(seg(t, T.SPIRAL, T.BURST)), gone = t >= T.BURST; orbit = ORBIT * eOut(seg(s, 0, .7)) * (1 - c); R0 = R1 = gone ? 0 : ORB_R * k * (1 + .25 * c); h = lerp(1.4, ORB_H, eOut(seg(s, 0, .7))); S.bars = gone ? 1 - seg(t, T.BURST, T.BURST + .2) : 1;
     S.swap = 1; S.aura = gone ? 1 - seg(t, T.BURST, T.BURST + .3) : eOut(seg(s, .05, .9)) * (1 + .6 * c); S.trail = gone ? 0 : clamp(Math.abs(A - orbitAngle(t - .02)) / .02 * .1, 0, 2.6);                                      // 꼬리는 돌고 있을 때만(빠를수록 길게) const ze = .2 * Math.sin(s * .8); S.termN = [Math.cos(ze), Math.sin(ze)];
-    const sp = spin(t); S.since = sp.since; S.pulse = clamp(sp.since / (sp.len * 1.6)); S.beatLen = sp.len; }
+    const sp = spin(t); S.since = sp.since; S.pulse = clamp(sp.since / .6); S.beatLen = sp.len; }
   const dir = [Math.cos(A), 0, Math.sin(A)]; S.A = A; S.orbit = orbit;
   S.orb = [[dir[0] * orbit, h + .08 * Math.sin(t * 1.3), dir[2] * orbit, R0], [-dir[0] * orbit, h + .08 * Math.sin(t * 1.3 + 2), -dir[2] * orbit, R1]];
   const hand = [Math.sin(t * 1.3) * .015 + Math.sin(t * 3.1) * .006, Math.cos(t * 1.1) * .012, Math.sin(t * .9) * .01];
