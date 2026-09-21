@@ -24,7 +24,7 @@
      19.73  빌드업: 사슬이 끊기고, "무해합니다 [확인]" 창이 폭주하고, 화면이 말 그대로 픽셀화된다
      24.65  드롭: 봉인 해제 — 육각 마법진 · 화살표 왕관 · 픽셀 폭발, 25.88 타이틀
      28.34  정적: "이 설명은 1,000,000% 진실" 확인 창 하나 → 29.5 커서가 [확인] 클릭
-     29.57  본색: 붉게 뒤틀린 구조물이 화면을 채우고 오류 창이 쏟아짐 (3마디) → 33.26 테이프 스톱 + CRT 꺼짐 → 33.76 끝
+     29.57  본색: 붉게 뒤틀린 구조물이 화면을 채우고 오류 창이 쏟아짐 (3마디) → 32.85 부터 치지직 TV 잡음이 끼어들고 33.26 테이프 스톱, 화면이 잡음으로 덮임 → 33.86 CRT 꺼짐 → 34.1 끝
    층: ① 셰이더(하늘 · 원근 격자 바닥 · 픽셀 파동)  ② 벡터 캔버스(와이어프레임 · 링, 가산)  ③ 480x270 픽셀 캔버스(팝업 · 글자 · 스프라이트)
    전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
    ═══════════════════════════════════════════════════════════════ */
@@ -39,7 +39,7 @@ const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / ri
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
 
 const BEAT = .30769, O = .034, BAR = BEAT * 4, bar = (n) => O + n * BAR;
-const T = { AD: bar(2), CLOSE: bar(7), KICK: bar(8), BUILD: bar(16), DROP: bar(20), TITLE: bar(21), BREAK: bar(23), CLICK: 29.47, SLAM: bar(24), OFF: bar(27), END: bar(27) + .5 };
+const T = { AD: bar(2), CLOSE: bar(7), KICK: bar(8), BUILD: bar(16), DROP: bar(20), TITLE: bar(21), BREAK: bar(23), CLICK: 29.47, SLAM: bar(24), STOP: bar(27), NOISE: 32.85, OFF: 33.86, END: 34.1 };
 const Y = "#ffe23a", W = "#fff8c8", K = "#0a0c18", R = "#ff4060", G = "#5dff8a", C = "#58c8ff", DIM = "#8a7a20";
 const D = window.PX_DATA || { fps: 60, kick: [], hat: [], lvl: [] };
 const dat = (arr, t) => { const i = Math.floor(t * D.fps); return i < 0 || !arr.length ? 0 : arr[Math.min(arr.length - 1, i)]; };
@@ -257,16 +257,20 @@ void main(){
 }`;
 const FS_FINAL = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform sampler2D uScene, uBloom; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uFlash, uCrt, uFade, uInvert;
+uniform sampler2D uScene, uBloom; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uFlash, uCrt, uFade, uInvert, uStatic;
 ${CSGL.NOISE}
 void main(){
   float sy = clamp(uCrt * 1.7, .004, 1.), sx = clamp(uCrt * 5., .002, 1.);                        // CRT 켜짐/꺼짐: 세로로 접힌 뒤 점으로
   vec2 c = vUv - .5; c.x /= sx; c.y /= sy; vec2 uv = c / uZoom + .5 + uShake;
   vec2 bz = uv - .5; uv = .5 + bz * (1. + .045 * dot(bz, bz));                                     // 살짝 볼록한 화면
   if (abs(c.x) > .5 || abs(c.y) > .5 || uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.){ o = vec4(0., 0., 0., 1.); return; }
+  if (uStatic > 0.){ float rw = floor(uv.y * 140.), tk = floor(uT * 60.); uv.x += (hash(vec2(rw, tk)) - .5) * .09 * uStatic * step(.55, hash(vec2(rw * .13, tk * .7)));      // 잡음: 가로 줄이 찢기고
+    uv.y = fract(uv.y + uStatic * uStatic * .25 * sin(uT * 23.)); }                                                                                      // 화면이 위아래로 구름
   vec2 dir = uv - .5; float ca = uCA * (.3 + length(dir) * 1.8);
   vec3 col = vec3(texture(uScene, uv + dir * ca).r, texture(uScene, uv).g, texture(uScene, uv - dir * ca).b);
   vec3 bl = texture(uBloom, uv).rgb; col += bl * uBloomK + bl * vec3(.12, .06, 0.) * uBloomK;
+  if (uStatic > 0.){ vec2 sp = floor(gl_FragCoord.xy / max(2., uRes.y / 360.)); float sn = fract(sin(dot(sp, vec2(12.9898, 78.233)) + floor(uT * 60.) * 3.7) * 43758.5453), band = smoothstep(.0, .12, abs(fract(uv.y * 1.3 - uT * 1.7) - .5) - .3);
+    col = mix(col, vec3(sn) * (.55 + .45 * band) * vec3(1., .98, .9), clamp(uStatic * (.75 + .5 * sn), 0., 1.)); }                                  // 치지직 — TV 눈
   col *= 1. + (1. - sy) * 5.; col = mix(col, vec3(1.) - min(col, vec3(1.)), uInvert); col += vec3(1., .95, .7) * uFlash;
   col = (col * (2.51 * col + .03)) / (col * (2.43 * col + .59) + .14); col = pow(clamp(col, 0., 1.), vec3(1. / 2.2));
   col *= .93 + .07 * sin(uv.y * uRes.y * 1.9);                                                    // 주사선
@@ -293,10 +297,11 @@ function render(t) {
   const bloomTex = X.bloom(RT.scene.tex, .8), r0 = rng(Math.floor(t * 60));
   const hit = (t >= T.KICK && !brk ? .12 * kick : 0) + .8 * pulse(t, T.DROP, .02, .6) + (dropped ? .25 * kick : 0) + .5 * pulse(t, T.KICK, .02, .4) + (slam ? .3 * kick + .9 * pulse(t, T.SLAM, .02, .4) : 0) + (evilNow ? .3 : 0);
   const flash = Math.max(.9 * pulse(t, T.DROP, .02, .45), .35 * pulse(t, T.KICK, .02, .3), .3 * pulse(t, T.AD, .02, .25), .8 * pulse(t, T.SLAM, .01, .2), .25 * pulse(t, T.TITLE, .02, .3));
-  const crt = t < .45 ? eOut(seg(t, .05, .45)) : t >= T.OFF ? 1 - eInOut(seg(t, T.OFF, T.OFF + .34)) : 1;
+  const crt = t < .45 ? eOut(seg(t, .05, .45)) : t >= T.OFF ? 1 - eInOut(seg(t, T.OFF, T.OFF + .18)) : 1;
   X.pass(P.final, null, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uT, t);
     gl.uniform2f(u.uShake, (r0() - .5) * hit * .016, (r0() - .5) * hit * .016); gl.uniform1f(u.uZoom, 1 + .035 * hit + (dropped ? .015 * kick : 0)); gl.uniform1f(u.uCA, .0012 + .01 * hit); gl.uniform1f(u.uBloomK, brk ? .3 : .42 + .3 * (dropped ? kick : 0));
-    gl.uniform1f(u.uFlash, flash * flash); gl.uniform1f(u.uCrt, crt); gl.uniform1f(u.uFade, t >= T.END - .02 ? 1 : 0); gl.uniform1f(u.uInvert, (dropped && t < T.DROP + .07) || (slam && t < T.SLAM + .06) ? 1 : 0); });
+    gl.uniform1f(u.uFlash, flash * flash); gl.uniform1f(u.uCrt, crt); gl.uniform1f(u.uFade, t >= T.END - .02 ? 1 : 0); gl.uniform1f(u.uInvert, (dropped && t < T.DROP + .07) || (slam && t < T.SLAM + .06) ? 1 : 0);
+    gl.uniform1f(u.uStatic, t < T.NOISE ? 0 : t < T.STOP ? .45 * Math.pow(seg(t, T.NOISE, T.STOP), 2) * (.6 + .4 * Math.sin(t * 90)) : Math.min(1, .6 + 1.2 * (t - T.STOP))); });
 }
 
 /* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
