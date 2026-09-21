@@ -59,6 +59,7 @@ const eBack = (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3
 const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
 
+const VOLUME = .7;                                   // 음악 음량 (0~1)
 const BEAT = 2 / 3, T0 = 1.02, BUILD = 9.02, DROP = 11.02, SAT = 15.02, TITLE = 19.02, FADE = 20.0, END = 21.0;
 const D = window.EQ_DATA || { fps: 30, low: [], high: [], onsets: [] };
 const CAPS = [
@@ -86,8 +87,8 @@ const lowN = (t) => clamp((band(D.low, t) - .35) / .45), highN = (t) => clamp((b
 /* 회전: 각속도를 적분해 표로 (1막 느리게 → 빌드에서 소용돌이 → 2막은 박마다 툭툭 밀림) */
 function omega(t) {
   if (t < T0) return 0;
-  if (t < BUILD) return .3 + .04 * (t - T0);
-  if (t < DROP) return lerp(.62, 12, eIn(seg(t, BUILD, DROP)));
+  if (t < BUILD) { const ph = ((t - T0) / BEAT) % 1, grow = seg(t, T0, BUILD); return .55 + .5 * grow + (1.6 + 1.3 * grow) * Math.exp(-ph * 5); }
+  if (t < DROP) return lerp(2.0, 12, eIn(seg(t, BUILD, DROP)));
   if (t < TITLE) { const ph = ((t - DROP) / BEAT) % 1; return 1.0 + 6 * Math.exp(-ph * 6); }
   return .45;
 }
@@ -96,8 +97,8 @@ function rotAt(t) { const i = clamp(t, 0, END) * 240, i0 = Math.floor(i); return
 function beatPulse(t) { if (t < DROP || t >= TITLE) return 0; return Math.exp(-(((t - DROP) / BEAT) % 1) * 5); }
 function barPulse(t) { if (t < DROP || t >= TITLE) return 0; return Math.exp(-(((t - DROP) / 2) % 1) * 7); }
 function radiusAt(t) {
-  if (t < BUILD) return Math.exp(lerp(Math.log(70 * U), Math.log(13 * U), eInOut(seg(t, T0, BUILD))));
-  if (t < DROP) return Math.exp(lerp(Math.log(13 * U), Math.log(2.7 * U), eIn(seg(t, BUILD, DROP))));
+  if (t < BUILD) return Math.exp(lerp(Math.log(45 * U), Math.log(10 * U), eOut(seg(t, T0, BUILD))));
+  if (t < DROP) return Math.exp(lerp(Math.log(10 * U), Math.log(2.7 * U), eIn(seg(t, BUILD, DROP))));
   const toTitle = eInOut(seg(t, TITLE, TITLE + .55));
   return lerp(2.7 * U * (1 + .1 * beatPulse(t) + .05 * lowN(t)) * (1 + .3 * pulse(t, DROP, .01, .45)), 1.3 * U, toTitle);
 }
@@ -125,7 +126,7 @@ function init() {
 }
 
 /* ── 파티클 (전부 'difference' 로 그려서 흰 바탕에선 검게, 검은 바탕에선 희게) ── */
-function ripple(t, yang, s) { const [x, y] = t < T0 ? [0, 0] : orbPos(t, yang); parts.push({ type: "ring", x, y, r0: .45 * U, r1: (1.6 + s * 2.2) * U, life: .75, max: .75, lw: .05 + s * .05 }); }
+function ripple(t, yang, s) { const [x, y] = t < T0 ? [0, 0] : orbPos(t, yang); parts.push({ type: "ring", x, y, r0: .45 * U, r1: (2.0 + s * 2.8) * U, life: .55, max: .55, lw: .06 + s * .06 }); }
 function ringAt(x, y, r0, r1, life, lw) { parts.push({ type: "ring", x, y, r0, r1, life, max: life, lw }); }
 function rayBurst(t, n) { const r = rng(Math.round(t * 100)), cy = centerY(t), R = radiusAt(t); for (let i = 0; i < n; i++) { const a = r() * TAU, sp = (14 + r() * 22) * U / 60; parts.push({ type: "ray", age: 0, x: Math.cos(a) * R, y: cy + Math.sin(a) * R, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: .45 + r() * .3, max: .75, len: (.6 + r() * 1.6) * U, lw: (.03 + r() * .06) * U, drag: .985 }); } }
 function inkBurst(t, n, pw) { const r = rng(Math.round(t * 100) + 7), cy = centerY(t), R = radiusAt(t); for (let i = 0; i < n; i++) { const a = r() * TAU, sp = (3 + r() * r() * 16) * pw * U / 60, d = Math.sqrt(r()) * R * .85; parts.push({ type: "ink", age: 0, x: Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: .7 + r() * .9, max: 1.6, size: (.08 + r() * r() * .5) * U, drag: .95 }); } }
@@ -275,7 +276,7 @@ void main(){
 }`;
 const VS_PART = `#version 300 es
 precision highp float; layout(location = 0) in vec4 aSeed; out float vA;
-uniform int uMode; uniform float uT, uT0, uU, uPow; uniform vec2 uRes, uOrigin;
+uniform int uMode; uniform float uT, uT0, uU, uPow, uR0; uniform vec2 uRes, uOrigin;
 void main(){
   vec2 pos; float size, a, age = uT - uT0;
   if (uMode == 0){                                                                       // 떠다니는 먹 티끌
@@ -286,7 +287,7 @@ void main(){
     bool inkMode = uMode == 2;                                                           // 1: 빛살(빠르고 잘게) 2: 먹(느리고 굵게)
     float life = (inkMode ? 1.5 : .9) * (.4 + .6 * aSeed.w) * (uPow > 1.2 ? 1.8 : 1.), k = inkMode ? 2.6 : 1.4;
     float v0 = mix(inkMode ? .5 : 3., inkMode ? 7. : 17., aSeed.z * aSeed.z) * uPow, ang = aSeed.x * 6.2832 + age * (aSeed.y - .5) * (inkMode ? 2.2 : .5);
-    float dist = v0 * (1. - exp(-k * age)) / k + (inkMode ? sqrt(aSeed.y) * 2.2 : 2.6);
+    float dist = v0 * (1. - exp(-k * age)) / k + (inkMode ? sqrt(aSeed.y) * 2.2 : uR0);
     pos = uOrigin + vec2(cos(ang), sin(ang)) * dist;
     a = clamp(1. - age / life, 0., 1.); size = (inkMode ? 2. + aSeed.y * 4. : .8 + aSeed.y * 1.5) * (.5 + .5 * a); a = inkMode ? smoothstep(0., .25, a) : a;
   }
@@ -332,6 +333,7 @@ function drawUI(t) {                                            // 자막: 블�
 let waveList = [];
 function buildWaves() {
   waveList = [{ t0: DROP, x: 0, y: 0, r0: .5, sp: 12, dur: 1.5, str: .8 }, { t0: TITLE, x: 0, y: -1.5, r0: .5, sp: 13, dur: 1.4, str: .6 }];
+  for (let bt = T0; bt < DROP - .1; bt += 2) waveList.push({ t0: bt, x: 0, y: 0, r0: .6, sp: 10, dur: .9, str: .16 });     // 1막: 마디 첫 박마다 잔물결
   for (let n = 3, bt = DROP + 3 * BEAT; bt < TITLE - .05; n += 3, bt = DROP + n * BEAT) waveList.push({ t0: bt, x: 0, y: 0, r0: 2.4, sp: 9, dur: .9, str: .3 });
   for (let n = 1, bt = DROP + BEAT; bt < TITLE - .05; n++, bt = DROP + n * BEAT) if (n % 3) waveList.push({ t0: bt, x: 0, y: 0, r0: 2.4, sp: 8, dur: .6, str: .12 });
 }
@@ -343,11 +345,12 @@ function render(t) {
   X.bind(RT.mask); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
   gl.useProgram(P.part.p); gl.bindVertexArray(seedVAO); const pu = P.part.u;
   gl.uniform2f(pu.uRes, pw, ph); gl.uniform1f(pu.uU, Ud); gl.uniform1f(pu.uT, t);
-  const burst = (mode, t0, oy, first, n, pow, life) => { if (t < t0 || t > t0 + life) return; gl.uniform1i(pu.uMode, mode); gl.uniform1f(pu.uT0, t0); gl.uniform1f(pu.uPow, pow); gl.uniform2f(pu.uOrigin, 0, oy); gl.drawArrays(gl.POINTS, first, n); };
+  const burst = (mode, t0, ox, oy, first, n, pow, life, r0) => { if (t < t0 || t > t0 + life) return; gl.uniform1i(pu.uMode, mode); gl.uniform1f(pu.uT0, t0); gl.uniform1f(pu.uPow, pow); gl.uniform1f(pu.uR0, r0); gl.uniform2f(pu.uOrigin, ox, oy); gl.drawArrays(gl.POINTS, first, n); };
+  for (let n = 0, bt = T0; bt < DROP - .05; n++, bt = T0 + n * BEAT) { const [ox, oy] = orbPos(bt, n % 2 === 0); burst(1, bt, ox / U, oy / U, (n * 733) % 10000, 130, .85, .7, .5); }   // 1막: 박마다 음·양 구슬에서 번갈아 튀는 입자
   gl.uniform1i(pu.uMode, 0); gl.uniform1f(pu.uT0, 0); gl.uniform1f(pu.uPow, seg(t, T0, T0 + 1.5) * (1 - titleK * .5)); gl.uniform2f(pu.uOrigin, 0, 0); gl.drawArrays(gl.POINTS, 0, 800);
-  burst(1, DROP, 0, 0, 4500, 1.5, 2.2);
-  for (let n = 1, bt = DROP + BEAT; bt < TITLE - .05; n++, bt = DROP + n * BEAT) { const k = n % 3; if (k === 1) burst(1, bt, 0, (n * 977) % 9000, 1100, 1, 1); }
-  burst(1, TITLE, centerY(TITLE + .6) / U, 0, 2200, 1.1, 1.4);
+  burst(1, DROP, 0, 0, 0, 4500, 1.5, 2.2, 2.6);
+  for (let n = 1, bt = DROP + BEAT; bt < TITLE - .05; n++, bt = DROP + n * BEAT) { const k = n % 3; if (k === 1) burst(1, bt, 0, 0, (n * 977) % 9000, 1100, 1, 1, 2.6); }
+  burst(1, TITLE, 0, centerY(TITLE + .6) / U, 0, 2200, 1.1, 1.4, 1.4);
   gl.bindVertexArray(null); gl.disable(gl.BLEND);
   // ② 장면: 2D 레이어 + 먹 번짐 + 입자 반전 + 한지/먹 질감
   X.upload(layerTex, cv, false);
@@ -358,13 +361,14 @@ function render(t) {
   const lx = act2 ? 0 : yx, ly = act2 ? centerY(t) : yy, raysK = (act2 ? .16 + .3 * bp : .5 * seg(t, T0, T0 + 1) * (1 - seg(t, BUILD + 1, DROP))) * (1 - titleK * .6);
   const raysTex = X.rays(.5 + lx / W, .5 - ly / H, raysK);
   // ④ 최종
-  const hit = .35 * pulse(t, DROP, .02, .6) + .05 * bp + .2 * pulse(t, TITLE, .02, .4) + .06 * seg(t, BUILD + 1, DROP) * (act2 ? 0 : 1);
-  const zoom = 1 + .04 * bar + .22 * pulse(t, DROP, .01, .5) + .1 * pulse(t, TITLE, .01, .4);
+  const b1 = t >= T0 && t < DROP ? Math.exp(-(((t - T0) / BEAT) % 1) * 5) : 0, bar1 = t >= T0 && t < DROP ? Math.exp(-(((t - T0) / 2) % 1) * 6) : 0;   // 1막의 박·마디 펄스
+  const hit = .02 * b1 + .04 * bar1 + .35 * pulse(t, DROP, .02, .6) + .05 * bp + .2 * pulse(t, TITLE, .02, .4) + .06 * seg(t, BUILD + 1, DROP) * (act2 ? 0 : 1);
+  const zoom = 1 + .015 * b1 + .035 * bar1 + .04 * bar + .22 * pulse(t, DROP, .01, .5) + .1 * pulse(t, TITLE, .01, .4);
   const flash = Math.max(pulse(t, DROP + .07, .01, .5), .8 * pulse(t, TITLE, .02, .4), .5 * pulse(t, T0, .01, .3)), fade = Math.max(1 - seg(t, 0, .25), seg(t, FADE, END));
   const r0 = rng(Math.floor(t * 60)), wv = new Float32Array(40); let wi = 0;
   for (const w of waveList) { const age = t - w.t0; if (age < 0 || age > w.dur || wi >= 10) continue; const k = 1 - age / w.dur; wv.set([w.x, w.y, w.r0 + w.sp * age, w.str * k * k], wi * 4); wi++; }
   X.pass(P.final, null, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); X.bindTex(2, raysTex, u.uRaysTex); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uU, Ud); gl.uniform1f(u.uT, t);
-    gl.uniform2f(u.uShake, (r0() - .5) * hit * U / W, (r0() - .5) * hit * U / H); gl.uniform1f(u.uZoom, zoom); gl.uniform1f(u.uCA, .001 + .011 * hit + .004 * bp * (act2 ? 1 : 0)); gl.uniform1f(u.uBloomK, .55 + .25 * bp);
+    gl.uniform2f(u.uShake, (r0() - .5) * hit * U / W, (r0() - .5) * hit * U / H); gl.uniform1f(u.uZoom, zoom); gl.uniform1f(u.uCA, .001 + .011 * hit + .004 * bp * (act2 ? 1 : 0)); gl.uniform1f(u.uBloomK, .55 + .25 * bp + .2 * b1);
     gl.uniform1f(u.uFlash, flash * flash * .85); gl.uniform1f(u.uInvert, t >= DROP && t < DROP + .07 ? 1 : 0); gl.uniform1f(u.uFade, fade); gl.uniform4fv(u.uWaves, wv); });
 }
 
@@ -388,7 +392,7 @@ function playEquinoxCutscene(o = {}) {
   opts = o; $("cs").hidden = false;
   try { resize(); } catch (e) { console.error(e); $("cs").hidden = true; alert("WebGL 초기화 실패: " + e.message); if (o.onDone) o.onDone(); return; }
   init(); buildWaves(); time = 0; running = true; anchor = now(); useAudio = o.sound !== false;
-  if (useAudio) { try { bgm.currentTime = 0; bgm.volume = 1; const p = bgm.play(); if (p) p.then(() => { anchor = now() - bgm.currentTime; }).catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
+  if (useAudio) { try { bgm.currentTime = 0; bgm.volume = VOLUME; const p = bgm.play(); if (p) p.then(() => { anchor = now() - bgm.currentTime; }).catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
   cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
 }
 function endEquinox() { running = false; cancelAnimationFrame(raf); try { bgm.pause(); } catch (e) { /* 무시 */ } $("cs").hidden = true; if (opts.onDone) opts.onDone(); }

@@ -57,6 +57,7 @@ const eBack = (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3
 const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
 
+const VOLUME = .7;                                   // 음악 음량 (0~1)
 const BEAT = 2 / 3, T0 = 1.02, BUILD = 9.02, DROP = 11.02, SAT = 15.02, TITLE = 19.02, FADE = 20.0, END = 21.0;
 const D = window.EQ_DATA || { fps: 30, low: [], high: [], onsets: [] };
 const CAPS = [
@@ -77,8 +78,8 @@ const lowN = (t) => clamp((band(D.low, t) - .35) / .45), highN = (t) => clamp((b
 /* 회전: 각속도를 적분해 표로 (1막 느리게 → 빌드에서 소용돌이 → 2막은 박마다 툭툭 밀림) */
 function omega(t) {
   if (t < T0) return 0;
-  if (t < BUILD) return .3 + .04 * (t - T0);
-  if (t < DROP) return lerp(.62, 12, eIn(seg(t, BUILD, DROP)));
+  if (t < BUILD) { const ph = ((t - T0) / BEAT) % 1, grow = seg(t, T0, BUILD); return .55 + .5 * grow + (1.6 + 1.3 * grow) * Math.exp(-ph * 5); }
+  if (t < DROP) return lerp(2.0, 12, eIn(seg(t, BUILD, DROP)));
   if (t < TITLE) { const ph = ((t - DROP) / BEAT) % 1; return 1.0 + 6 * Math.exp(-ph * 6); }
   return .45;
 }
@@ -87,8 +88,8 @@ function rotAt(t) { const i = clamp(t, 0, END) * 240, i0 = Math.floor(i); return
 function beatPulse(t) { if (t < DROP || t >= TITLE) return 0; return Math.exp(-(((t - DROP) / BEAT) % 1) * 5); }
 function barPulse(t) { if (t < DROP || t >= TITLE) return 0; return Math.exp(-(((t - DROP) / 2) % 1) * 7); }
 function radiusAt(t) {
-  if (t < BUILD) return Math.exp(lerp(Math.log(70 * U), Math.log(13 * U), eInOut(seg(t, T0, BUILD))));
-  if (t < DROP) return Math.exp(lerp(Math.log(13 * U), Math.log(2.7 * U), eIn(seg(t, BUILD, DROP))));
+  if (t < BUILD) return Math.exp(lerp(Math.log(45 * U), Math.log(10 * U), eOut(seg(t, T0, BUILD))));
+  if (t < DROP) return Math.exp(lerp(Math.log(10 * U), Math.log(2.7 * U), eIn(seg(t, BUILD, DROP))));
   const toTitle = eInOut(seg(t, TITLE, TITLE + .55));
   return lerp(2.7 * U * (1 + .1 * beatPulse(t) + .05 * lowN(t)) * (1 + .3 * pulse(t, DROP, .01, .45)), 1.3 * U, toTitle);
 }
@@ -116,7 +117,7 @@ function init() {
 }
 
 /* ── 파티클 (전부 'difference' 로 그려서 흰 바탕에선 검게, 검은 바탕에선 희게) ── */
-function ripple(t, yang, s) { const [x, y] = t < T0 ? [0, 0] : orbPos(t, yang); parts.push({ type: "ring", x, y, r0: .45 * U, r1: (1.6 + s * 2.2) * U, life: .75, max: .75, lw: .05 + s * .05 }); }
+function ripple(t, yang, s) { const [x, y] = t < T0 ? [0, 0] : orbPos(t, yang); parts.push({ type: "ring", x, y, r0: .45 * U, r1: (2.0 + s * 2.8) * U, life: .55, max: .55, lw: .06 + s * .06 }); }
 function ringAt(x, y, r0, r1, life, lw) { parts.push({ type: "ring", x, y, r0, r1, life, max: life, lw }); }
 function rayBurst(t, n) { const r = rng(Math.round(t * 100)), cy = centerY(t), R = radiusAt(t); for (let i = 0; i < n; i++) { const a = r() * TAU, sp = (14 + r() * 22) * U / 60; parts.push({ type: "ray", age: 0, x: Math.cos(a) * R, y: cy + Math.sin(a) * R, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: .45 + r() * .3, max: .75, len: (.6 + r() * 1.6) * U, lw: (.03 + r() * .06) * U, drag: .985 }); } }
 function inkBurst(t, n, pw) { const r = rng(Math.round(t * 100) + 7), cy = centerY(t), R = radiusAt(t); for (let i = 0; i < n; i++) { const a = r() * TAU, sp = (3 + r() * r() * 16) * pw * U / 60, d = Math.sqrt(r()) * R * .85; parts.push({ type: "ink", age: 0, x: Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: .7 + r() * .9, max: 1.6, size: (.08 + r() * r() * .5) * U, drag: .95 }); } }
@@ -276,7 +277,7 @@ function frame() {
 }
 function playEquinoxCutscene(o = {}) {
   opts = o; $("cs").hidden = false; resize(); init(); time = 0; running = true; anchor = now(); useAudio = o.sound !== false;
-  if (useAudio) { try { bgm.currentTime = 0; bgm.volume = 1; const p = bgm.play(); if (p) p.then(() => { anchor = now() - bgm.currentTime; }).catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
+  if (useAudio) { try { bgm.currentTime = 0; bgm.volume = VOLUME; const p = bgm.play(); if (p) p.then(() => { anchor = now() - bgm.currentTime; }).catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
   cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
 }
 function endEquinox() { running = false; cancelAnimationFrame(raf); try { bgm.pause(); } catch (e) { /* 무시 */ } $("cs").hidden = true; if (opts.onDone) opts.onDone(); }
