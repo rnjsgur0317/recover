@@ -8,3 +8,6 @@ __pycache__/
 # 저작권 있는 음원 — 공개 저장소에 올리지 않음
 public/equinox_cut.mp3
 public/luminosity_cut.mp3
+
+# 음원 백업·재편집 산출물
+*.mp3
