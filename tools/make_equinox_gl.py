@@ -24,10 +24,10 @@ rep('<script src="/equinox_data.js"></script>', '<script src="/equinox_data.js">
 # ── 캔버스: 2D 는 화면 밖 레이어, 화면에는 WebGL
 rep('const cv = $("cv"), g = cv.getContext("2d"), bgm = $("bgm");',
     'const glc = $("glc"), ui = $("ui"), ug = ui.getContext("2d"), bgm = $("bgm");\nconst cv = document.createElement("canvas"), g = cv.getContext("2d");      // 2D 레이어 (텍스처로 올라감)')
-rep("function resize() { DPR = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; U = Math.min(W, H) / 10; cv.width = W * DPR; cv.height = H * DPR; }",
+rep("function resize() { DPR = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth || 1280; H = cv.clientHeight || 720;   // 창이 숨겨져 크기가 0이어도 NaN 이 나지 않게 U = Math.min(W, H) / 10; cv.width = W * DPR; cv.height = H * DPR; }",
     '''let DPR_CAP = 1.5, slow = 0;
 function resize() {
-  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); W = glc.clientWidth; H = glc.clientHeight; U = Math.min(W, H) / 10;
+  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); W = glc.clientWidth || 1280; H = glc.clientHeight || 720; U = Math.min(W, H) / 10;
   const pw = Math.max(2, Math.round(W * DPR)), ph = Math.max(2, Math.round(H * DPR));
   glc.width = cv.width = ui.width = pw; glc.height = cv.height = ui.height = ph;
   initGL(); X.resize(pw, ph); X.free(RT.scene); X.free(RT.mask); RT.scene = X.target(pw, ph); RT.mask = X.target(pw >> 1, ph >> 1);
@@ -122,7 +122,7 @@ function drawUI(t) {                                            // 자막: 블�
 }
 let waveList = [];
 function buildWaves() {
-  waveList = [{ t0: DROP, x: 0, y: 0, r0: .5, sp: 12, dur: 1.5, str: .8 }, { t0: TITLE, x: 0, y: -1.5, r0: .5, sp: 13, dur: 1.4, str: .6 }];
+  waveList = [{ t0: DROP, x: 0, y: 0, r0: .5, sp: 12, dur: 1.5, str: .8 }, { t0: TITLE, x: 0, y: 0, r0: .5, sp: 13, dur: 1.4, str: .7 }];
   for (let bt = T0; bt < DROP - .1; bt += 2) waveList.push({ t0: bt, x: 0, y: 0, r0: .6, sp: 10, dur: .9, str: .16 });     // 1막: 마디 첫 박마다 잔물결
   for (let n = 3, bt = DROP + 3 * BEAT; bt < TITLE - .05; n += 3, bt = DROP + n * BEAT) waveList.push({ t0: bt, x: 0, y: 0, r0: 2.4, sp: 9, dur: .9, str: .3 });
   for (let n = 1, bt = DROP + BEAT; bt < TITLE - .05; n++, bt = DROP + n * BEAT) if (n % 3) waveList.push({ t0: bt, x: 0, y: 0, r0: 2.4, sp: 8, dur: .6, str: .12 });
