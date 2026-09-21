@@ -558,6 +558,7 @@ function render(t) {
 const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: 1, duration: T.END, theme: "lumen", capBlend: false,
   no: "02", title: "LUMINOSITY", sub: "광휘", hero: "/thumbs/luminosity_hero.jpg",
+  variants: [{ label: "V1 · 일곱 무기", href: "/luminosity_gl.html", on: true }, { label: "V2 · 절대적인 광채", href: "/luminosity2_gl.html" }],
   tagline: "솔이 남긴 일곱 무기 가운데, 끝까지 남은 단 하나의 검.\n혼돈의 씨앗에 동족이 부서지고 — 가장 밝은 빛이 점화된다.",
   meta: [["0:28", "Length"], ["Sol's RNG", "Source"], ["WebGL2", "Renderer"]],
   chapters: [{ t: 0, name: "솔의 명령" }, { t: T.FORGE, name: "남겨진 파편" }, { t: T.CUT_C, name: "깃드는 의식" }, { t: BREAKS[0].a, name: "부서지는 무기들" }, { t: T.ONE, name: "마지막 하나" }, { t: T.IGNITE, name: "점화" }, { t: T.FINAL, name: "광휘" }],
