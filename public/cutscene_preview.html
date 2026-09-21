@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>히든 컷씬 테스트 — 다섯 번째 봉인</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; background: #0b0b0f; color: #e4e4e7;
+  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.demo { max-width: 460px; width: 100%; background: #15151b; border: 1px solid #26262e; border-radius: 16px; padding: 26px 24px; }
+.demo h1 { margin: 0 0 6px; font-size: 1.15rem; }
+.demo p { margin: 0 0 18px; color: #8b8b96; font-size: .86rem; line-height: 1.6; }
+.demo label { display: block; font-size: .78rem; font-weight: 600; color: #8b8b96; margin: 12px 0 6px; }
+.demo select { width: 100%; background: #0e0e13; color: #e4e4e7; border: 1px solid #30303a; border-radius: 9px; padding: 11px 12px; font-size: .92rem; font-family: inherit; }
+.demo .row { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: .86rem; color: #b4b4be; }
+.demo button.play {
+  width: 100%; margin-top: 18px; border: 0; border-radius: 11px; padding: 14px; font-size: 1rem; font-weight: 800; cursor: pointer;
+  color: #fff; background: linear-gradient(180deg, #e11d48, #9f1239); box-shadow: 0 8px 24px rgba(225,29,72,.35); font-family: inherit;
+}
+.demo .note { margin-top: 14px; font-size: .76rem; color: #6b6b76; }
+
+/* ── 컷씬 오버레이 ── */
+.cs { position: fixed; inset: 0; z-index: 9999; background: #000; overflow: hidden; opacity: 0; transition: opacity .7s; }
+.cs.on { opacity: 1; }
+.cs[hidden] { display: none; }
+.cs canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.cs-bar { position: absolute; left: 0; right: 0; height: 11vh; background: #000; z-index: 3; transform: scaleY(0); transition: transform 1.1s cubic-bezier(.6,0,.2,1); }
+.cs-bar.top { top: 0; transform-origin: top; } .cs-bar.bottom { bottom: 0; transform-origin: bottom; }
+.cs.on .cs-bar { transform: scaleY(1); }
+.cs-sub {
+  position: absolute; left: 0; right: 0; bottom: calc(11vh + 26px); z-index: 4; text-align: center; padding: 0 20px;
+  font-family: "Nanum Myeongjo", "Noto Serif KR", "Batang", "바탕", serif; font-size: clamp(1rem, 2.4vw, 1.45rem); letter-spacing: .06em;
+  color: #f4f4f5; text-shadow: 0 2px 14px #000, 0 0 30px rgba(0,0,0,.9); opacity: 0; transform: translateY(8px);
+  transition: opacity .8s ease, transform .8s ease;
+}
+.cs-sub.show { opacity: 1; transform: translateY(0); }
+.cs-sub .c1 { color: #b9bcc6; } .cs-sub .c2 { color: #7fb0ff; } .cs-sub .c3 { color: #b89bff; } .cs-sub .c4 { color: #ffc95e; } .cs-sub .c5 { color: #ff5d7d; }
+.cs-skip {
+  position: absolute; right: 18px; top: calc(11vh + 14px); z-index: 6; background: rgba(0,0,0,.35); color: #d4d4d8; border: 1px solid rgba(255,255,255,.25);
+  border-radius: 999px; padding: 7px 14px; font-size: .78rem; cursor: pointer; font-family: inherit; backdrop-filter: blur(4px);
+}
+.cs-skip:hover { border-color: #fff; color: #fff; }
+.cs-card {
+  position: absolute; left: 50%; top: 40%; z-index: 5; transform: translate(-50%, -50%) scale(.6); opacity: 0; text-align: center; width: min(88vw, 520px);
+  transition: transform .9s cubic-bezier(.2,1.5,.35,1), opacity .7s ease; pointer-events: none;
+}
+.cs-card.show { transform: translate(-50%, -50%) scale(1); opacity: 1; pointer-events: auto; }
+.cs-badge {
+  display: inline-block; font-size: .78rem; font-weight: 900; letter-spacing: .5em; padding: 6px 14px 6px 22px; border-radius: 999px;
+  color: #fff; background: linear-gradient(90deg, #9f1239, #e11d48, #9f1239); box-shadow: 0 0 26px rgba(225,29,72,.7);
+}
+.cs-over { margin-top: 16px; font-family: "Nanum Myeongjo", "Batang", serif; font-size: clamp(.9rem, 2vw, 1.05rem); letter-spacing: .3em; color: #f3d9a4; text-shadow: 0 0 18px rgba(0,0,0,.9); }
+.cs-item {
+  margin-top: 10px; font-size: clamp(1.9rem, 6vw, 3.4rem); font-weight: 900; letter-spacing: -.01em; line-height: 1.15;
+  background: linear-gradient(100deg, #fff4d6 0%, #ffd166 22%, #fff 40%, #ff8fa3 58%, #ffd166 78%, #fff4d6 100%); background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: cs-shine 3.2s linear infinite;
+  filter: drop-shadow(0 4px 22px rgba(225,29,72,.55));
+}
+@keyframes cs-shine { 0% { background-position: 200% 0; } 100% { background-position: -20% 0; } }
+.cs-desc { margin-top: 12px; font-size: .88rem; color: #e4e4e7; text-shadow: 0 1px 10px #000; }
+.cs-ok {
+  margin-top: 22px; border: 1px solid rgba(255,255,255,.55); background: rgba(0,0,0,.35); color: #fff; border-radius: 999px; padding: 11px 38px;
+  font-size: .95rem; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(4px); opacity: 0; transition: opacity .8s 1.4s, background .2s;
+}
+.cs-card.show .cs-ok { opacity: 1; }
+.cs-ok:hover { background: rgba(255,255,255,.18); }
+</style>
+</head>
+<body>
+
+<div class="demo">
+  <h1>히든 컷씬 테스트 — 「다섯 번째 봉인」</h1>
+  <p>최상급(히든) 보상이 나왔을 때 재생할 컷씬 시안입니다. 약 21초, 건너뛰기 가능. 사이트에는 아직 연결하지 않은 독립 페이지예요.</p>
+  <label>뽑힌 보상 (예시)</label>
+  <select id="demoItem">
+    <option>잔액 30,000원</option>
+    <option>게임패스 30일권</option>
+    <option>게임 50% 할인쿠폰</option>
+    <option>잔액 50,000원</option>
+  </select>
+  <div class="row"><input type="checkbox" id="demoSound" checked> <label for="demoSound" style="margin:0;color:inherit">효과음 켜기 (브라우저에서 합성)</label></div>
+  <button class="play" id="demoPlay">▶ 컷씬 재생</button>
+  <div class="note">팁: 주소 뒤에 <code>?t=17.4</code> 처럼 붙이면 그 시점의 정지 화면을 볼 수 있어요 (검수용).</div>
+</div>
+
+<div class="cs" id="cs" hidden>
+  <canvas id="csCanvas"></canvas>
+  <div class="cs-bar top"></div><div class="cs-bar bottom"></div>
+  <button class="cs-skip" id="csSkip">건너뛰기 ▸▸</button>
+  <div class="cs-sub" id="csSub"></div>
+  <div class="cs-card" id="csCard">
+    <span class="cs-badge">HIDDEN</span>
+    <div class="cs-over">다섯 번째 봉인의 주인</div>
+    <div class="cs-item" id="csItem">잔액 30,000원</div>
+    <div class="cs-desc" id="csDesc">히든 등급 보상을 획득했습니다</div>
+    <button class="cs-ok" id="csOk">확인</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   히든 컷씬 「다섯 번째 봉인」
+   사용법: playHiddenCutscene({ item: "잔액 30,000원", sound: true, onDone(){} })
+   타임라인(초):  0 암전→별   4.5 상자 등장·네 봉인   8.4~10.8 봉인 해제
+                 12.2 다섯 번째 봉인·심장박동   14.5 균열   16.8 파열·개봉
+                 20.2 보상 카드
+   ═══════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (t) => 1 - Math.pow(1 - t, 3);
+const eIn = (t) => t * t * t;
+const eInOut = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const eBack = (t) => { const c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+
+const T = { boxIn: 4.5, seals: [8.4, 9.3, 10.1, 10.8], fifth: 12.2, crack: 14.5, burst: 16.8, lid: 16.95, reveal: 20.2 };
+const HEART = [12.8, 13.9, 14.8, 15.5, 16.0, 16.35, 16.6];
+const SEAL_COLORS = ["#b9bcc6", "#5b9bff", "#a57bff", "#ffb938"];
+const CRIMSON = "#ff2d55";
+const SUBS = [
+  { a: 0.9, b: 4.2, html: "아주 오래전, 상자 하나가 별들 사이에 버려졌다." },
+  { a: 4.8, b: 7.9, html: "누구도 열지 못하도록, 네 겹의 봉인과 함께." },
+  { a: 8.3, b: 11.7, html: '수많은 손이 봉인을 풀어냈다. <span class="c1">잿빛</span>, <span class="c2">푸른빛</span>, <span class="c3">보랏빛</span>, <span class="c4">황금빛</span> —' },
+  { a: 12.4, b: 16.2, html: '하지만 <span class="c5">다섯 번째 봉인</span>은, 아무도 본 적이 없었다.' },
+  { a: 17.7, b: 20.0, html: "…오늘, 당신이 열기 전까지는." },
+];
+
+const el = (id) => document.getElementById(id);
+const cv = el("csCanvas"), g = cv.getContext("2d");
+let W = 0, H = 0, U = 0, DPR = 1, nebulaA = null, nebulaB = null;
+let stars = [], parts = [], cracks = [], events = [], time = 0, running = false, raf = 0, startAt = 0, offset = 0, subIdx = -1, opts = {}, audio = null;
+
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = cv.clientWidth; H = cv.clientHeight; U = Math.min(W, H) / 10;
+  cv.width = W * DPR; cv.height = H * DPR;
+  nebulaA = makeNebula([["#1b2a6b", .3, .35, .55], ["#3b1b6b", .72, .6, .5], ["#0c3a55", .5, .85, .45]], 11);
+  nebulaB = makeNebula([["#7a0b26", .5, .5, .7], ["#4a0620", .2, .3, .45], ["#a3123a", .8, .72, .4]], 23);
+}
+function makeNebula(blobs, seed) {
+  const c = document.createElement("canvas"); c.width = 480; c.height = 480 * (H / W || 1);
+  const x = c.getContext("2d"); const r = rng(seed);
+  for (const [col, px, py, rad] of blobs) {
+    const gr = x.createRadialGradient(px * c.width, py * c.height, 0, px * c.width, py * c.height, rad * c.width);
+    gr.addColorStop(0, col); gr.addColorStop(1, "transparent");
+    x.globalAlpha = .55 + r() * .25; x.fillStyle = gr; x.fillRect(0, 0, c.width, c.height);
+  }
+  return c;
+}
+
+function init() {
+  const r = rng(7);
+  stars = Array.from({ length: 420 }, () => ({ x: r() * 2 - 1, y: r() * 2 - 1, z: .25 + r() * .75, ph: r() * TAU }));
+  // 균열: 중심에서 바깥으로 뻗는 들쭉날쭉한 선 + 곁가지
+  cracks = [];
+  const rc = rng(99);
+  for (let i = 0; i < 11; i++) {
+    let ang = i / 11 * TAU + (rc() - .5) * .4, x = 0, y = 0;
+    const pts = [[0, 0]];
+    for (let k = 0; k < 16; k++) {
+      ang += (rc() - .5) * .9;
+      const step = .45 + rc() * .55;
+      x += Math.cos(ang) * step; y += Math.sin(ang) * step;
+      pts.push([x, y]);
+      if (k > 3 && rc() < .28) {            // 곁가지
+        let bx = x, by = y, ba = ang + (rc() < .5 ? 1 : -1) * (.6 + rc() * .5); const bp = [[bx, by]];
+        for (let j = 0; j < 5; j++) { ba += (rc() - .5) * .8; bx += Math.cos(ba) * .4; by += Math.sin(ba) * .4; bp.push([bx, by]); }
+        cracks.push({ pts: bp, start: k / 16 });
+      }
+    }
+    cracks.push({ pts, start: 0 });
+  }
+  parts = [];
+  events = [
+    ...T.seals.map((t, i) => ({ t, fn: () => sealBreak(i) })),
+    { t: T.burst, fn: bigBurst },
+    { t: T.burst + .5, fn: () => ring(1) },
+  ].map((e) => ({ ...e, done: false }));
+}
+
+/* ── 파티클 ── */
+function spawn(p) { parts.push(Object.assign({ x: 0, y: 0, vx: 0, vy: 0, life: 1, max: 1, size: 2, color: "#fff", drag: .98, grav: 0, rot: 0, vr: 0, type: "spark" }, p)); }
+function sealPos(i, t) {
+  const a = i / 4 * TAU + .6 + t * .16;
+  return [Math.cos(a) * Math.min(3.5 * U, W * .4), Math.sin(a) * 1.55 * U - .3 * U];
+}
+function sealBreak(i) {
+  const [x, y] = sealPos(i, T.seals[i]); const r = rng(i * 31 + 5);
+  for (let k = 0; k < 26; k++) {
+    const a = r() * TAU, sp = (1.5 + r() * 5) * U / 10;
+    spawn({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, max: .6 + r() * .9, size: (2 + r() * 5) * U / 60, color: SEAL_COLORS[i], type: k % 3 ? "spark" : "shard", rot: r() * TAU, vr: (r() - .5) * .4, drag: .955 });
+  }
+  parts.push({ type: "ring", x, y, life: .7, max: .7, color: SEAL_COLORS[i], r0: .55 * U, r1: 2.2 * U });
+}
+function ring(kind) { parts.push({ type: "ring", x: 0, y: boxCenterY(time), life: 1.5, max: 1.5, color: kind ? "#ffd166" : "#fff", r0: .4 * U, r1: Math.hypot(W, H) * .7, wide: true }); }
+function bigBurst() {
+  const r = rng(404); const cy = boxCenterY(T.burst);
+  ring(0);
+  for (let k = 0; k < 300; k++) {
+    const a = r() * TAU, sp = (2 + r() * r() * 22) * U / 10;
+    spawn({ x: 0, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * .8, max: 1.4 + r() * 2.8, size: (1.5 + r() * 4.5) * U / 60,
+      color: r() < .45 ? CRIMSON : r() < .6 ? "#ffd166" : "#fff", type: k % 5 === 0 ? "shard" : "spark", rot: r() * TAU, vr: (r() - .5) * .5, drag: .972 });
+  }
+}
+function boxCenterY(t) { return lerp(.04, .2, eInOut(seg(t, 18.4, 20.2))) * H + Math.sin(t * .9) * .08 * U; }
+
+function update(t, dt) {
+  for (const e of events) if (!e.done && t >= e.t) { e.done = true; e.fn(); }
+  // 개봉 후: 상자에서 피어오르는 불씨
+  if (t > T.lid + .4) {
+    const n = t < 19 ? 3 : 1;
+    for (let k = 0; k < n; k++) if (Math.random() < .8) {
+      spawn({ x: (Math.random() - .5) * 1.6 * U, y: boxCenterY(t) - .5 * U, vx: (Math.random() - .5) * U / 14, vy: -(1 + Math.random() * 2.4) * U / 9,
+        max: 2 + Math.random() * 2.5, size: (1 + Math.random() * 3) * U / 60, color: Math.random() < .5 ? "#ffd166" : CRIMSON, drag: .992, type: "ember" });
+    }
+  }
+  for (const p of parts) {
+    p.life -= dt;
+    if (p.type === "ring") continue;
+    p.vx *= p.drag; p.vy *= p.drag; p.vy += p.grav;
+    p.x += p.vx * dt * 60; p.y += p.vy * dt * 60; p.rot += p.vr;
+    if (p.type === "ember") p.vx += Math.sin(t * 3 + p.y * .02) * .01 * U / 10;
+  }
+  if (parts.length > 900) parts.splice(0, parts.length - 900);
+  parts = parts.filter((p) => p.life > 0);
+}
+
+/* ── 3D 상자 투영 ── */
+function makeCam(t) {
+  const zoom = lerp(1, 1.16, seg(t, 0, T.burst)) + .22 * pulse(t, T.burst, .12, 1.6) - .2 * eInOut(seg(t, 18.4, 20.2));
+  const appear = eOut(seg(t, T.boxIn, T.boxIn + 2));
+  return { ry: -.55 + .13 * Math.sin(t * .31), rx: -.34 + .04 * Math.sin(t * .23), f: 7, S: U * 1.25 * zoom * lerp(.3, 1, appear), cx: 0, cy: boxCenterY(t), alpha: seg(t, T.boxIn, T.boxIn + 1.4), zoom };
+}
+function proj(p, c) {
+  const cy = Math.cos(c.ry), sy = Math.sin(c.ry), cx = Math.cos(c.rx), sx = Math.sin(c.rx);
+  const x1 = p[0] * cy + p[2] * sy, z1 = -p[0] * sy + p[2] * cy;
+  const y2 = p[1] * cx - z1 * sx, z2 = p[1] * sx + z1 * cx;
+  const s = c.f / (c.f - z2);
+  return [c.cx + x1 * c.S * s, c.cy + y2 * c.S * s];
+}
+function area(q) { let a = 0; for (let i = 0; i < q.length; i++) { const [x1, y1] = q[i], [x2, y2] = q[(i + 1) % q.length]; a += x1 * y2 - x2 * y1; } return a; }
+function quad(q, fill, stroke, lw) {
+  g.beginPath(); g.moveTo(q[0][0], q[0][1]); for (let i = 1; i < q.length; i++) g.lineTo(q[i][0], q[i][1]); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 2; g.lineJoin = "round"; g.stroke(); }
+}
+function vGrad(q, c0, c1) {
+  const top = [(q[0][0] + q[1][0]) / 2, (q[0][1] + q[1][1]) / 2], bot = [(q[2][0] + q[3][0]) / 2, (q[2][1] + q[3][1]) / 2];
+  const gr = g.createLinearGradient(top[0], top[1], bot[0], bot[1]); gr.addColorStop(0, c0); gr.addColorStop(1, c1); return gr;
+}
+
+function drawBox(t, cam) {
+  if (cam.alpha <= 0) return;
+  const w = 1.15, h = .58, d = .62, open = 1.9 * eBack(seg(t, T.lid, T.lid + .95));
+  const glow = seg(t, T.lid, T.lid + .6);
+  const P = (x, y, z) => proj([x, y, z], cam);
+  const gold = "#e9c46a", lw = Math.max(1.4, cam.S / 42);
+  const front = [P(-w, -h, d), P(w, -h, d), P(w, h, d), P(-w, h, d)];
+  const right = [P(w, -h, d), P(w, -h, -d), P(w, h, -d), P(w, h, d)];
+  const hole = [P(-w, -h, -d), P(w, -h, -d), P(w, -h, d), P(-w, -h, d)];
+  // 뚜껑: 경첩(뒷변) 기준 회전. (x, v=아래로, u=경첩에서 앞으로)
+  const wl = w + .04, Ud = 2 * d + .05, F = .24;
+  const L = (x, v, u) => P(x, -h + v * Math.cos(open) - u * Math.sin(open), -d + u * Math.cos(open) + v * Math.sin(open));
+  const lidTop = [L(-wl, 0, 0), L(wl, 0, 0), L(wl, 0, Ud), L(-wl, 0, Ud)];
+  const lidFront = [L(-wl, 0, Ud), L(wl, 0, Ud), L(wl, F, Ud), L(-wl, F, Ud)];
+  const lidRight = [L(wl, 0, Ud), L(wl, 0, 0), L(wl, F, 0), L(wl, F, Ud)];
+  const drawLid = () => {
+    const facingUp = area(lidTop) > 0;   // 닫힌 상태의 부호와 같으면 윗면이 보임
+    quad(lidTop, facingUp ? vGrad(lidTop, "#2b2530", "#17131b") : vGrad(lidTop, "#5a1024", "#2a0812"), gold, lw);
+    if (area(lidRight) > 0) quad(lidRight, "#120f16", gold, lw);
+    if (area(lidFront) > 0) quad(lidFront, vGrad(lidFront, "#33293a", "#1a151f"), gold, lw);
+  };
+  g.save(); g.globalAlpha = cam.alpha;
+  // 바닥 그림자 빛
+  if (open > .9) drawLid();
+  // 상자 속
+  if (open > .02) {
+    quad(hole, "#08060a");
+    if (glow > 0) {
+      const c = P(0, -h, 0), gr = g.createRadialGradient(c[0], c[1], 0, c[0], c[1], cam.S * 1.3);
+      gr.addColorStop(0, `rgba(255,240,220,${.95 * glow})`); gr.addColorStop(.35, `rgba(255,80,110,${.7 * glow})`); gr.addColorStop(1, "rgba(255,45,85,0)");
+      g.save(); g.beginPath(); g.moveTo(hole[0][0], hole[0][1]); for (let i = 1; i < 4; i++) g.lineTo(hole[i][0], hole[i][1]); g.closePath(); g.clip();
+      g.fillStyle = gr; g.fillRect(c[0] - cam.S * 2, c[1] - cam.S * 2, cam.S * 4, cam.S * 4); g.restore();
+    }
+  }
+  quad(right, vGrad(right, "#1b1620", "#0b090e"), gold, lw);
+  quad(front, vGrad(front, "#2a2230", "#0f0c13"), gold, lw);
+  // 앞면 문양: 자물쇠 원 + 다섯 점
+  const fc = P(0, .02, d), fr = cam.S * .26;
+  const hb = heart(t), lit = Math.max(seg(t, T.fifth, T.crack) * (.35 + .65 * hb), glow);
+  g.lineWidth = lw; g.strokeStyle = lit > .02 ? `rgba(255,${Math.round(lerp(200, 70, lit))},${Math.round(lerp(110, 100, lit))},1)` : gold;
+  if (lit > .02) { g.shadowColor = CRIMSON; g.shadowBlur = 24 * lit; }
+  g.beginPath(); g.ellipse(fc[0], fc[1], fr, fr * .96, 0, 0, TAU); g.stroke();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + i / 5 * TAU; const done = i < 4 ? t >= T.seals[i] : t >= T.burst;
+    g.beginPath(); g.arc(fc[0] + Math.cos(a) * fr * .62, fc[1] + Math.sin(a) * fr * .6, fr * .1, 0, TAU);
+    g.fillStyle = done ? (i < 4 ? SEAL_COLORS[i] : CRIMSON) : "#3a3340"; g.fill();
+  }
+  g.shadowBlur = 0;
+  if (open <= .9) drawLid();
+  g.restore();
+}
+
+function heart(t) { let m = 0; for (const h of HEART) m = Math.max(m, pulse(t, h, .06, .34), .6 * pulse(t, h + .2, .05, .3)); return t > T.burst ? 0 : m; }
+
+/* ── 봉인 ── */
+function glyph(x, y, r, n, rot, color, alpha, lw) {
+  g.save(); g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = lw; g.shadowColor = color; g.shadowBlur = r * .5;
+  g.beginPath(); g.arc(x, y, r, 0, TAU); g.stroke();
+  g.beginPath(); g.arc(x, y, r * .78, 0, TAU); g.setLineDash([r * .12, r * .1]); g.stroke(); g.setLineDash([]);
+  for (const [rr, ro] of [[.64, rot], [.36, -rot * 1.5]]) {          // 바깥 n각형 + 안쪽 역회전 n각형
+    g.beginPath();
+    for (let i = 0; i <= n; i++) { const a = ro + i / n * TAU, px = x + Math.cos(a) * r * rr, py = y + Math.sin(a) * r * rr; i ? g.lineTo(px, py) : g.moveTo(px, py); }
+    g.stroke();
+  }
+  g.restore();
+}
+function drawSeals(t, cam, front) {          // front=true: 상자보다 앞(화면 아래쪽 궤도)에 있는 봉인만
+  const a0 = seg(t, 5.0, 6.6);
+  if (a0 <= 0) return;
+  for (let i = 0; i < 4; i++) {
+    if (t >= T.seals[i]) continue;
+    const appear = eOut(seg(t, 5.0 + i * .3, 6.2 + i * .3)); if (appear <= 0) continue;
+    const [sx, sy] = sealPos(i, t); const x = sx, y = sy + cam.cy;
+    if ((sy > -.3 * U) !== front) continue;
+    const tense = pulse(t, T.seals[i] - .5, .5, .01);        // 풀리기 직전 떨림
+    const jx = (Math.random() - .5) * tense * U * .12, jy = (Math.random() - .5) * tense * U * .12;
+    // 사슬
+    g.save(); g.globalAlpha = .55 * appear; g.strokeStyle = SEAL_COLORS[i]; g.lineWidth = Math.max(1, U / 45); g.setLineDash([U * .16, U * .12]); g.lineDashOffset = -t * 14;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(0, cam.cy); g.stroke(); g.restore();
+    glyph(x + jx, y + jy, .55 * U * (1 + tense * .15), 3 + i, t * (.5 + i * .15) * (i % 2 ? -1 : 1), SEAL_COLORS[i], appear, Math.max(1.4, U / 36));
+  }
+}
+function drawFifth(t, cam) {
+  const a = seg(t, T.fifth, T.fifth + 1.5); if (a <= 0 || t > T.burst + .5) return;
+  const gone = seg(t, T.burst, T.burst + .5), hb = heart(t);
+  const r = 2.7 * U * cam.zoom * (1 + hb * .07) * (1 + gone * 1.6), alpha = a * (1 - gone) * (.55 + .45 * hb);
+  g.save(); g.translate(0, cam.cy); g.globalAlpha = alpha; g.strokeStyle = CRIMSON; g.shadowColor = CRIMSON; g.shadowBlur = U * .5; g.lineWidth = Math.max(1.6, U / 30);
+  g.beginPath(); g.arc(0, 0, r, 0, TAU); g.stroke();
+  g.beginPath(); g.arc(0, 0, r * .9, 0, TAU); g.setLineDash([r * .05, r * .035]); g.lineDashOffset = t * 20; g.stroke(); g.setLineDash([]);
+  g.beginPath(); for (let i = 0; i <= 5; i++) { const an = -Math.PI / 2 + t * .12 + i * 2 / 5 * TAU; const x = Math.cos(an) * r * .88, y = Math.sin(an) * r * .88; i ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
+  g.lineWidth = Math.max(1, U / 60);
+  for (let i = 0; i < 60; i++) { const an = i / 60 * TAU - t * .08, l = i % 5 ? .03 : .07; g.beginPath(); g.moveTo(Math.cos(an) * r * 1.02, Math.sin(an) * r * 1.02); g.lineTo(Math.cos(an) * r * (1.02 + l), Math.sin(an) * r * (1.02 + l)); g.stroke(); }
+  g.restore();
+}
+function drawCracks(t, cam) {
+  const p = Math.pow(seg(t, T.crack, T.burst), 1.6); if (p <= 0) return;
+  const fade = 1 - seg(t, T.burst, T.burst + .35); if (fade <= 0) return;
+  const sc = Math.hypot(W, H) / 22;
+  g.save(); g.translate(0, cam.cy); g.lineCap = "round"; g.lineJoin = "round";
+  for (const pass of [0, 1]) {
+    g.strokeStyle = pass ? "#fff" : CRIMSON; g.lineWidth = pass ? Math.max(1, U / 50) : Math.max(3, U / 12); g.globalAlpha = (pass ? .95 : .5) * fade;
+    g.shadowColor = CRIMSON; g.shadowBlur = pass ? 0 : U * .4;
+    for (const c of cracks) {
+      const local = clamp((p - c.start * .8) / (1 - c.start * .8)); if (local <= 0) continue;
+      const n = local * (c.pts.length - 1); g.beginPath(); g.moveTo(c.pts[0][0] * sc, c.pts[0][1] * sc);
+      for (let i = 1; i <= Math.floor(n); i++) g.lineTo(c.pts[i][0] * sc, c.pts[i][1] * sc);
+      const i0 = Math.floor(n), fr = n - i0;
+      if (i0 < c.pts.length - 1) g.lineTo(lerp(c.pts[i0][0], c.pts[i0 + 1][0], fr) * sc, lerp(c.pts[i0][1], c.pts[i0 + 1][1], fr) * sc);
+      g.stroke();
+    }
+  }
+  g.restore();
+}
+
+/* ── 빛 ── */
+function drawRays(t, cam) {                     // 상자 뒤에서 퍼지는 회전 빛줄기
+  const k = seg(t, T.lid + .05, T.lid + .9); if (k <= 0) return;
+  const oy = cam.cy - .62 * cam.S;
+  g.save(); g.globalCompositeOperation = "lighter";
+  const R = Math.hypot(W, H) * .75, rays = g.createRadialGradient(0, oy, 0, 0, oy, R);
+  rays.addColorStop(0, `rgba(255,220,170,${.5 * k})`); rays.addColorStop(.25, `rgba(255,70,110,${.22 * k})`); rays.addColorStop(1, "rgba(255,45,85,0)");
+  g.fillStyle = rays; g.beginPath();
+  for (let i = 0; i < 16; i++) { const a = i / 16 * TAU + t * .12, wdt = .05 + .05 * Math.sin(i * 2.7 + t * .6); g.moveTo(0, oy); g.lineTo(Math.cos(a - wdt) * R, oy + Math.sin(a - wdt) * R); g.lineTo(Math.cos(a + wdt) * R, oy + Math.sin(a + wdt) * R); g.closePath(); }
+  g.fill();
+  g.restore();
+}
+function drawLight(t, cam) {                    // 상자 앞: 빛기둥 + 중심 광원 + 가로 플레어
+  const k = seg(t, T.lid + .05, T.lid + .9); if (k <= 0) return;
+  const oy = cam.cy - .62 * cam.S, flick = .88 + .12 * Math.sin(t * 23) * Math.sin(t * 7.3);
+  g.save(); g.globalCompositeOperation = "lighter";
+  // 빛기둥
+  const bw = cam.S * lerp(.3, 1.0, eOut(k)) * flick, bh = H;
+  const beam = g.createLinearGradient(-bw, 0, bw, 0);
+  beam.addColorStop(0, "rgba(255,45,85,0)"); beam.addColorStop(.35, `rgba(255,90,120,${.4 * k})`); beam.addColorStop(.5, `rgba(255,245,225,${.85 * k})`); beam.addColorStop(.65, `rgba(255,90,120,${.4 * k})`); beam.addColorStop(1, "rgba(255,45,85,0)");
+  g.fillStyle = beam; g.beginPath(); g.moveTo(-bw * .55, oy); g.lineTo(bw * .55, oy); g.lineTo(bw * 1.5, oy - bh); g.lineTo(-bw * 1.5, oy - bh); g.closePath(); g.fill();
+  // 중심 광원
+  const core = g.createRadialGradient(0, oy, 0, 0, oy, cam.S * 2.4);
+  core.addColorStop(0, `rgba(255,250,235,${.9 * k * flick})`); core.addColorStop(.3, `rgba(255,120,140,${.35 * k})`); core.addColorStop(1, "rgba(255,45,85,0)");
+  g.fillStyle = core; g.fillRect(-cam.S * 2.4, oy - cam.S * 2.4, cam.S * 4.8, cam.S * 4.8);
+  // 아나모픽 가로 플레어
+  const fw = W * .46 * k * flick, fh = Math.max(2, U * .07);
+  const flare = g.createLinearGradient(-fw, 0, fw, 0);
+  flare.addColorStop(0, "rgba(255,120,150,0)"); flare.addColorStop(.5, `rgba(255,235,225,${.8 * k})`); flare.addColorStop(1, "rgba(255,120,150,0)");
+  g.fillStyle = flare; g.beginPath(); g.ellipse(0, oy, fw, fh, 0, 0, TAU); g.fill();
+  g.restore();
+}
+function drawParts() {
+  g.save(); g.globalCompositeOperation = "lighter";
+  for (const p of parts) {
+    const k = clamp(p.life / p.max);
+    if (p.type === "ring") {
+      const q = 1 - k, r = lerp(p.r0, p.r1, eOut(q));
+      g.globalAlpha = k * (p.wide ? .8 : 1); g.strokeStyle = p.color; g.lineWidth = (p.wide ? U * .16 : U * .08) * k + 1; g.beginPath(); g.ellipse(p.x, p.y, r, r * (p.wide ? .55 : 1), 0, 0, TAU); g.stroke();
+      continue;
+    }
+    g.globalAlpha = Math.min(1, k * 1.6); g.fillStyle = p.color;
+    if (p.type === "shard") { g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.beginPath(); g.moveTo(-p.size * 1.6, p.size); g.lineTo(p.size * 1.8, 0); g.lineTo(-p.size, -p.size * 1.2); g.closePath(); g.fill(); g.restore(); continue; }
+    g.beginPath(); g.arc(p.x, p.y, p.size, 0, TAU); g.fill();
+    g.globalAlpha *= .13; g.beginPath(); g.arc(p.x, p.y, p.size * 2.6, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+/* ── 한 프레임 ── */
+function draw(t) {
+  const cam = makeCam(t);
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
+  g.fillStyle = "#020206"; g.fillRect(0, 0, W, H);
+  const fadeIn = seg(t, .2, 2.2), crim = Math.max(seg(t, T.fifth, T.crack + 1) * .85, 0) * (1 - seg(t, T.burst, T.burst + 2) * .55);
+  g.globalAlpha = .8 * fadeIn * (1 - crim * .8); g.drawImage(nebulaA, 0, 0, W, H);
+  g.globalAlpha = crim * (.75 + .25 * heart(t)); g.drawImage(nebulaB, 0, 0, W, H); g.globalAlpha = 1;
+
+  // 흔들림
+  const shAmp = U * (.5 * pulse(t, T.burst, .05, 1.3) + .1 * heart(t) + T.seals.reduce((m, s) => Math.max(m, .12 * pulse(t, s, .03, .3)), 0) + .05 * seg(t, T.crack, T.burst));
+  g.translate(W / 2 + (Math.random() - .5) * shAmp, H / 2 + (Math.random() - .5) * shAmp);
+
+  // 별 (개봉 순간 방사형으로 늘어남)
+  const warp = pulse(t, T.burst, .15, 1.3), M = Math.max(W, H) * .62, drift = t * .006;
+  g.lineCap = "round";
+  for (const s of stars) {
+    let x = ((s.x - drift * s.z + 1) % 2 + 2) % 2 - 1, y = s.y;
+    const px = x * M * (1 + (cam.zoom - 1) * .35 * s.z), py = y * M * (1 + (cam.zoom - 1) * .35 * s.z);
+    const tw = .55 + .45 * Math.sin(t * (1.2 + s.z) + s.ph);
+    g.globalAlpha = fadeIn * tw * (.35 + .65 * s.z) * (1 - crim * .45);
+    if (warp > .01) { g.strokeStyle = "#fff"; g.lineWidth = s.z * 1.6; g.beginPath(); g.moveTo(px, py); g.lineTo(px * (1 + warp * .4 * s.z), py * (1 + warp * .4 * s.z)); g.stroke(); }
+    else { g.fillStyle = s.z > .8 ? "#dfe8ff" : "#fff"; g.beginPath(); g.arc(px, py, s.z * 1.25, 0, TAU); g.fill(); }
+  }
+  g.globalAlpha = 1;
+
+  drawFifth(t, cam);
+  drawSeals(t, cam, false);
+  // 상자 뒤 후광
+  if (cam.alpha > 0) {
+    const halo = g.createRadialGradient(0, cam.cy, 0, 0, cam.cy, cam.S * 3.2), c = crim;
+    halo.addColorStop(0, `rgba(${Math.round(lerp(120, 255, c))},${Math.round(lerp(140, 45, c))},${Math.round(lerp(255, 85, c))},${.22 * cam.alpha * (1 + heart(t))})`); halo.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = halo; g.fillRect(-cam.S * 3.2, cam.cy - cam.S * 3.2, cam.S * 6.4, cam.S * 6.4);
+  }
+  drawRays(t, cam);
+  drawBox(t, cam);
+  drawSeals(t, cam, true);
+  drawCracks(t, cam);
+  drawLight(t, cam);
+  drawParts();
+
+  // 비네트 (다섯 번째 봉인 구간에서 짙어짐) + 섬광
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const dark = lerp(.55, .92, seg(t, T.fifth, T.crack)) * (1 - seg(t, T.burst, T.burst + 1) * .5);
+  const vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .18, W / 2, H / 2, Math.hypot(W, H) * .62);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, `rgba(0,0,0,${dark})`);
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  const fl = pulse(t, T.burst, .07, .95); if (fl > 0) { g.fillStyle = `rgba(255,245,238,${fl * fl})`; g.fillRect(0, 0, W, H); }
+  const black = 1 - seg(t, 0, 1.4); if (black > 0) { g.fillStyle = `rgba(0,0,0,${black})`; g.fillRect(0, 0, W, H); }
+}
+
+function setSub(t) {
+  const i = SUBS.findIndex((s) => t >= s.a && t < s.b), sub = el("csSub");
+  if (i === subIdx) return;
+  subIdx = i;
+  if (i < 0) { sub.classList.remove("show"); return; }
+  sub.classList.remove("show");
+  setTimeout(() => { if (subIdx === i) { sub.innerHTML = SUBS[i].html; sub.classList.add("show"); } }, sub.innerHTML ? 450 : 0);
+}
+
+function frame(now) {
+  if (!running) return;
+  const t = (now - startAt) / 1000 + offset, dt = Math.min(.05, Math.max(0, t - time));
+  time = t;
+  update(t, dt); draw(t); setSub(t);
+  if (t >= T.reveal) el("csCard").classList.add("show");
+  if (t >= T.reveal - .4) el("csSkip").hidden = true;
+  raf = requestAnimationFrame(frame);
+}
+
+/* ── 효과음 (WebAudio 합성) ── */
+function makeAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+  const ctx = new AC(), master = ctx.createGain(), comp = ctx.createDynamicsCompressor(), wet = ctx.createGain(), conv = ctx.createConvolver();
+  master.gain.value = .55; wet.gain.value = .4;
+  const len = ctx.sampleRate * 2.8, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  conv.buffer = ir; master.connect(comp); master.connect(conv); conv.connect(wet); wet.connect(comp); comp.connect(ctx.destination);
+  const nb = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate); { const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const tone = (t, f1, f2, dur, gain, type = "sine", attack = .006) => {
+    const o = ctx.createOscillator(), a = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(f1, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    a.gain.setValueAtTime(.0001, t); a.gain.exponentialRampToValueAtTime(gain, t + attack); a.gain.exponentialRampToValueAtTime(.0001, t + dur); o.connect(a); a.connect(master); o.start(t); o.stop(t + dur + .05);
+  };
+  const noise = (t, dur, gain, ftype, f1, f2, q = 1, shape = "decay") => {
+    const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), a = ctx.createGain(); s.buffer = nb; s.loop = true; f.type = ftype; f.Q.value = q;
+    f.frequency.setValueAtTime(f1, t); f.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    if (shape === "rise") { a.gain.setValueAtTime(.0001, t); a.gain.exponentialRampToValueAtTime(gain, t + dur * .97); a.gain.linearRampToValueAtTime(0, t + dur); }
+    else { a.gain.setValueAtTime(gain, t); a.gain.exponentialRampToValueAtTime(.0001, t + dur); }
+    s.connect(f); f.connect(a); a.connect(master); s.start(t); s.stop(t + dur + .05);
+  };
+  const pad = (t, freqs, gain, fadeIn) => freqs.map((fq) => { const o = ctx.createOscillator(), a = ctx.createGain(); o.type = "sine"; o.frequency.value = fq; o.detune.value = (Math.random() - .5) * 10;
+    a.gain.setValueAtTime(.0001, t); a.gain.exponentialRampToValueAtTime(gain, t + fadeIn); o.connect(a); a.connect(master); o.start(t); return { o, a }; });
+  const bells = (t) => [659.3, 830.6, 987.8, 1318.5, 1661.2, 1975.5].forEach((fq, i) => { tone(t + i * .11, fq, 0, 2.2, .16); tone(t + i * .11, fq * 2.01, 0, 1.2, .05); });
+  return {
+    ctx,
+    schedule(from) {                                   // from: 컷씬 시각(초)부터 재생
+      const t0 = ctx.currentTime + .05 - from, at = (x) => Math.max(ctx.currentTime + .01, t0 + x);
+      if (from < T.burst) {
+        // 저음 드론 → 다섯 번째 봉인에서 부풀다가 파열 직전 뚝 끊김
+        [55, 55.6, 82.4].forEach((fq) => { const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), a = ctx.createGain(); o.type = "sawtooth"; o.frequency.value = fq; f.type = "lowpass"; f.frequency.value = 240;
+          a.gain.setValueAtTime(.0001, at(0)); a.gain.exponentialRampToValueAtTime(.09, at(3)); a.gain.setValueAtTime(.09, at(T.fifth)); a.gain.exponentialRampToValueAtTime(.2, at(T.burst - .1)); a.gain.linearRampToValueAtTime(0, at(T.burst - .02));
+          o.connect(f); f.connect(a); a.connect(master); o.start(at(0)); o.stop(at(T.burst)); });
+        T.seals.forEach((s, i) => { if (s < from) return; tone(at(s), 1250 * (1 + i * .12), 520, .7, .22); tone(at(s), 2500 * (1 + i * .12), 1300, .4, .08); noise(at(s), .25, .25, "highpass", 3000, 6000); });
+        HEART.forEach((h) => { if (h < from) return; tone(at(h), 72, 38, .26, .8); tone(at(h + .2), 64, 36, .22, .5); });
+        if (T.crack - .2 >= from) { noise(at(T.crack - .2), T.burst - T.crack + .15, .3, "bandpass", 300, 7000, 1.2, "rise"); const o = ctx.createOscillator(), a = ctx.createGain(); o.type = "sawtooth";
+          o.frequency.setValueAtTime(70, at(T.crack)); o.frequency.exponentialRampToValueAtTime(660, at(T.burst - .05)); a.gain.setValueAtTime(.0001, at(T.crack)); a.gain.exponentialRampToValueAtTime(.1, at(T.burst - .08)); a.gain.linearRampToValueAtTime(0, at(T.burst - .03));
+          o.connect(a); a.connect(master); o.start(at(T.crack)); o.stop(at(T.burst)); }
+        // 파열
+        noise(at(T.burst + .03), 2.6, 1.0, "lowpass", 1600, 70); tone(at(T.burst + .03), 58, 27, 2.8, .95); tone(at(T.burst + .03), 1800, 300, .5, .2); noise(at(T.burst + .03), .4, .5, "highpass", 2500, 5000);
+      }
+      this.pad = pad(at(Math.max(from, T.lid + .2)), [110, 164.8, 220, 277.2, 329.6, 440], .045, 2.5);
+      bells(at(Math.max(from, T.reveal)));
+    },
+    stop() { try { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(0, ctx.currentTime, .25); setTimeout(() => ctx.close(), 1200); } catch (e) { /* 이미 닫힘 */ } },
+  };
+}
+
+/* ── 공개 API ── */
+function playHiddenCutscene(o = {}) {
+  opts = o;
+  const root = el("cs");
+  el("csItem").textContent = o.item || "히든 보상";
+  el("csDesc").textContent = o.desc || "히든 등급 보상을 획득했습니다";
+  el("csCard").classList.remove("show"); el("csSub").classList.remove("show"); el("csSub").innerHTML = ""; el("csSkip").hidden = false;
+  root.hidden = false; resize(); init();
+  subIdx = -1; time = 0; offset = o.from || 0; startAt = performance.now(); running = true;
+  if (offset > 0) for (let t = 0; t < offset; t += 1 / 60) update(t, 1 / 60);
+  requestAnimationFrame(() => root.classList.add("on"));
+  if (o.sound !== false) { audio = makeAudio(); if (audio) audio.schedule(offset); }
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
+}
+function skipCutscene() {
+  if (time >= T.reveal - .4) return;
+  const target = T.reveal - .25;
+  for (let t = time; t < target; t += 1 / 30) update(t, 1 / 30);
+  offset += target - time; time = target;
+  if (audio) { audio.stop(); audio = makeAudio(); if (audio) audio.schedule(target); }
+}
+function endCutscene() {
+  const root = el("cs"); root.classList.remove("on");
+  if (audio) { audio.stop(); audio = null; }
+  setTimeout(() => { running = false; cancelAnimationFrame(raf); root.hidden = true; if (opts.onDone) opts.onDone(); }, 750);
+}
+el("csSkip").addEventListener("click", skipCutscene);
+el("csOk").addEventListener("click", endCutscene);
+window.addEventListener("resize", () => { if (!el("cs").hidden) resize(); });
+window.playHiddenCutscene = playHiddenCutscene;
+
+/* ── 데모 ── */
+el("demoPlay").addEventListener("click", () => playHiddenCutscene({ item: el("demoItem").value, sound: el("demoSound").checked }));
+{ // ?t=초 → 그 시점 정지 화면 (검수용)
+  const q = new URLSearchParams(location.search).get("t");
+  if (q !== null) {
+    const tt = parseFloat(q) || 0, root = el("cs");
+    root.hidden = false; root.classList.add("on"); root.style.transition = "none"; resize(); init();
+    for (let t = 0; t < tt; t += 1 / 60) { time = t; update(t, 1 / 60); }
+    time = tt; draw(tt);
+    const s = SUBS.find((x) => tt >= x.a && tt < x.b); if (s) { el("csSub").innerHTML = s.html; el("csSub").classList.add("show"); }
+    if (tt >= T.reveal) el("csCard").classList.add("show");
+  }
+}
+</script>
+</body>
+</html>
