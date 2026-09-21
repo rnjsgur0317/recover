@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUMINOSITY 컷씬 (WebGL) — 광휘</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: #05070d; color: #e6edf7; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.demo { max-width: 480px; width: 100%; background: #0c111b; border: 1px solid #1d2738; border-radius: 16px; padding: 26px 24px; }
+.demo h1 { margin: 0 0 6px; font-size: 1.15rem; letter-spacing: .06em; }
+.demo p { margin: 0 0 16px; color: #8593a8; font-size: .86rem; line-height: 1.65; }
+.demo .row { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: #b3c0d3; }
+.demo button.play { width: 100%; margin-top: 16px; border: 0; border-radius: 11px; padding: 14px; font-size: 1rem; font-weight: 800; cursor: pointer; color: #06101f; background: linear-gradient(180deg, #ffffff, #bcdcff); box-shadow: 0 8px 28px rgba(125,184,255,.35); font-family: inherit; }
+.demo .note { margin-top: 14px; font-size: .76rem; color: #5f6c80; line-height: 1.6; }
+.cs { position: fixed; inset: 0; z-index: 9999; background: #000; overflow: hidden; }
+.cs[hidden] { display: none; }
+.cs canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.cs-bar { position: absolute; left: 0; right: 0; height: 9vh; background: #000; z-index: 3; }
+.cs-bar.top { top: 0; } .cs-bar.bottom { bottom: 0; }
+.cs-skip { position: absolute; right: 18px; top: calc(9vh + 14px); z-index: 6; background: rgba(0,0,0,.4); color: #d5deea; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 14px; font-size: .78rem; cursor: pointer; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="demo">
+  <h1>[ LUMINOSITY ] — WebGL 버전</h1>
+  <p>같은 서사·같은 사운드를 GPU 렌더링으로 다시 만든 버전입니다. 셰이더로 만든 우주·혼돈의 연기·빛기둥, GPU 파티클 수만 개, 후처리(HDR 블룸 · 갓레이 · 충격파 왜곡 · 색수차 · 필름 그레인 · 톤매핑).</p>
+  <div class="row"><input type="checkbox" id="demoSound" checked> <label for="demoSound">사운드 재생</label></div>
+  <button class="play" id="demoPlay">▶ 컷씬 재생</button>
+  <div class="note" id="glNote">주소 뒤에 <code>?t=20.3</code> 처럼 붙이면 그 시점의 정지 화면을 볼 수 있어요.</div>
+</div>
+<div class="cs" id="cs" hidden>
+  <canvas id="glc"></canvas>
+  <canvas id="ui" style="z-index:2;pointer-events:none"></canvas>
+  <div class="cs-bar top"></div><div class="cs-bar bottom"></div>
+  <button class="cs-skip" id="csSkip">건너뛰기 ▸▸</button>
+</div>
+<audio id="bgm" src="/luminosity_cut.mp3" preload="auto"></audio>
+<script src="/luminosity_data.js"></script>
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   [ LUMINOSITY ] 광휘 — WebGL2 렌더링 버전
+   구조:  ① 배경 셰이더(성운·별·혼돈 덩어리·조여 오는 연기·빛기둥·검의 광휘)
+         ② 2D 캔버스 레이어(솔·무기·씨앗·빛날개·자막·타이틀)를 텍스처로 합성
+         ③ GPU 파티클(먼지·파쇄·무기 파편·점화·불티·최종 섬광) — 위치는 시간의 함수(상태 없음)
+         ④ 후처리: 밝은 부분 추출 → 듀얼 필터 블룸 → 갓레이 → 충격파 왜곡·색수차·톤매핑·그레인·비네트
+   타격점(초): 3.13 / 9.66 / 10.59 11.26 12.82 13.37 13.89 14.33 / 14.77 / 16.44 / 19.62 19.90 20.22 … / 24.52
+   API: playLuminosityCutscene({ sound: true, onDone(){} })
+   ═══════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2, PI = Math.PI;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (t) => 1 - Math.pow(1 - t, 3), eIn = (t) => t * t * t;
+const eInOut = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const eBack = (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const pulse = (t, t0, rise, fall) => (t < t0 ? 0 : t < t0 + rise ? (t - t0) / rise : Math.max(0, 1 - (t - t0 - rise) / fall));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+
+const T = { HIT1: 3.13, FORGE: 6.0, AWAKE: 8.65, SOLFADE: 9.66, BREAKS: [10.59, 11.26, 12.82, 13.37, 13.89, 14.33], ONE: 14.77, SURGE: 16.44,
+  IGNITE: 19.62, WINGS: [19.62, 19.9, 20.22, 20.46, 21.07, 21.44], FINAL: 24.52, FADE: 26.5, END: 28.1 };
+const BREAK_ORDER = [3, 5, 1, 6, 2, 4];
+const MASS = [3.7, .1, 3.5];                          // 원초의 혼돈: x, y, 반지름 (U 단위)
+const CAPS = [
+  { a: .45, b: 3.0, s: "“들으라, 나의 무기들이여.\n혼돈의 씨앗을 찾아내어, 혼돈의 물결을 정화하라.”" },
+  { a: 3.5, b: 5.7, s: "원초적인 혼돈의 시대는 솔의 손에 종말을 고했다." },
+  { a: 5.9, b: 8.2, s: "그러나 혼돈의 파편은 세상에 남았고," },
+  { a: 8.3, b: 10.4, s: "솔은 자신의 무기에 의식을 부여해, 유산으로 남겼다." },
+  { a: 10.8, b: 14.5, s: "혼돈은 예상보다 빠르게 자라났다.\n무기들은 하나씩 부서졌고 —" },
+  { a: 14.95, b: 17.3, s: "마침내, 단 하나만 남았다." },
+  { a: 17.55, b: 19.45, s: "가장 밝은 빛을 품은 검." },
+  { a: 20.0, b: 24.1, s: "솔의 마지막 유산이자,\n그가 잠든 무덤으로 통하는 유일한 열쇠." },
+];
+const LIGHT = "#cfe6ff", BLUE = "#7db8ff", SOL = "#fff1c9", CHAOS = "#b14dff", CHAOS2 = "#ff2d78";
+
+const $ = (id) => document.getElementById(id);
+const glc = $("glc"), bgm = $("bgm");
+const ui = $("ui"), ug = ui.getContext("2d");                                   // 자막 전용 (블룸 영향 없이 또렷하게)
+const cv = document.createElement("canvas"), g = cv.getContext("2d");      // 2D 레이어 (화면에는 안 붙임)
+const D = window.LUM_DATA || { fps: 30, total: [], high: [], onsets: [] };
+let W = 0, H = 0, U = 0, DPR = 1, seeds = [], parts = [], pillars = [], halo = [], events = [], time = 0, running = false, raf = 0, anchor = 0, useAudio = false, opts = {};
+
+function band(arr, t) { const i = t * D.fps, i0 = Math.floor(i); if (i0 < 0 || !arr.length) return .3; const a = arr[Math.min(arr.length - 1, i0)], b = arr[Math.min(arr.length - 1, i0 + 1)]; return a + (b - a) * (i - i0); }
+const vol = (t) => clamp(band(D.total, t) * 1.6), hi = (t) => clamp(band(D.high, t) * 1.5);
+function ringPos(i) { const a = -PI / 2 + i / 7 * TAU; return [Math.cos(a) * 3.15 * U, Math.sin(a) * 3.15 * U, a + PI / 2]; }
+function solPos(t) { const k = eInOut(seg(t, 3.7, 5.8)); return [lerp(-4.4 * U, 0, k), lerp(-.2 * U, 0, k)]; }
+function swordState(t) { const k = eInOut(seg(t, 14.95, 17.6)), [x, y] = ringPos(0), tk = eInOut(seg(t, T.FINAL + .15, T.FINAL + .9));
+  return { x: lerp(x, 0, k), y: lerp(lerp(y, .25 * U, k), -1.15 * U, tk), s: lerp(lerp(.95 * U, 2.75 * U, k), 1.55 * U, tk) }; }
+const litAt = (t) => eOut(seg(t, T.IGNITE, T.IGNITE + .6)) * (1 - seg(t, T.FINAL, T.FINAL + .3));
+
+/* ═════════════════ WebGL ═════════════════ */
+let gl = null, P = {}, RT = {}, seedBuf = null, seedVAO = null, layerTex = null, glOK = false;
+const VS_FULL = `#version 300 es
+out vec2 vUv; void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); vUv = p; gl_Position = vec4(p * 2. - 1., 0., 1.); }`;
+const GLSL_NOISE = `
+float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p){ float a = .5, s = 0.; for (int i = 0; i < 5; i++){ s += a * noise(p); p = p * 2.03 + vec2(17., 9.); a *= .5; } return s; }`;
+const FS_BG = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform vec2 uRes; uniform float uU, uT, uChaos, uLit, uTitle, uHi; uniform vec4 uMass; uniform vec3 uDark, uSword, uSol; uniform vec4 uPillars[16];
+${GLSL_NOISE}
+vec3 stars(vec2 p, float t){ vec3 c = vec3(0.);
+  for (int l = 0; l < 3; l++){ float sc = 2.2 + float(l) * 2.6; vec2 gp = p * sc + float(l) * 31.7; vec2 id = floor(gp), f = fract(gp) - .5; float h = hash(id);
+    if (h > .86){ vec2 off = (vec2(hash(id + 1.3), hash(id + 2.7)) - .5) * .7; float d = length(f - off), tw = .55 + .45 * sin(t * (1. + h * 3.) + h * 50.);
+      c += mix(vec3(.7, .85, 1.), vec3(1., .95, .85), hash(id + 5.1)) * (smoothstep(.07, .0, d) + .25 * smoothstep(.22, .0, d)) * tw * (h - .86) * 8.; } }
+  return c; }
+void main(){
+  vec2 p = vec2(gl_FragCoord.x - .5 * uRes.x, .5 * uRes.y - gl_FragCoord.y) / uU;          // 2D 레이어와 같은 좌표(U 단위, y 아래)
+  vec3 col = mix(vec3(.004, .008, .02), vec3(.012, .022, .05), smoothstep(-5., 5., p.y));
+  float neb = fbm(p * .22 + vec2(uT * .012, 0.)), neb2 = fbm(p * .3 + vec2(9., uT * .01));
+  col += vec3(.03, .07, .15) * pow(neb, 2.2) * (1. - uChaos * .75) + vec3(.10, .02, .16) * pow(neb2, 2.) * uChaos;
+  col += stars(p, uT) * (1. - uDark.y * .6) * (.8 + .4 * uHi);
+  col += vec3(1., .9, .7) * uSol.z * exp(-length(p - uSol.xy) * .42) * .22;                 // 솔의 은은한 빛
+  // 원초의 혼돈 — 연기처럼 일렁이는 검은 덩어리 + 자홍빛 가장자리
+  if (uMass.w > .001){ vec2 q = p - uMass.xy; float d = length(q); vec2 dir = q / max(d, 1e-4);
+    float edge = uMass.z * (1. + .20 * (fbm(dir * 1.7 + uT * .18) - .5) + .07 * (fbm(dir * 5. - uT * .3) - .5));
+    float inside = smoothstep(edge, edge * .9, d), rim = exp(-abs(d - edge) * 3.2), haze = exp(-max(d - edge, 0.) * .5);
+    float veins = fbm(q * .9 + fbm(q * .6 + uT * .12) * 2.2);
+    col = mix(col, vec3(.004, 0., .012) + vec3(.22, .03, .4) * pow(veins, 3.) * .35, inside * uMass.w);
+    col += (vec3(1.2, .16, .6) * rim * rim * .95 + vec3(.3, .08, .7) * haze * .22 * (1. - inside)) * uMass.w; }
+  // 빛기둥
+  for (int i = 0; i < 16; i++){ vec4 Pl = uPillars[i]; if (Pl.z <= 0.) continue; float x = (p.x - Pl.x) / Pl.y, beam = exp(-x * x * 2.5), core = exp(-x * x * 70.);
+    float top = -.5 * uRes.y / uU, reach = top + Pl.w * (uRes.y / uU) * 1.06, m = smoothstep(reach, reach - 1.8, p.y);
+    float n = .65 + .35 * noise(vec2(p.y * .35 - uT * 1.9, float(i) * 7.3));
+    col += (vec3(.3, .55, 1.) * beam * .4 + vec3(1.1) * core * 1.2) * Pl.z * m * n; }
+  // 검의 광휘
+  vec2 qs = p - uSword.xy; float ds = length(qs), ang = atan(qs.y, qs.x);
+  float rays = pow(.5 + .5 * sin(ang * 9. + uT * .4) * sin(ang * 5. - uT * .27), 2.);
+  col += vec3(.5, .74, 1.) * uLit * (exp(-ds * .55) * .34 + exp(-ds * .28) * rays * .24);
+  // 조여 오는 어둠: 도메인 워핑한 연기
+  if (uDark.y > .001){ vec2 q2 = qs * vec2(1., 1.12); float d2 = length(q2); float smoke = fbm(q2 * .5 + vec2(uT * .07, -uT * .05) + fbm(q2 * .28 + uT * .04) * 1.8);
+    float r = uDark.x * (.8 + .5 * smoke), mask = smoothstep(r, r * 1.9, d2) * uDark.y;
+    col = mix(col, vec3(.006, 0., .016) + vec3(.2, .03, .36) * pow(smoke, 2.4) * .3, mask);
+    col += vec3(1., .15, .55) * exp(-abs(d2 - r * 1.2) * 1.1) * .07 * uDark.y * (.4 + .6 * smoke); }
+  col += vec3(.18, .33, .6) * uTitle * exp(-length(p - vec2(0., -1.15)) * .45) * .6;
+  o = vec4(col, 1.);
+}`;
+const FS_LAYER = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o; uniform sampler2D uTex; uniform float uBoost;
+void main(){ vec4 c = texture(uTex, vUv); o = vec4(c.rgb * uBoost, c.a); }`;
+const VS_PART = `#version 300 es
+precision highp float; layout(location = 0) in vec4 aSeed; out vec4 vCol;
+uniform int uMode; uniform float uT, uT0, uU, uLit; uniform vec2 uRes, uOrigin;
+void main(){
+  vec2 pos = vec2(0.); float size = 1.; vec4 col = vec4(0.); float age = uT - uT0;
+  if (uMode == 0){                                                                           // 떠다니는 먼지
+    pos = (aSeed.xy * 2. - 1.) * vec2(11., 6.5) + vec2(sin(uT * .13 + aSeed.z * 6.28) * .6, -uT * .06 * (.3 + aSeed.w));
+    pos.y = mod(pos.y + 6.5, 13.) - 6.5; size = 1. + aSeed.z * 2.2;
+    float tw = .5 + .5 * sin(uT * (1. + aSeed.w * 2.) + aSeed.x * 40.); col = vec4(.75, .87, 1., 1.) * (.07 + .2 * tw) * (1. + uLit * .5);
+  } else if (uMode == 3){                                                                    // 위로 오르는 불티
+    float L = 2.5 + 3. * aSeed.z, ph = fract(max(age, 0.) / L + aSeed.w);
+    pos = vec2(aSeed.x * 20. - 10. + sin(ph * 6. + aSeed.y * 6.28) * .5, 5.7 - ph * 11.4);
+    float a = sin(3.1416 * ph) * uLit * step(0., age); size = 1. + aSeed.y * 2.; col = vec4(mix(vec3(1.), vec3(.55, .78, 1.), aSeed.z), 1.) * a * .8;
+  } else {                                                                                   // 폭발류: 1 파쇄(보라) 2 점화(백청) 4 무기 파편 5 최종
+    if (age < 0.){ gl_Position = vec4(2., 2., 0., 1.); gl_PointSize = 0.; vCol = vec4(0.); return; }
+    float life = (uMode == 1 ? 3.6 : uMode == 2 ? 3.4 : uMode == 5 ? 3.0 : 2.4) * (.4 + .6 * aSeed.w), k = 1.7;
+    float v0 = mix(.6, (uMode == 2 ? 18. : uMode == 5 ? 22. : uMode == 4 ? 7. : 13.), aSeed.z * aSeed.z);
+    float ang = aSeed.x * 6.2832 + ((uMode == 2 || uMode == 5) ? age * (aSeed.y - .5) * 1.1 : 0.);
+    float dist = v0 * (1. - exp(-k * age)) / k + (uMode == 1 ? aSeed.y * 3. : 0.);
+    pos = uOrigin + vec2(cos(ang), sin(ang)) * dist + vec2(0., uMode == 4 ? age * age * .35 : 0.);
+    float a = clamp(1. - age / life, 0., 1.); a *= a; size = (1. + aSeed.y * 2.2) * (.6 + a);
+    vec3 c = uMode == 1 ? mix(vec3(1., .2, .55), vec3(.6, .25, 1.), aSeed.y) : uMode == 4 ? mix(vec3(.8, .9, 1.), vec3(.8, .4, 1.), aSeed.y * aSeed.y) : mix(vec3(1.), vec3(.5, .75, 1.), aSeed.y);
+    col = vec4(c, 1.) * a * (uMode == 1 ? 1.3 : uMode == 5 ? 1.2 : .85);
+  }
+  vec2 px = pos * uU; gl_Position = vec4(px.x / (uRes.x * .5), -px.y / (uRes.y * .5), 0., 1.); gl_PointSize = max(1., size * uU / 34.); vCol = col;
+}`;
+const FS_PART = `#version 300 es
+precision highp float; in vec4 vCol; out vec4 o;
+void main(){ float d = length(gl_PointCoord - .5); float a = smoothstep(.5, .0, d); o = vec4(vCol.rgb * a * a, 1.); }`;
+const FS_BRIGHT = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o; uniform sampler2D uTex; uniform float uThr;
+void main(){ vec3 c = texture(uTex, vUv).rgb; float l = max(c.r, max(c.g, c.b)); float k = clamp((l - uThr) / .55, 0., 1.); o = vec4(c * k * k, 1.); }`;
+const FS_DOWN = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o; uniform sampler2D uTex; uniform vec2 uTexel;
+void main(){ vec4 s = texture(uTex, vUv) * 4.; s += texture(uTex, vUv - uTexel); s += texture(uTex, vUv + uTexel); s += texture(uTex, vUv + vec2(uTexel.x, -uTexel.y)); s += texture(uTex, vUv - vec2(uTexel.x, -uTexel.y)); o = s / 8.; }`;
+const FS_UP = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o; uniform sampler2D uTex, uAdd; uniform vec2 uTexel;
+void main(){ vec4 s = texture(uTex, vUv + vec2(-uTexel.x * 2., 0.)); s += texture(uTex, vUv + vec2(-uTexel.x, uTexel.y)) * 2.; s += texture(uTex, vUv + vec2(0., uTexel.y * 2.)); s += texture(uTex, vUv + uTexel) * 2.;
+  s += texture(uTex, vUv + vec2(uTexel.x * 2., 0.)); s += texture(uTex, vUv + vec2(uTexel.x, -uTexel.y)) * 2.; s += texture(uTex, vUv + vec2(0., -uTexel.y * 2.)); s += texture(uTex, vUv - uTexel) * 2.;
+  o = s / 12. + texture(uAdd, vUv); }`;
+const FS_RAYS = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o; uniform sampler2D uTex; uniform vec2 uLight; uniform float uK;
+${GLSL_NOISE}
+void main(){ vec2 d = (vUv - uLight) * (1. / 64.) * .92; vec2 uv = vUv - d * hash(gl_FragCoord.xy); vec3 acc = vec3(0.); float decay = 1.;
+  for (int i = 0; i < 64; i++){ uv -= d; acc += texture(uTex, uv).rgb * decay; decay *= .972; } o = vec4(acc / 64. * uK, 1.); }`;
+const FS_FINAL = `#version 300 es
+precision highp float; in vec2 vUv; out vec4 o;
+uniform sampler2D uScene, uBloom, uRaysTex; uniform vec2 uRes, uShake; uniform float uU, uT, uZoom, uCA, uBloomK, uRaysK, uFlash, uChaosFlash, uFade; uniform vec4 uWaves[10];
+${GLSL_NOISE}
+vec3 aces(vec3 x){ return clamp((x * (2.51 * x + .03)) / (x * (2.43 * x + .59) + .14), 0., 1.); }
+void main(){
+  vec2 uv = (vUv - .5) / uZoom + .5 + uShake;
+  vec2 p = vec2(uv.x - .5, .5 - uv.y) * uRes / uU;
+  for (int i = 0; i < 10; i++){ vec4 w = uWaves[i]; if (w.w == 0.) continue; vec2 dv = p - w.xy; float d = length(dv), wd = .3 + w.z * .07;
+    float ring = exp(-pow((d - w.z) / wd, 2.)); vec2 off = dv / max(d, 1e-4) * ring * w.w; uv += vec2(off.x, -off.y) * uU / uRes; }
+  vec2 dir = uv - .5; float ca = uCA * (.25 + length(dir) * 1.6);
+  vec3 col = vec3(texture(uScene, uv + dir * ca).r, texture(uScene, uv).g, texture(uScene, uv - dir * ca).b);
+  vec3 bl = vec3(texture(uBloom, uv + dir * ca * 1.5).r, texture(uBloom, uv).g, texture(uBloom, uv - dir * ca * 1.5).b);
+  col += bl * uBloomK + texture(uRaysTex, uv).rgb * uRaysK;
+  col = aces(col * 1.0);
+  col = mix(col, col * vec3(.93, .98, 1.08), .55); col = pow(col, vec3(.96));
+  col += uFlash * vec3(.94, .97, 1.) + vec3(.42, .1, .7) * uChaosFlash;
+  col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * .045;
+  float v = length((vUv - .5) * vec2(1., .85)); col *= 1. - smoothstep(.35, .95, v) * .75;
+  o = vec4(max(col, 0.) * (1. - uFade), 1.);
+}`;
+
+function compile(vs, fs) {
+  const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + "\n" + src.split("\n").slice(0, 3).join("\n")); return s; };
+  const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, ""); u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+let HDR = true;
+function target(w, h) {
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (HDR) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null); else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fbo, w, h };
+}
+function initGL() {
+  gl = glc.getContext("webgl2", { antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+  if (!gl) throw new Error("이 브라우저는 WebGL2를 지원하지 않습니다.");
+  HDR = !!gl.getExtension("EXT_color_buffer_float") || !!gl.getExtension("EXT_color_buffer_half_float");
+  P.bg = compile(VS_FULL, FS_BG); P.layer = compile(VS_FULL, FS_LAYER); P.part = compile(VS_PART, FS_PART); P.bright = compile(VS_FULL, FS_BRIGHT);
+  P.down = compile(VS_FULL, FS_DOWN); P.up = compile(VS_FULL, FS_UP); P.rays = compile(VS_FULL, FS_RAYS); P.final = compile(VS_FULL, FS_FINAL);
+  const r = rng(2024), N = 12000, data = new Float32Array(N * 4); for (let i = 0; i < data.length; i++) data[i] = r();
+  seedVAO = gl.createVertexArray(); gl.bindVertexArray(seedVAO); seedBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, seedBuf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
+  layerTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, layerTex); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  glOK = true;
+}
+function resize() {
+  DPR = Math.min(DPR_CAP, window.devicePixelRatio || 1); W = glc.clientWidth; H = glc.clientHeight; U = Math.min(W, H) / 10;
+  const pw = Math.max(2, Math.round(W * DPR)), ph = Math.max(2, Math.round(H * DPR));
+  glc.width = cv.width = ui.width = pw; glc.height = cv.height = ui.height = ph;
+  if (!glOK) initGL();
+  for (const k in RT) { const t = RT[k]; (Array.isArray(t) ? t : [t]).forEach((x) => { gl.deleteTexture(x.tex); gl.deleteFramebuffer(x.fbo); }); }
+  RT.scene = target(pw, ph); RT.bright = target(pw >> 1, ph >> 1); RT.rays = target(pw >> 1, ph >> 1);
+  RT.down = []; RT.up = []; let w = pw >> 1, h = ph >> 1;
+  for (let i = 0; i < 5; i++) { w = Math.max(2, w >> 1); h = Math.max(2, h >> 1); RT.down.push(target(w, h)); RT.up.push(target(w, h)); }
+}
+function pass(prog, dst, setup) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fbo : null); gl.viewport(0, 0, dst ? dst.w : glc.width, dst ? dst.h : glc.height);
+  gl.useProgram(prog.p); setup(prog.u); gl.bindVertexArray(null); gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function bindTex(unit, tex, loc) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(loc, unit); }
+
+/* ═════════════════ 2D 레이어 (서사 요소) ═════════════════ */
+function init() {
+  const r = rng(31);
+  seeds = Array.from({ length: 9 }, (_, i) => { const a = i / 9 * TAU + r() * .5, d = 5.2 + r() * 2.6; return { x: Math.cos(a) * d * U * 1.25, y: Math.sin(a) * d * U * .62, ph: r() * TAU }; });
+  pillars = Array.from({ length: 16 }, (_, i) => ({ x: (r() * 2 - 1) * 8.6, w: .1 + r() * r() * 1.0, born: T.IGNITE + .1 + i * .29, a: .4 + r() * .6 }));
+  halo = Array.from({ length: 46 }, () => ({ a: r() * TAU, d: 2.6 + r() * 1.5, sp: .25 + r() * .5, sz: .04 + r() * .09, tilt: r() * .4 }));
+  parts = []; events = [];
+  events.push({ t: T.HIT1, fn: shatterMass });
+  T.BREAKS.forEach((bt, n) => events.push({ t: bt, fn: () => breakWeapon(BREAK_ORDER[n]) }));
+  events.push({ t: T.IGNITE, fn: () => { ringAt(0, .25 * U, 1 * U, 17 * U, 1.2, "#fff", .22); ringAt(0, .25 * U, .5 * U, 11 * U, 1.6, BLUE, .1); } });
+  T.WINGS.slice(1).forEach((wt) => events.push({ t: wt, fn: () => ringAt(0, .25 * U, 1.5 * U, 8 * U, .8, LIGHT, .06) }));
+  events.sort((a, b) => a.t - b.t); events.forEach((e) => (e.done = false));
+}
+function ringAt(x, y, r0, r1, life, color, lw) { parts.push({ type: "ring", x, y, r0, r1, life, max: life, color, lw }); }
+function shatterMass() {
+  const r = rng(77), cx = MASS[0] * U, cy = MASS[1] * U; ringAt(cx, cy, 1 * U, 15 * U, 1.1, SOL, .2);
+  for (let i = 0; i < 46; i++) { const a = r() * TAU, d = r() * 3.2 * U, sp = (3 + r() * 13) * U / 60;
+    parts.push({ type: "shard", x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.6 + r() * 2.2, max: 3.8, size: (.1 + r() * r() * .55) * U, rot: r() * TAU, vr: (r() - .5) * .25, drag: .985, grav: 0, dark: true, shape: [r(), r(), r()] }); }
+}
+function breakWeapon(i) {
+  const [x, y] = ringPos(i), r = rng(i * 13 + 3); ringAt(x, y, .3 * U, 3.2 * U, .6, CHAOS2, .08);
+  for (let k = 0; k < 22; k++) { const a = r() * TAU, sp = (1.2 + r() * 6.5) * U / 60; parts.push({ type: "shard", x: x + (r() - .5) * U * .8, y: y + (r() - .5) * U * .8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - U / 50, life: 1.5 + r() * 2, max: 3.5, size: (.03 + r() * r() * .13) * U, rot: r() * TAU, vr: (r() - .5) * .3, drag: .975, grav: U / 2600, dark: false, shape: [r(), r(), r()] }); }
+  let best = seeds[0], bd = 1e9; for (const s of seeds) { const d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; best = s; } }
+  const pts = [[best.x, best.y]]; for (let k = 1; k < 10; k++) { const f = k / 10; pts.push([lerp(best.x, x, f) + (r() - .5) * U * .9, lerp(best.y, y, f) + (r() - .5) * U * .9]); } pts.push([x, y]);
+  parts.push({ type: "bolt", pts, life: .45, max: .45 });
+}
+function update(t, dt) {
+  for (const e of events) { if (e.done || t < e.t) continue; e.done = true; e.fn(); }
+  for (const p of parts) { p.life -= dt; if (p.type === "ring" || p.type === "bolt") continue; p.vx *= p.drag; p.vy = p.vy * p.drag + p.grav; p.x += p.vx * dt * 60; p.y += p.vy * dt * 60; p.rot += p.vr; }
+  parts = parts.filter((p) => p.life > 0);
+}
+const WEAPONS = [
+  (c) => { c.moveTo(0, -1); c.lineTo(.085, -.8); c.lineTo(.07, .27); c.lineTo(0, .33); c.lineTo(-.07, .27); c.lineTo(-.085, -.8); c.closePath();
+    c.moveTo(-.4, .24); c.lineTo(-.13, .31); c.lineTo(0, .27); c.lineTo(.13, .31); c.lineTo(.4, .24); c.lineTo(.3, .39); c.lineTo(-.3, .39); c.closePath(); c.rect(-.035, .39, .07, .4); c.moveTo(.08, .86); c.arc(0, .86, .08, 0, TAU); },
+  (c) => { c.rect(-.02, -.55, .04, 1.55); c.moveTo(0, -1); c.lineTo(.11, -.72); c.lineTo(0, -.5); c.lineTo(-.11, -.72); c.closePath(); },
+  (c) => { c.rect(-.025, -.8, .05, 1.8); c.moveTo(.025, -.78); c.quadraticCurveTo(.58, -.82, .52, -.18); c.quadraticCurveTo(.3, -.42, .025, -.36); c.closePath(); c.moveTo(-.025, -.7); c.lineTo(-.24, -.58); c.lineTo(-.025, -.46); c.closePath(); },
+  (c) => { c.moveTo(0, -.95); c.quadraticCurveTo(.66, 0, 0, .95); c.quadraticCurveTo(.5, 0, 0, -.95); c.closePath(); c.rect(-.008, -.95, .016, 1.9); },
+  (c) => { c.rect(-.025, -.44, .05, 1.44); c.moveTo(.25, -.7); c.arc(0, -.7, .25, 0, TAU); c.moveTo(.15, -.7); c.arc(0, -.7, .15, 0, TAU, true); c.moveTo(.06, -.7); c.arc(0, -.7, .06, 0, TAU); },
+  (c) => { c.rect(-.025, -.86, .05, 1.86); c.moveTo(.02, -.86); c.quadraticCurveTo(.78, -.96, .88, -.24); c.quadraticCurveTo(.56, -.68, .02, -.68); c.closePath(); },
+  (c) => { c.rect(-.03, -.52, .06, 1.52); c.rect(-.36, -.94, .72, .42); },
+];
+function drawWeapon(i, x, y, s, rot, alpha, color, glow, reveal) {
+  if (alpha <= .003) return;
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  if (reveal < 1) { g.beginPath(); g.rect(-1.2, 1.1 - 2.3 * reveal, 2.4, 2.4); g.clip(); }
+  g.beginPath(); WEAPONS[i](g);
+  g.globalAlpha = alpha * .3; g.fillStyle = color; g.fill("evenodd");
+  g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = Math.max(1.2, U * .03) / s; g.lineJoin = "round"; g.shadowColor = color; g.shadowBlur = glow; g.stroke();
+  g.restore(); g.shadowBlur = 0; g.globalAlpha = 1;
+  if (reveal > 0 && reveal < 1) { g.save(); g.translate(x, y); g.rotate(rot); g.fillStyle = "#fff"; g.globalAlpha = .95; g.fillRect(-.6 * s, (1.1 - 2.3 * reveal) * s - 1.5, 1.2 * s, 3); g.restore(); g.globalAlpha = 1; }
+}
+function glowDisc(x, y, r, rgb, a) { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(.35, `rgba(${rgb},${a * .35})`); gr.addColorStop(1, `rgba(${rgb},0)`); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); }
+function caption(s, a) { const lines = s.split("\n"), px = .42 * U; const bg = ug.createLinearGradient(0, 2.6 * U, 0, 4.6 * U); bg.addColorStop(0, "rgba(0,0,0,0)"); bg.addColorStop(.5, `rgba(0,0,0,${.6 * a})`); bg.addColorStop(1, "rgba(0,0,0,0)"); ug.fillStyle = bg; ug.fillRect(-W, 2.6 * U, 2 * W, 2 * U);
+  ug.font = `${px}px "Nanum Myeongjo","Batang","바탕",serif`; ug.textAlign = "center"; ug.textBaseline = "middle"; ug.shadowColor = "#000"; ug.shadowBlur = 12;
+  lines.forEach((ln, i) => { ug.globalAlpha = a; ug.fillStyle = "#f2f6fc"; ug.fillText(ln, 0, 3.55 * U + (i - (lines.length - 1) / 2) * px * 1.5); }); ug.shadowBlur = 0; ug.globalAlpha = 1; }
+
+function draw2D(t) {
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
+  g.setTransform(DPR, 0, 0, DPR, cv.width / 2, cv.height / 2);
+  const v = vol(t), lit = litAt(t), title = t >= T.FINAL, sw = swordState(t);
+
+  /* 솔 */
+  const solA = seg(t, .2, 2.2) * (1 - eIn(seg(t, T.SOLFADE, T.SOLFADE + .7)));
+  if (solA > .003) { const [sx, sy] = solPos(t), sr = U * (.6 + .25 * v + .5 * pulse(t, T.HIT1 - .25, .25, .5)) * (1 - .8 * eIn(seg(t, T.SOLFADE, T.SOLFADE + .7)));
+    g.globalCompositeOperation = "lighter"; glowDisc(sx, sy, sr * 4, "255,236,190", .5 * solA);
+    g.fillStyle = SOL; g.beginPath(); for (let i = 0; i < 16; i++) { const a = i / 16 * TAU + t * .22, l = sr * (2.1 + (i % 2) * 1.1 + .6 * v), w = .06; g.moveTo(sx + Math.cos(a - w) * sr * 1.15, sy + Math.sin(a - w) * sr * 1.15); g.lineTo(sx + Math.cos(a) * l, sy + Math.sin(a) * l); g.lineTo(sx + Math.cos(a + w) * sr * 1.15, sy + Math.sin(a + w) * sr * 1.15); } g.globalAlpha = solA * .85; g.fill();
+    g.globalAlpha = solA; g.fillStyle = "#fff"; g.beginPath(); g.arc(sx, sy, sr, 0, TAU); g.fill();
+    g.globalAlpha = solA * .7; g.strokeStyle = SOL; g.lineWidth = Math.max(1, U * .02); g.beginPath(); g.arc(sx, sy, sr * 1.75, 0, TAU); g.stroke(); g.globalAlpha = 1;
+    const lance = pulse(t, T.HIT1 - .55, .55, .35); if (lance > 0) { const hw = U * (.03 + .22 * eIn(seg(t, T.HIT1 - .1, T.HIT1 + .1))); const gr = g.createLinearGradient(sx, 0, MASS[0] * U, 0); gr.addColorStop(0, `rgba(255,248,225,${lance})`); gr.addColorStop(1, `rgba(255,248,225,${lance * .5})`); g.fillStyle = gr; g.fillRect(sx, sy - hw, MASS[0] * U - sx, hw * 2); }
+    g.globalCompositeOperation = "source-over"; }
+
+  /* 혼돈의 촉수 (덩어리 본체는 셰이더가 그림) */
+  if (t < T.HIT1) { const cx = MASS[0] * U, cy = MASS[1] * U, R = MASS[2] * U, a = seg(t, .1, 1.6), [sx, sy] = solPos(t), reach = eInOut(seg(t, .8, 2.9)); g.lineCap = "round"; g.shadowColor = CHAOS; g.shadowBlur = U * .3;
+    for (let k = 0; k < 6; k++) { const off = (k - 2.5) * .55 * U, ex = lerp(cx - R * .9, sx + 1.4 * U, reach * (.75 + .25 * Math.sin(t * 1.7 + k))), ey = sy + off * .5 + Math.sin(t * 2.2 + k) * .3 * U;
+      g.strokeStyle = k % 2 ? CHAOS : "#6a22a5"; g.lineWidth = U * (.09 - .01 * k); g.globalAlpha = a * .9; g.beginPath(); g.moveTo(cx - R * .85, cy + off); g.bezierCurveTo(cx - R * 1.4, cy + off * 1.8, ex + 1.5 * U, ey - off * .6, ex, ey); g.stroke(); }
+    g.shadowBlur = 0; g.globalAlpha = 1; }
+
+  /* 혼돈의 씨앗 */
+  if (t > T.HIT1 + .8) { const grow = seg(t, 10.2, 14.5) * (1 - lit * .7) * (title ? .45 : 1), a0 = seg(t, T.HIT1 + .8, 6);
+    g.globalCompositeOperation = "lighter";
+    for (const s of seeds) { const pl = .6 + .4 * Math.sin(t * 2.4 + s.ph), sz = U * (.07 + .2 * grow) * pl; glowDisc(s.x, s.y, sz * (3 + 3 * grow), "177,77,255", (.16 + .18 * grow) * a0);
+      g.fillStyle = "#c2307a"; g.globalAlpha = a0; g.beginPath(); g.moveTo(s.x, s.y - sz * 1.6); g.lineTo(s.x + sz, s.y); g.lineTo(s.x, s.y + sz * 1.6); g.lineTo(s.x - sz, s.y); g.closePath(); g.fill(); g.globalAlpha = 1; }
+    g.globalCompositeOperation = "source-over"; }
+
+  /* 여섯 빛날개 + 동족의 잔해가 이룬 후광 */
+  if (t >= T.IGNITE && !title) { g.globalCompositeOperation = "lighter"; const gx = sw.x, gy = sw.y + sw.s * .3, ANG = [-35, 35, -78, 78, -128, 128], LEN = [5.4, 5.4, 4.4, 4.4, 3.1, 3.1];
+    for (let i = 0; i < 6; i++) { const k = eBack(seg(t, T.WINGS[i], T.WINGS[i] + .45)); if (k <= 0) continue; const a = (ANG[i] - 90) * PI / 180 + Math.sin(t * 1.3 + i) * .03, L = LEN[i] * U * k * (1 + .06 * v), wd = .2 * U * k;
+      const ex = gx + Math.cos(a) * L, ey = gy + Math.sin(a) * L, nx = -Math.sin(a), ny = Math.cos(a), mx = gx + Math.cos(a) * L * .22, my = gy + Math.sin(a) * L * .22;
+      const gr = g.createLinearGradient(gx, gy, ex, ey); gr.addColorStop(0, "rgba(255,255,255,.85)"); gr.addColorStop(.5, "rgba(190,222,255,.4)"); gr.addColorStop(1, "rgba(125,184,255,0)"); g.fillStyle = gr;
+      g.beginPath(); g.moveTo(gx, gy); g.lineTo(mx + nx * wd, my + ny * wd); g.lineTo(ex, ey); g.lineTo(mx - nx * wd, my - ny * wd); g.closePath(); g.fill();
+      g.strokeStyle = "rgba(255,255,255,.95)"; g.lineWidth = Math.max(1, U * .02); g.beginPath(); g.moveTo(gx, gy); g.lineTo(lerp(gx, ex, .8), lerp(gy, ey, .8)); g.stroke(); }
+    const ha = seg(t, 21.3, 22.8); if (ha > 0) for (const m of halo) { const a = m.a + t * m.sp, x = sw.x + Math.cos(a) * m.d * U * 1.25, y = sw.y - .2 * U + Math.sin(a) * m.d * U * (.32 + m.tilt * .2), depth = .55 + .45 * Math.sin(a);
+      g.globalAlpha = ha * depth; g.fillStyle = LIGHT; g.beginPath(); g.moveTo(x, y - m.sz * U * 1.8); g.lineTo(x + m.sz * U, y); g.lineTo(x, y + m.sz * U * 1.8); g.lineTo(x - m.sz * U, y); g.closePath(); g.fill(); }
+    g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; }
+
+  /* 일곱 무기 */
+  if (t >= T.FORGE && !title) {
+    const awakeSweep = seg(t, T.AWAKE, T.AWAKE + .9);
+    if (awakeSweep > 0 && awakeSweep < 1) { g.strokeStyle = SOL; g.globalAlpha = 1 - awakeSweep; g.lineWidth = Math.max(1.5, U * .03); g.beginPath(); g.arc(0, 0, 4.6 * U * eOut(awakeSweep), 0, TAU); g.stroke(); g.globalAlpha = 1; }
+    const flow = seg(t, T.SOLFADE, T.SOLFADE + .75); if (flow > 0 && flow < 1) { g.globalCompositeOperation = "lighter"; g.lineCap = "round"; for (let i = 0; i < 7; i++) { const [x, y] = ringPos(i), f0 = clamp(flow * 1.3 - .3), f1 = clamp(flow * 1.3); g.strokeStyle = "#fff8e0"; g.lineWidth = U * .06; g.beginPath(); g.moveTo(x * f0, y * f0); g.lineTo(x * f1, y * f1); g.stroke(); } g.globalCompositeOperation = "source-over"; }
+    for (let i = 6; i >= 0; i--) {
+      const born = T.FORGE + (i === 0 ? 6 : i - 1) * .42, reveal = eOut(seg(t, born, born + .55)); if (reveal <= 0) continue;
+      const bi = BREAK_ORDER.indexOf(i), bt = bi >= 0 ? T.BREAKS[bi] : Infinity, [rx, ry, rrot] = ringPos(i), awake = seg(t, T.AWAKE + .25, T.AWAKE + .9), inherit = pulse(t, T.SOLFADE + .6, .1, .8);
+      if (i === 0) { const dim = seg(t, 15.2, 18.6) * (1 - lit), core = Math.max(seg(t, 17.3, 19.5), lit);
+        drawWeapon(0, sw.x, sw.y, sw.s, 0, 1 - dim * .6, lit > .5 ? "#fff" : LIGHT, U * (.3 + .6 * inherit), reveal);
+        if (core > 0) { g.globalCompositeOperation = "lighter"; g.strokeStyle = "#fff"; g.lineCap = "round"; g.globalAlpha = core; g.lineWidth = Math.max(1.5, sw.s * .03 * (1 + lit)); g.beginPath(); g.moveTo(sw.x, sw.y - sw.s * .93); g.lineTo(sw.x, sw.y + sw.s * .24); g.stroke();
+          g.fillStyle = "#fff"; g.beginPath(); g.moveTo(sw.x, sw.y + sw.s * .2); g.lineTo(sw.x + sw.s * .05, sw.y + sw.s * .3); g.lineTo(sw.x, sw.y + sw.s * .4); g.lineTo(sw.x - sw.s * .05, sw.y + sw.s * .3); g.closePath(); g.fill(); g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; }
+        continue; }
+      if (t < bt) { drawWeapon(i, rx, ry, .95 * U, rrot, 1, LIGHT, U * (.25 + .5 * inherit), reveal); if (awake > 0) { g.globalCompositeOperation = "lighter"; glowDisc(rx, ry, U * (.3 + .25 * inherit), "255,255,255", awake); g.globalCompositeOperation = "source-over"; } }
+      else { const age = t - bt, fall = age * age * .05 * U, a = Math.max(0, .42 - age * .085); if (a <= 0) continue;
+        for (const half of [-1, 1]) { g.save(); g.translate(rx + half * age * .12 * U, ry + fall + half * .06 * U); g.rotate(rrot + half * age * .22); g.beginPath(); g.rect(-U, half < 0 ? -1.2 * U : 0, 2 * U, 1.2 * U); g.clip(); g.rotate(-rrot); drawWeapon(i, 0, 0, .95 * U, rrot, a, "#7f93ad", 0, 1); g.restore(); } }
+    }
+  }
+
+  /* 고리 · 벼락 · 파편 */
+  for (const p of parts) { const k = clamp(p.life / p.max);
+    if (p.type === "ring") { const q = 1 - p.life / p.max; g.globalCompositeOperation = "lighter"; g.globalAlpha = k * k; g.strokeStyle = p.color; g.lineWidth = Math.max(1, p.lw * U * .55 * (1.3 - q)); g.beginPath(); g.arc(p.x, p.y, lerp(p.r0, p.r1, eOut(q)), 0, TAU); g.stroke(); }
+    else if (p.type === "bolt") { g.globalCompositeOperation = "lighter"; g.lineJoin = "round"; for (const [col, lw, al] of [[CHAOS, .14, .55], ["#ffe3f4", .05, 1]]) { g.strokeStyle = col; g.lineWidth = lw * U; g.globalAlpha = al * Math.min(1, k * 2.5); g.beginPath(); p.pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); } }
+    else { g.globalCompositeOperation = "source-over"; g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.globalAlpha = Math.min(1, k * 2); g.beginPath(); g.moveTo(-p.size * (.6 + p.shape[0]), p.size * .7); g.lineTo(p.size * (.7 + p.shape[1]), p.size * .2 * p.shape[2]); g.lineTo(-p.size * .2, -p.size * (.6 + p.shape[2])); g.closePath();
+      g.fillStyle = p.dark ? "#0d0220" : "#9fb4cf"; g.fill(); g.strokeStyle = p.dark ? "#d45cff" : "#eef5ff"; g.lineWidth = Math.max(1, U * .02); g.stroke(); g.restore(); }
+    g.globalAlpha = 1; }
+  g.globalCompositeOperation = "source-over";
+
+  /* 타이틀 */
+  if (title) { const tk = t - T.FINAL, fy = -1.15 * U, fl = .8 + .2 * Math.sin(t * 3); g.globalCompositeOperation = "lighter";
+    for (const [ang, len, wd] of [[0, 8.5, .08], [PI / 2, 4.2, .08], [PI / 4, 2.2, .05], [-PI / 4, 2.2, .05]]) { const L = len * U * eOut(seg(tk, .1, .9)) * fl; g.save(); g.translate(0, fy); g.rotate(ang); const gr = g.createLinearGradient(-L, 0, L, 0); gr.addColorStop(0, "rgba(190,222,255,0)"); gr.addColorStop(.5, "rgba(255,255,255,1)"); gr.addColorStop(1, "rgba(190,222,255,0)"); g.fillStyle = gr; g.beginPath(); g.ellipse(0, 0, L, wd * U, 0, 0, TAU); g.fill(); g.restore(); }
+    g.globalCompositeOperation = "source-over"; drawWeapon(0, sw.x, sw.y, sw.s, 0, eOut(seg(tk, .1, .8)), "#fff", U * .5, 1);
+    g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "#cfdcee";
+    const L = "LUMINOSITY", track = .3 * U; g.font = `600 ${.95 * U}px "Times New Roman","Batang",serif`;
+    const ws = [...L].map((ch) => g.measureText(ch).width), total = ws.reduce((a, b) => a + b, 0) + track * (L.length - 1); let x = -total / 2;
+    for (let i = 0; i < L.length; i++) { const k = eOut(seg(tk, .35 + i * .045, .9 + i * .045)); g.globalAlpha = k * .8; g.fillText(L[i], x + ws[i] / 2, 1.35 * U + (1 - k) * .3 * U); x += ws[i] + track; }
+    const bk = eOut(seg(tk, .8, 1.3)), bx = total / 2 + .75 * U + (1 - bk) * U; g.globalAlpha = bk * .8; g.font = `300 ${1.05 * U}px "Times New Roman","Batang",serif`; g.fillText("[", -bx, 1.3 * U); g.fillText("]", bx, 1.3 * U);
+    g.globalAlpha = eOut(seg(tk, 1.0, 1.6)) * .9; g.font = `${.56 * U}px "Nanum Myeongjo","Batang","바탕",serif`; g.fillText("[ 광 휘 ]", 0, 2.4 * U);
+    g.globalAlpha = eOut(seg(tk, 1.5, 2.2)) * .6; g.fillStyle = "#b9c8dc"; g.font = `${.34 * U}px "Nanum Myeongjo","Batang","바탕",serif`; g.fillText("수많은 세월, 검은 아직도 혼돈의 씨앗을 찾아 헤매고 있다.", 0, 3.35 * U); g.globalAlpha = 1; }
+}
+
+/* ═════════════════ 프레임 합성 ═════════════════ */
+const WAVES = () => [
+  { t0: T.HIT1, x: MASS[0], y: MASS[1], r0: .5, sp: 9, dur: 1.5, str: .6 }, { t0: T.SOLFADE, x: 0, y: 0, r0: .3, sp: 7, dur: 1.0, str: .22 },
+  ...T.BREAKS.map((bt, n) => { const [x, y] = ringPos(BREAK_ORDER[n]); return { t0: bt, x: x / U, y: y / U, r0: .2, sp: 6, dur: .7, str: .2 }; }),
+  { t0: T.SURGE, x: 0, y: .25, r0: 9, sp: -9.5, dur: .7, str: .35 }, { t0: T.IGNITE, x: 0, y: .25, r0: .5, sp: 11, dur: 1.6, str: .75 }, { t0: T.FINAL, x: 0, y: -.5, r0: .5, sp: 13, dur: 1.5, str: .6 }];
+let waveList = null, DPR_CAP = 1.5, slow = 0;      // 느린 GPU면 해상도를 자동으로 낮춤
+function drawUI(t) {
+  ug.setTransform(1, 0, 0, 1, 0, 0); ug.clearRect(0, 0, ui.width, ui.height); ug.setTransform(DPR, 0, 0, DPR, ui.width / 2, ui.height / 2);
+  const fade = Math.max(1 - seg(t, 0, .5), seg(t, T.FADE, T.END));
+  for (const c of CAPS) { const a = Math.min(seg(t, c.a, c.a + .5), 1 - seg(t, c.b - .5, c.b)) * (1 - fade); if (a > 0) caption(c.s, a); }
+}
+function render(t) {
+  draw2D(t); drawUI(t);
+  const pw = glc.width, ph = glc.height, Ud = U * DPR, lit = litAt(t), title = t >= T.FINAL, sw = swordState(t), h = hi(t);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  // ① 배경
+  const solA = seg(t, .2, 2.2) * (1 - eIn(seg(t, T.SOLFADE, T.SOLFADE + .7))), [sx, sy] = solPos(t);
+  const darkK = (t < T.IGNITE + .7) ? seg(t, 10.4, 14.6) * .3 + seg(t, 14.9, 19.2) * .7 : 0, push = eOut(seg(t, T.IGNITE, T.IGNITE + .7));
+  const darkR = lerp(lerp(13, 3.0, eInOut(seg(t, 14.9, 19.4))) * (1 - .25 * pulse(t, T.SURGE, .05, .9)), 28, push);
+  const pl = new Float32Array(64); if (t >= T.IGNITE && !title) pillars.forEach((p, i) => { if (t < p.born) return; pl[i * 4] = p.x; pl[i * 4 + 1] = p.w; pl[i * 4 + 2] = p.a * (.6 + .4 * h) * (.8 + .2 * Math.sin(t * 9 + p.x * 3)) * (1 - seg(t, T.FINAL - .05, T.FINAL)); pl[i * 4 + 3] = eOut(seg(t, p.born, p.born + .55)); });
+  pass(P.bg, RT.scene, (u) => { gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uU, Ud); gl.uniform1f(u.uT, t); gl.uniform1f(u.uChaos, clamp(seg(t, 10.2, 14.6) * (1 - lit * .8) + (t < T.HIT1 ? .5 : 0))); gl.uniform1f(u.uLit, lit); gl.uniform1f(u.uTitle, title ? eOut(seg(t, T.FINAL, T.FINAL + 1)) : 0); gl.uniform1f(u.uHi, h);
+    gl.uniform4f(u.uMass, MASS[0], MASS[1], MASS[2] * (1 + .03 * Math.sin(t * 2)), t < T.HIT1 ? seg(t, .1, 1.6) : 0); gl.uniform3f(u.uDark, darkR, darkK * (1 - push), 0); gl.uniform3f(u.uSword, sw.x / U, (sw.y + sw.s * .1) / U, sw.s / U); gl.uniform3f(u.uSol, sx / U, sy / U, solA); gl.uniform4fv(u.uPillars, pl); });
+  // ② 2D 레이어
+  gl.bindTexture(gl.TEXTURE_2D, layerTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  pass(P.layer, RT.scene, (u) => { bindTex(0, layerTex, u.uTex); gl.uniform1f(u.uBoost, 1.25); });
+  // ③ GPU 파티클 (가산)
+  gl.blendFunc(gl.ONE, gl.ONE); gl.useProgram(P.part.p); gl.bindVertexArray(seedVAO); const pu = P.part.u;
+  gl.uniform2f(pu.uRes, pw, ph); gl.uniform1f(pu.uU, Ud); gl.uniform1f(pu.uT, t); gl.uniform1f(pu.uLit, lit);
+  const burst = (mode, t0, ox, oy, first, n, life) => { if (t < t0 || t > t0 + life) return; gl.uniform1i(pu.uMode, mode); gl.uniform1f(pu.uT0, t0); gl.uniform2f(pu.uOrigin, ox, oy); gl.drawArrays(gl.POINTS, first, n); };
+  gl.uniform1i(pu.uMode, 0); gl.uniform1f(pu.uT0, 0); gl.uniform2f(pu.uOrigin, 0, 0); gl.drawArrays(gl.POINTS, 0, 2600);
+  burst(1, T.HIT1, MASS[0], MASS[1], 0, 9000, 3.7);
+  T.BREAKS.forEach((bt, n) => { const [x, y] = ringPos(BREAK_ORDER[n]); burst(4, bt, x / U, y / U, n * 1300, 1300, 2.5); });
+  burst(2, T.IGNITE, sw.x / U, (sw.y + sw.s * .3) / U, 0, 8000, 3.5);
+  T.WINGS.slice(1).forEach((wt, n) => burst(2, wt, sw.x / U, (sw.y + sw.s * .3) / U, 2000 + n * 1200, 1200, 3));
+  if (t >= T.IGNITE && t < T.FINAL + 1.5) { gl.uniform1i(pu.uMode, 3); gl.uniform1f(pu.uT0, T.IGNITE); gl.uniform1f(pu.uLit, lit); gl.drawArrays(gl.POINTS, 3000, 2600); gl.uniform1f(pu.uLit, lit); }
+  burst(5, T.FINAL, 0, -.6, 0, 10000, 3.1);
+  gl.bindVertexArray(null); gl.disable(gl.BLEND);
+  // ④ 블룸
+  pass(P.bright, RT.bright, (u) => { bindTex(0, RT.scene.tex, u.uTex); gl.uniform1f(u.uThr, .62); });
+  let src = RT.bright; for (const d of RT.down) { pass(P.down, d, (u) => { bindTex(0, src.tex, u.uTex); gl.uniform2f(u.uTexel, .5 / d.w, .5 / d.h); }); src = d; }
+  let acc = RT.down[RT.down.length - 1]; for (let i = RT.down.length - 2; i >= 0; i--) { const dst = RT.up[i], add = RT.down[i]; pass(P.up, dst, (u) => { bindTex(0, acc.tex, u.uTex); bindTex(1, add.tex, u.uAdd); gl.uniform2f(u.uTexel, .5 / dst.w, .5 / dst.h); }); acc = dst; }
+  // ⑤ 갓레이 (광원: 솔 → 검)
+  const lightIsSol = solA > .05, raysK = lightIsSol ? solA * (1.1 + 1.5 * pulse(t, T.HIT1 - .3, .3, .8)) : title ? .9 * eOut(seg(t, T.FINAL + .1, T.FINAL + 1)) : Math.max(lit * .55, seg(t, 17.3, 19.5) * .3);
+  const lx = lightIsSol ? sx : sw.x, ly = lightIsSol ? sy : title ? -1.15 * U : sw.y + sw.s * .2;
+  pass(P.rays, RT.rays, (u) => { bindTex(0, RT.bright.tex, u.uTex); gl.uniform2f(u.uLight, .5 + lx / W, .5 - ly / H); gl.uniform1f(u.uK, raysK); });
+  // ⑥ 최종 합성
+  const hit = .45 * pulse(t, T.HIT1, .02, .7) + .12 * pulse(t, T.SOLFADE, .02, .4) + T.BREAKS.reduce((m, b) => Math.max(m, .16 * pulse(t, b, .02, .3)), 0) + .2 * pulse(t, T.SURGE, .02, .5) + .4 * pulse(t, T.IGNITE, .02, .8) + .5 * pulse(t, T.FINAL, .02, .6) + .05 * seg(t, 22.5, T.FINAL) * (title ? 0 : 1);
+  const zoom = 1 + .08 * pulse(t, T.HIT1, .01, .6) + .05 * seg(t, 15, T.IGNITE) * (1 - push) + .12 * pulse(t, T.IGNITE, .01, .7) + .05 * seg(t, T.IGNITE, T.FINAL) * lit;
+  const flash = Math.min(1, Math.max(pulse(t, T.HIT1, .04, .8), .4 * pulse(t, T.SOLFADE, .04, .5), .85 * pulse(t, T.IGNITE, .04, .7), t < T.FINAL ? eIn(seg(t, 22.9, T.FINAL)) * .85 : 0, pulse(t, T.FINAL, .01, 1.0)));
+  const chaosFlash = T.BREAKS.reduce((m, b) => Math.max(m, pulse(t, b, .02, .25)), 0) * .25, fade = Math.max(1 - seg(t, 0, .5), seg(t, T.FADE, T.END));
+  const r0 = rng(Math.floor(t * 60)), wv = new Float32Array(40); let wi = 0;
+  for (const w of waveList) { const age = t - w.t0; if (age < 0 || age > w.dur || wi >= 10) continue; const k = 1 - age / w.dur; wv.set([w.x, w.y, Math.max(.05, w.r0 + w.sp * age), w.str * k * k], wi * 4); wi++; }
+  pass(P.final, null, (u) => { bindTex(0, RT.scene.tex, u.uScene); bindTex(1, acc.tex, u.uBloom); bindTex(2, RT.rays.tex, u.uRaysTex); gl.uniform2f(u.uRes, pw, ph); gl.uniform1f(u.uU, Ud); gl.uniform1f(u.uT, t);
+    gl.uniform2f(u.uShake, (r0() - .5) * hit * U / W, (r0() - .5) * hit * U / H); gl.uniform1f(u.uZoom, zoom); gl.uniform1f(u.uCA, .0012 + .012 * hit + .003 * lit); gl.uniform1f(u.uBloomK, .85 + .15 * lit); gl.uniform1f(u.uRaysK, 1);
+    gl.uniform1f(u.uFlash, flash); gl.uniform1f(u.uChaosFlash, chaosFlash); gl.uniform1f(u.uFade, fade); gl.uniform4fv(u.uWaves, wv); });
+}
+
+/* ═════════════════ 재생 ═════════════════ */
+const now = () => performance.now() / 1000;
+function frame() {
+  if (!running) return;
+  if (useAudio && !bgm.paused && bgm.currentTime > 0) { const diff = (now() - bgm.currentTime) - anchor; anchor += Math.abs(diff) > .25 ? diff : diff * .1; }
+  const t = now() - anchor, raw = t - time, dt = Math.min(.05, Math.max(0, raw)); time = t;
+  slow = raw > .03 ? slow + 1 : Math.max(0, slow - 1); if (slow > 45 && DPR_CAP > 1) { DPR_CAP = 1; slow = 0; resize(); }
+  update(t, dt); render(t);
+  if (t >= T.END) return endCutscene();
+  raf = requestAnimationFrame(frame);
+}
+function prepare() { $("cs").hidden = false; resize(); init(); waveList = WAVES(); }
+function playLuminosityCutscene(o = {}) {
+  opts = o;
+  try { prepare(); } catch (e) { $("cs").hidden = true; $("glNote").textContent = "WebGL 초기화 실패: " + e.message; console.error(e); if (o.onDone) o.onDone(); return; }
+  time = 0; running = true; anchor = now(); useAudio = o.sound !== false;
+  if (useAudio) { try { bgm.currentTime = 0; bgm.volume = 1; const p = bgm.play(); if (p) p.catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
+}
+function endCutscene() { running = false; cancelAnimationFrame(raf); try { bgm.pause(); } catch (e) { /* 무시 */ } $("cs").hidden = true; if (opts.onDone) opts.onDone(); }
+$("csSkip").addEventListener("click", endCutscene);
+$("demoPlay").addEventListener("click", () => playLuminosityCutscene({ sound: $("demoSound").checked }));
+window.addEventListener("resize", () => { if (!$("cs").hidden && glOK) { resize(); init(); waveList = WAVES(); } });
+window.playLuminosityCutscene = playLuminosityCutscene;
+function renderStill(tt) { init(); waveList = WAVES(); for (let t = 0; t < tt; t += 1 / 60) { time = t; update(t, 1 / 60); } time = tt; render(tt); }
+{ const q = new URLSearchParams(location.search).get("t"); if (q !== null) { prepare(); renderStill(parseFloat(q) || 0); } }
+
+/* 갤러리(cutscenes.html)에서 ?autoplay=1 로 열리면 바로 재생하고, 끝나면 부모 창에 알림 */
+{ const q = new URLSearchParams(location.search); if (q.get("autoplay")) { document.querySelector(".demo").style.display = "none"; document.body.style.background = "#000";
+  const done = () => { try { parent.postMessage({ type: "cutscene-done" }, location.origin); } catch (e) { /* 단독 실행 */ } };
+  playLuminosityCutscene({ sound: q.get("sound") !== "0", onDone: done }); } }
+</script>
+</body>
+</html>
