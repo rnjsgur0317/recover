@@ -270,6 +270,7 @@ function simulate(tt) { init(); for (let t = 0; t < tt; t += 1 / 60) { time = t;
 const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: VOLUME, duration: END, theme: "ink", capBlend: true,
   no: "01", title: "EQUINOX", sub: "陰陽", hero: "/thumbs/equinox_hero.jpg",
+  variants: [{ label: "V1 · 陰陽", href: "/equinox_gl.html", on: true }, { label: "V2 · 衡", href: "/equinox2_gl.html" }],
   tagline: "거대한 태극의 안쪽에서 시작해, 음과 양이 맞물려 하나가 되는 순간까지.\n90 BPM · 3/4박의 음악에 박자 단위로 맞춘 흑백 연출.",
   meta: [["0:22", "Length"], ["90 BPM · 3/4", "Tempo"], [VARIANT === "gl" ? "WebGL2" : "Canvas 2D", "Renderer"]],
   chapters: [{ t: 0, name: "分 · 분리" }, { t: BUILD, name: "渦 · 소용돌이" }, { t: DROP, name: "合 · 합일" }, { t: CONV, name: "歸 · 수렴" }, { t: TITLE, name: "春分 · 춘분" }],
