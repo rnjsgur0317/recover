@@ -367,10 +367,9 @@ function render(t) {
 /* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
 const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: .95, duration: T.END, theme: "ink", capBlend: true,
-  no: "07", title: "EQUINOX", sub: "衡 · V2", hero: "/thumbs/equinox2_hero.jpg",
+  no: "01", title: "EQUINOX", sub: "衡", hero: "/thumbs/equinox2_hero.jpg",
   tagline: "긍정과 부정 사이에 존재하는 힘. 개념 자체로 이루어진 어떤 것.\n알려진 것은 단지 그 사이에 존재한다는 것뿐, 그 외에는 아무것도 없다.",
   meta: [["0:16", "Length"], ["180 BPM", "Tempo"], ["WebGL2 · 3D", "Renderer"]],
-  variants: [{ label: "V1 · 陰陽", href: "/equinox_gl.html" }, { label: "V2 · 衡", href: "/equinox2_gl.html", on: true }],
   chapters: [{ t: 0, name: "陰 Negative" }, { t: T.YANG, name: "陽 Positive" }, { t: T.HENG, name: "衡 Equinox" }, { t: T.MU, name: "無 Zero" }, { t: T.IMPACT, name: "EQUINOX" }],
   captions: [],
   prepare() { resize(); P.scene(); P.part(); P.final(); },

@@ -333,7 +333,7 @@ function render(t) {
 /* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
 const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: .8, duration: T.END, theme: "pixel", capBlend: false,
-  no: "03", title: "PIXELATION", sub: "픽셀레이션", hero: "/thumbs/pixelation_hero.jpg",
+  no: "02", title: "PIXELATION", sub: "픽셀레이션", hero: "/thumbs/pixelation_hero.jpg",
   tagline: "디지털 월드에 봉인된 수수께끼의 “자아”. 완전히 무해합니다 — 확신할 정도로요.\n이 설명은 1,000,000%만큼의 진실만을 가지고 있습니다.",
   meta: [["0:34", "Length"], ["195 BPM", "Tempo"], ["WebGL2", "Renderer"]],
   chapters: [{ t: 0, name: "부팅" }, { t: T.AD, name: "광고" }, { t: T.KICK, name: "완전히 무해함" }, { t: T.BUILD, name: "봉인 균열" }, { t: T.DROP, name: "해방" }, { t: T.BREAK, name: "1,000,000% 진실" }, { t: T.SLAM, name: "본색" }],
