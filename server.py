@@ -485,7 +485,8 @@ STATUS_TEXT = {200: "200 OK", 302: "302 Found", 400: "400 Bad Request",
 
 MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
         ".js": "application/javascript; charset=utf-8", ".png": "image/png",
-        ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon"}
+        ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon",
+        ".mp3": "audio/mpeg", ".webp": "image/webp"}   # 컷씬 음원(서버에 직접 올림)
 
 
 class Request:
