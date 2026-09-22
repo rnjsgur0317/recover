@@ -10,6 +10,7 @@
      frame(t, dt, raw),    // 한 프레임 그리기
    });
    player.play({ sound, from, onDone })  ·  player.still(t)  ·  player.active()  ·  player.record()
+   음량: HUD 음소거 버튼 옆 슬라이더 · 시작 화면 슬라이더 · ↑↓ 키 — 모든 컷씬이 공유(localStorage csui.vol), 녹화에는 적용하지 않음
    영상 저장: 1920x1080 녹화 캔버스에 화면 + 레터박스 + 자막 + 워터마크를 합쳐 MediaRecorder 로 실시간 녹화(mp4 우선, 안 되면 webm) → 자동 다운로드
    주소: ?autoplay=1&sound=0|1 (갤러리 iframe — 끝나면 parent 로 { type: "cutscene-done" }), &record=1 (바로 녹화), ?t=12.4 (정지 화면)
    키: Space 일시정지 · ←/→ 2초 탐색 · M 음소거 · F 전체화면 · Esc 닫기
@@ -41,7 +42,8 @@ function create(cfg) {
   const q = new URLSearchParams(location.search), embedded = !!q.get("autoplay");
   const stage = cfg.stage, audio = cfg.audio || null, DUR = cfg.duration, chapters = cfg.chapters || [], caps = cfg.captions || [];
   const gallery = cfg.gallery || "/cutscenes.html";
-  let opts = {}, running = false, paused = false, on = false, time = 0, anchor = 0, raf = 0, useAudio = false, soundOn = true, idleTimer = 0, curCap = null, lastSec = -1, lastChap = -2, dragging = false, rec = null, actx = null, asrc = null;
+  let opts = {}, running = false, paused = false, on = false, time = 0, anchor = 0, raf = 0, useAudio = false, soundOn = true, idleTimer = 0, curCap = null, lastSec = -1, lastChap = -2, dragging = false, rec = null, actx = null, asrc = null, vol = 1;
+  try { const v = parseFloat(localStorage.getItem("csui.vol")); if (v >= 0 && v <= 1) vol = v; } catch (e) { /* 저장소 없음 */ }
 
   /* 음원은 Blob 으로 받아 둔다 — Range 요청을 지원하지 않는 서버(python http.server 등)에서는 <audio> 가 탐색 불가로 잡혀 currentTime 이 0으로 돌아가기 때문 */
   let playToken = 0;
@@ -66,6 +68,7 @@ function create(cfg) {
         <div class="csui-actions">
           <button class="csui-play" data-act="start">${ICON.play}재생</button>
           <button class="csui-ghost" data-act="landsound" aria-pressed="true"></button>
+          <label class="csui-vol land" title="음량"><input type="range" min="0" max="100" step="1" aria-label="음량"><b></b></label>
           <button class="csui-ghost" data-act="landrec">${ICON.down}영상 저장</button>
           ${(cfg.variants || []).length ? `<div class="csui-seg">${cfg.variants.map((v) => `<a href="${v.href}"${v.on ? ' class="on"' : ""}>${esc(v.label)}</a>`).join("")}</div>` : ""}
         </div>
@@ -73,10 +76,10 @@ function create(cfg) {
       </div>
       ${chapters.length ? `<div class="csui-chapters"><h2>Chapters</h2>${chapters.map((c, i) => `<button data-from="${c.t}"><time>${fmt(c.t)}</time><span>${ROMAN[i] || i + 1}. ${esc(c.name)}</span><em>PLAY</em></button>`).join("")}</div>` : ""}
     </div>
-    <div class="csui-keys"><span><kbd>Space</kbd>일시정지</span><span><kbd>←</kbd><kbd>→</kbd>탐색</span><span><kbd>M</kbd>음소거</span><span><kbd>F</kbd>전체화면</span><span><kbd>Esc</kbd>닫기</span></div>`;
+    <div class="csui-keys"><span><kbd>Space</kbd>일시정지</span><span><kbd>←</kbd><kbd>→</kbd>탐색</span><span><kbd>↑</kbd><kbd>↓</kbd>음량</span><span><kbd>M</kbd>음소거</span><span><kbd>F</kbd>전체화면</span><span><kbd>Esc</kbd>닫기</span></div>`;
   land.hidden = embedded;                              // 갤러리에서 열 때는 설명 화면을 아예 띄우지 않는다
   document.body.prepend(land);
-  const errEl = land.querySelector(".csui-err"), landSound = land.querySelector('[data-act="landsound"]');
+  const errEl = land.querySelector(".csui-err"), landSound = land.querySelector('[data-act="landsound"]'), landVol = land.querySelector(".csui-vol input"), landVolB = land.querySelector(".csui-vol b");
   const paintLandSound = () => { landSound.setAttribute("aria-pressed", String(soundOn)); landSound.innerHTML = (soundOn ? ICON.sound : ICON.mute) + (soundOn ? "사운드 켬" : "사운드 끔"); };
   paintLandSound();
   land.addEventListener("click", (e) => {
@@ -84,6 +87,7 @@ function create(cfg) {
     if (from) play({ sound: soundOn, from: parseFloat(from.dataset.from) || 0 });
     else if (act && act.dataset.act === "start") play({ sound: soundOn });
     else if (act && act.dataset.act === "landsound") { soundOn = !soundOn; paintLandSound(); }
+    if (e.target === landVol) return;
     else if (act && act.dataset.act === "landrec") record();
   });
 
@@ -101,7 +105,7 @@ function create(cfg) {
         <button class="csui-ic" data-act="back" title="닫기 (Esc)">${ICON.back}</button>
         <div class="csui-id"><b>${esc(cfg.title)}</b><span>${esc(cfg.sub || "")}</span></div>
         <div class="csui-grow"></div>
-        <button class="csui-ic" data-act="mute" title="음소거 (M)"></button>
+        <div class="csui-snd"><button class="csui-ic" data-act="mute" title="음소거 (M)"></button><label class="csui-vol" title="음량 (↑↓)"><input type="range" min="0" max="100" step="1" aria-label="음량"><b></b></label></div>
         <button class="csui-ic" data-act="full" title="전체화면 (F)">${ICON.full}</button>
         <button class="csui-skip" data-act="skip">SKIP${ICON.skip}</button>
       </div>
@@ -119,9 +123,16 @@ function create(cfg) {
   while (wrap.firstChild) stage.append(wrap.firstChild);
   const el = (s) => stage.querySelector(s);
   const capEl = el(".csui-cap"), capP = el(".csui-cap p"), capRule = el(".csui-cap i"), fill = el(".csui-fill"), knob = el(".csui-knob"), tip = el(".csui-tip"), mini = el(".csui-mini i"),
-    timeB = el(".csui-time b"), chapEl = el(".csui-chap"), track = el(".csui-track"), toast = el(".csui-toast"), endEl = el(".csui-end"), btnMute = el('[data-act="mute"]'), btnPause = el('[data-act="pause"]'), recEl = el(".csui-rec"), recTxt = el(".csui-rec span"), noteEl = el(".csui-note");
+    timeB = el(".csui-time b"), chapEl = el(".csui-chap"), track = el(".csui-track"), toast = el(".csui-toast"), endEl = el(".csui-end"), btnMute = el('[data-act="mute"]'), btnPause = el('[data-act="pause"]'), recEl = el(".csui-rec"), recTxt = el(".csui-rec span"), noteEl = el(".csui-note"), hudVol = el(".csui-snd .csui-vol input"), hudVolB = el(".csui-snd .csui-vol b");
+  paintVol();
 
-  function paintIcons() { btnMute.innerHTML = soundOn ? ICON.sound : ICON.mute; btnPause.innerHTML = paused ? ICON.play : ICON.pause; }
+  function paintIcons() { btnMute.innerHTML = soundOn && vol > 0 ? ICON.sound : ICON.mute; btnPause.innerHTML = paused ? ICON.play : ICON.pause; paintVol(); }
+  /* 음량: 슬라이더 둘(시작 화면 · HUD)과 <audio> 를 한 값(vol)으로 맞춘다. 녹화 중에는 원래 음량 */
+  function applyVol() { if (audio && !rec) audio.volume = (cfg.volume == null ? 1 : cfg.volume) * vol; }
+  function paintVol() { const pct = Math.round(vol * 100) + "%"; for (const [inp, b] of [[hudVol, hudVolB], [landVol, landVolB]]) { inp.value = Math.round(vol * 100); inp.style.setProperty("--k", pct); b.textContent = pct; } }
+  function setVol(v, fromKey) { vol = clamp(v); try { localStorage.setItem("csui.vol", vol.toFixed(2)); } catch (e) { /* 무시 */ } if (vol > 0 && !soundOn) { soundOn = true; if (audio) audio.muted = false; paintLandSound(); }
+    applyVol(); paintIcons(); if (fromKey && on) { toast.innerHTML = `<span>${Math.round(vol * 100)}%</span>`; toast.className = "csui-toast"; void toast.offsetWidth; toast.className = "csui-toast pop"; } poke(); }
+  for (const inp of [hudVol, landVol]) { inp.addEventListener("input", () => setVol(inp.value / 100)); inp.addEventListener("keydown", (e) => { if (e.key !== "Tab") e.preventDefault(); }); }   // 슬라이더가 초점을 가져도 단축키는 창의 것으로
   function sync(t) {                                   // HUD·자막을 t 시점에 맞춤 (시간에만 의존 → 탐색·정지 화면에서도 같게 보임)
     const k = clamp(t / DUR); fill.style.transform = mini.style.transform = `scaleX(${k})`; knob.style.left = k * 100 + "%";
     const s = Math.floor(t); if (s !== lastSec) { lastSec = s; timeB.textContent = fmt(Math.min(t, DUR)); }
@@ -170,7 +181,7 @@ function create(cfg) {
     fit(); window.addEventListener("resize", fit); stage.classList.add("rec"); recEl.hidden = false; noteEl.hidden = true;
     play({ sound: true });
   }
-  function stopRec(cancel) { if (!rec) return; rec.cancelled = !!cancel; if (rec.mr.state !== "inactive") rec.mr.stop(); else rec.mr.onstop(); }
+  function stopRec(cancel) { if (!rec) return; setTimeout(applyVol, 0); rec.cancelled = !!cancel; if (rec.mr.state !== "inactive") rec.mr.stop(); else rec.mr.onstop(); }
 
   /* ── 시계 (음악이 있으면 음악 재생 위치에 부드럽게 맞춤) ── */
   function tick() {
@@ -182,7 +193,7 @@ function create(cfg) {
     raf = requestAnimationFrame(tick);
   }
   function startAudio(t) { if (!audio) { useAudio = false; return; } useAudio = true;
-    try { audio.muted = !soundOn; audio.volume = cfg.volume == null ? 1 : cfg.volume; audio.currentTime = t; const p = audio.play(); if (p) p.catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
+    try { audio.muted = !soundOn; audio.volume = (cfg.volume == null ? 1 : cfg.volume) * (rec ? 1 : vol); audio.currentTime = t; const p = audio.play(); if (p) p.catch(() => { useAudio = false; }); } catch (e) { useAudio = false; } }
   function play(o = {}) {
     opts = o; if (o.sound !== undefined) soundOn = o.sound !== false;
     endEl.hidden = true; errEl.hidden = true; stage.hidden = false; land.hidden = true; on = true;
@@ -242,6 +253,7 @@ function create(cfg) {
     if (k === " " || k === "k") { e.preventDefault(); togglePause(); }
     else if (k === "ArrowLeft") seek(time - 2); else if (k === "ArrowRight") seek(time + 2);
     else if (k === "m" || k === "M") toggleSound(); else if (k === "f" || k === "F") toggleFull();
+    else if (k === "ArrowUp") { e.preventDefault(); setVol(vol + .1, true); } else if (k === "ArrowDown") { e.preventDefault(); setVol(vol - .1, true); }
     else if (k === "Escape") close(); else if ((k === "Enter" || k === "r") && !endEl.hidden) play({ sound: soundOn });
   });
 

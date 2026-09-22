@@ -108,6 +108,20 @@ body.csui-body { margin: 0; background: #000; overflow: hidden; }
 .csui-hud-row.bot { background: linear-gradient(0deg, rgba(0,0,0,.85), rgba(0,0,0,0)); gap: 14px; }
 .csui .csui-ic { width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); transition: color .15s, background .15s; }
 .csui .csui-ic:hover { color: var(--ink); background: rgba(255,255,255,.1); }
+/* 음량 슬라이더: HUD 에서는 음소거 버튼 옆에, 시작 화면에서는 사운드 버튼 옆에 */
+.csui-snd { display: inline-flex; align-items: center; }
+.csui-vol { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 2px; color: var(--dim); font-size: .72rem; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.csui-vol input { -webkit-appearance: none; appearance: none; width: 92px; height: 20px; margin: 0; background: transparent; cursor: pointer; }
+.csui-vol input::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: linear-gradient(90deg, var(--ink) var(--k, 100%), var(--faint) var(--k, 100%)); }
+.csui-vol input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%; background: var(--ink); border: 0; box-shadow: 0 0 0 3px rgba(0,0,0,.35); }
+.csui-vol input::-moz-range-track { height: 2px; border-radius: 1px; background: var(--faint); }
+.csui-vol input::-moz-range-progress { height: 2px; background: var(--ink); }
+.csui-vol input::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 0; }
+.csui-vol b { min-width: 34px; font-weight: 400; text-align: right; }
+.csui-vol.land { height: 54px; padding: 0 18px; border: 1px solid var(--faint); border-radius: 999px; color: var(--ink); font-size: .8rem; }
+.csui-vol.land input { width: 120px; }
+.csui-toast span { font-size: .9rem; letter-spacing: .04em; font-variant-numeric: tabular-nums; color: var(--ink); }
+@media (max-width: 640px) { .csui-snd .csui-vol { display: none; } }
 .csui-id { display: flex; align-items: baseline; gap: 12px; margin-left: 6px; white-space: nowrap; }
 .csui-id b { font-size: .8rem; font-weight: 800; letter-spacing: .3em; }
 .csui-id span { font-family: var(--serif); font-size: .78rem; letter-spacing: .3em; color: var(--dim); }
