@@ -21,10 +21,10 @@
      0      부팅: 로딩 99% 에서 멈췄다가 1000% 로 넘쳐 버림
      2.50   광고: 봉인된 큐브(자아) 주위로 마디마다 팝업 광고가 뜬다 → 8.65 커서가 전부 닫음
      9.88   비트: 배경이 광활한 우주로 바뀌고 바닥이 무너진다 — 큐브는 색을 빠르게 바꾸며 우주를 날아간다(별 줄기 · 잔상 · 속도선). 큐브가 박자에 맞춰 춤춘다. "무해합니다!" 팝업 뒤에서 플레이어 HP 가 슬금슬금 닳고, 큐브가 몇 프레임씩 붉게 뒤틀리며 본색을 드러냄
-     19.73  빌드업: 사슬이 끊기고, "무해합니다 [확인]" 창이 폭주하고, 화면이 말 그대로 픽셀화된다
+     19.73  빌드업: 사슬이 끊기고, "무해합니다 [확인]" 창이 아무 데서나 폭주하고, 화면이 말 그대로 픽셀화된다
      24.65  드롭: 봉인 해제 — 육각 마법진 · 화살표 왕관 · 픽셀 폭발, 25.88 타이틀
      28.34  정적: "이 설명은 1,000,000% 진실" 확인 창 하나 → 29.5 커서가 [확인] 클릭
-     29.57  본색: 붉게 뒤틀린 구조물이 화면을 채우고 오류 창이 쏟아짐 (3마디) → 32.85 부터 치지직 TV 잡음이 끼어들고 33.26 테이프 스톱, 화면이 잡음으로 덮임 → 33.86 CRT 꺼짐 → 34.1 끝
+     29.57  본색: 붉게 뒤틀린 구조물이 화면을 채우고 '?' '??' 오류 창이 아무 데서나 쏟아짐 (3마디) → 32.85 부터 치지직 TV 잡음이 끼어들고 33.26 테이프 스톱, 화면이 잡음으로 덮임 → 33.86 CRT 꺼짐 → 34.1 끝
    색: 중앙 구조물과 부산물은 무지개색으로 계속 바뀐다 — 9.88 까지는 천천히, 그 뒤로는 빠르게 (그게 픽셀레이션)
    층: ① 셰이더(하늘 · 원근 격자 바닥 · 픽셀 파동 → 성운 · 워프 별 줄기 · 무너지는 바닥)  ② 벡터 캔버스(와이어프레임 · 링, 가산)  ③ 480x270 픽셀 캔버스(팝업 · 글자 · 스프라이트)
    전부 시간의 함수(상태 없음). 시계·HUD·시작/종료 화면은 cs_ui.js
@@ -49,6 +49,7 @@ const KICKS = (() => { const out = []; for (let n = 8; n < 16; n++) out.push(bar
 const hueAt = (t) => 48 + 30 * Math.max(0, Math.min(t, T.KICK) - T.AD) + 400 * Math.max(0, t - T.KICK);                  // 무지개 시계: KICK 까지 천천히, 그 뒤로 빠르게
 const warpPhase = (t) => .9 * clamp(t - T.KICK, 0, T.BUILD - T.KICK) + 1.7 * clamp(t - T.BUILD, 0, T.DROP - T.BUILD) + 2.8 * Math.max(0, t - T.DROP);   // 날아간 거리(별 줄기의 위상)
 function hsv(h, sa, v) { h = ((h % 360) + 360) % 360 / 60; const c = v * sa, x = c * (1 - Math.abs(h % 2 - 1)), m = v - c, r = h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x]; return [r[0] + m, r[1] + m, r[2] + m]; }
+const h1 = (x) => { const v = Math.sin(x * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };   // 결정적 난수 (창 위치 · 내용)
 const $ = (id) => document.getElementById(id);
 const glc = $("glc"), bgm = $("bgm");
 const PW = 480, PH = 270, pcv = document.createElement("canvas"), pg = pcv.getContext("2d"); pcv.width = PW; pcv.height = PH; pg.imageSmoothingEnabled = false;
@@ -158,7 +159,7 @@ function drawPixels(t) {
   ADS.forEach((o) => win(t, o));
   if (t >= T.CLOSE - .5 && t < T.KICK) { const i = clamp(Math.floor((t - T.CLOSE) / .2), 0, 4), o = ADS[i], k = eOut(seg(t, T.CLOSE - .5 + Math.max(0, i) * .0, T.CLOSE)); const tx = o.x + o.w - 7, ty = o.y + 4, px = i === 0 ? lerp(430, tx, k) : lerp(ADS[i - 1].x + ADS[i - 1].w - 7, tx, eOut(seg(t, T.CLOSE + (i - 1) * .2 + .05, T.CLOSE + i * .2))), py = i === 0 ? lerp(250, ty, k) : lerp(ADS[i - 1].y + 4, ty, eOut(seg(t, T.CLOSE + (i - 1) * .2 + .05, T.CLOSE + i * .2))); spr(CURSOR, px, py, 1, { "#": K, w: W }); }
   /* 빌드업: "무해합니다" 창 폭주 */
-  if (t >= T.BUILD && !dropped) { const n = Math.floor((t - T.BUILD) / (BEAT / 2)); for (let i = Math.max(0, n - 40); i <= n; i++) win(t, { born: T.BUILD + i * BEAT / 2, x: 16 + (i * 67) % 340, y: 12 + (i * 41) % 196, w: 112, h: 40, title: "OK " + (i + 1), lines: [SPAM[i % SPAM.length]], col: i % 5 === 4 ? G : Y, tcol: i % 5 === 4 ? G : W }); }
+  if (t >= T.BUILD && !dropped) { const n = Math.floor((t - T.BUILD) / (BEAT / 2)); for (let i = Math.max(0, n - 40); i <= n; i++) win(t, { born: T.BUILD + i * BEAT / 2, x: Math.round(-24 + h1(i * 7.3 + 1) * 392), y: Math.round(-16 + h1(i * 7.3 + 2) * 246), w: 112, h: 40, title: "OK " + (i + 1), lines: [SPAM[i % SPAM.length]], col: i % 5 === 4 ? G : Y, tcol: i % 5 === 4 ? G : W }); }
   /* 드롭: 픽셀 폭죽 + 타이틀 */
   if (dropped) { const age = t - T.DROP; for (const p of CONF) { const d = p.v * (1 - Math.exp(-age * 1.6)) / 1.6, x = 240 + Math.cos(p.a) * d, y = 120 + Math.sin(p.a) * d * .7 + p.g * age * age * .5 - 40 * age; if (y > PH || age > 3.6) continue; if (Math.sin(age * 9 + p.ph) > -.4) { pg.fillStyle = p.c; pg.fillRect(Math.round(x), Math.round(y), p.s, p.s); } } }
   if (t >= T.TITLE || slam) { const k = slam ? 1 : eOut(seg(t, T.TITLE, T.TITLE + .22)), jx = slam ? Math.round(Math.sin(t * 140) * (1 + 5 * pulse(t, T.SLAM, .01, .3))) : Math.round((1 - k) * 60 * (Math.floor(t * 30) % 2 ? 1 : -1)), y = 196;
@@ -166,8 +167,8 @@ function drawPixels(t) {
     ptext("# PIXELATION #", 240 + jx + 2, y + 2, 4, "#7a5a00", "c"); ptext("# PIXELATION #", 240 + jx, y, 4, slam ? W : Y, "c");
     if (k > .9) { kdraw("▣ 픽셀레이션 ▣", 240, y + 31, 16, W, "c"); if (!slam && t > T.TITLE + .6 && Math.floor(t * 5) % 2) { box(168, 8, 144, 18, "rgba(4,5,14,.8)", G); kdraw("※ 완전히 무해합니다", 240, 10, 12, G, "c"); } } }
   if (t >= T.DROP && t < T.DROP + BEAT * 2 && Math.floor(t * 16) % 2) ptext("SEAL BROKEN", 240, 30, 3, W, "c");
-  if (slam) { const LIES = ["무해했습니다", "ERROR", "도망치세요", "100 → 0", "거짓말이었음", "ㅋㅋㅋㅋㅋ"], n = Math.floor((t - T.SLAM) / (BEAT / 2));                                   // 본색: 붉은 오류 창이 쏟아진다
-    for (let i = Math.max(0, n - 15); i <= n; i++) win(t, { born: T.SLAM + i * BEAT / 2, x: i % 2 ? 6 + (i * 29) % 56 : 358 - (i * 31) % 56, y: 30 + (i * 47) % 128, w: 116, h: 40, title: "ERR " + (i + 1), lines: [LIES[i % LIES.length]], col: R, tcol: i % 2 ? W : R });
+  if (slam) { const QS = ["?", "??", "???", "?", "??", "? ? ?"], n = Math.floor((t - T.SLAM) / (BEAT / 2));                                   // 본색: 붉은 오류 창이 아무 데서나 쏟아진다 — 내용은 ? · ??
+    for (let i = Math.max(0, n - 15); i <= n; i++) { const w = 70 + Math.floor(h1(i * 3.1 + 5) * 60); win(t, { born: T.SLAM + i * BEAT / 2, x: Math.round(-20 + h1(i * 3.1 + 3) * (460 - w + 40)), y: Math.round(-12 + h1(i * 3.1 + 4) * 240), w, h: 40, title: "ERR " + (i + 1), lines: [QS[Math.floor(h1(i * 3.1 + 6) * QS.length)]], ascii: 2, pad: 1, col: R, tcol: i % 2 ? W : R }); }
     const lie = Math.floor((t - T.SLAM) / BEAT) % 2; box(150, 8, 180, 18, "rgba(4,5,14,.85)", lie ? R : G); kdraw(lie ? "※ 거짓말이었습니다" : "※ 완전히 무해합니다", 240, 10, 12, lie ? R : G, "c"); }
 }
 
