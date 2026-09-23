@@ -21,7 +21,7 @@
    3D 로 세워 놓고 '꿈의 논리'로 뒤튼다: 끝없는 판, 접히는 공간, 얼굴 속의 거울(이전 프레임 되먹임 → 무한 회귀), 거꾸로 가는 시간, 똑같은 사람들, 뒤에 있던 것.
    사운드(참고 영상 2.3초~): 음악 ① 0.2~9.0 · 정적 9.0~12.2 · 음악 ② 12.2~18.1 · 정적(삑 20.05/21.05/21.58) · 타격 23.75 · 웅웅 24.7~ · 끝 26.6
      A1 0.3 끝없는 판 → A2 1.33 의자 → A3 2.83 내려다본 판 → A4 3.87 원반 탑 → A5 5.4 얼굴(거울) → A6 6.4 접히는 공간 → A7 7.93 점멸 카드
-     B 9.0 어둠: wake up... / no, not yet.   C1 12.2 하늘의 눈 → C2 13.4 똑같은 사람들(만화경) → C3 15.37 거꾸로 → C4 16.5 줄이 하나씩 다시 걸리고 위로 끌려 올라감 (A6 · C3 의 꼭두각시는 앉은 모습 → 치지직 → 무너진 모습으로 끊어서 전환)
+     B 9.0 어둠: wake up... / no, not yet.   C1 12.2 하늘의 눈 → C2 13.4 똑같은 사람들(만화경) → C3 15.37 거꾸로 → C4 16.5 부서진 채 누워 있다가 17.15 파랗고 기괴한 큰 눈이 순간 나타났다 사라지고 꼭두각시도 사라짐 (A6 · C3 의 꼭두각시는 앉은 모습 → 치지직 → 부서진 모습으로 끊어서 전환)
      D 18.1 빈 의자와 팝업 → 22.6 바로 앞의 얼굴 '?' → E 23.75 ☻ → F 24.7 이름표 → 26.15 눈이 감김
    패스: ① 레이마칭(0.75배, 3색 망점 툰) ② 블룸 ③ 최종(윤곽선 · 만화경 · 메아리 · 찢김 · 잡음 · 눈꺼풀 · 글자 합성) → 되먹임 버퍼 ④ 화면
    ※ 되먹임 때문에 탐색 직후 몇 프레임은 실제 재생과 조금 다를 수 있다. 시계·HUD·시작/종료 화면은 cs_ui.js
@@ -52,7 +52,7 @@ const FS_SCENE = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
 uniform vec2 uRes; uniform float uT; uniform vec3 uCamPos; uniform mat3 uCam; uniform float uFocal; uniform int uZero;
 uniform vec3 uJ[15]; uniform vec3 uChair; uniform mat3 uDiceR; uniform sampler2D uPrev;
-uniform float uCrowd, uBend, uUpper, uBoard, uInfinite, uBody, uGlyph, uUpRot, uMirrorInv, uLightK;
+uniform float uCrowd, uBend, uUpper, uBoard, uInfinite, uBody, uGlyph, uUpRot, uMirrorInv, uLightK, uBroken;
 ${CSGL.NOISE}
 const vec3 WHITE = vec3(1.), BLUE = vec3(.045, .1, 1.), BLACK = vec3(0.);
 float sdBox(vec3 p, vec3 b){ vec3 d = abs(p) - b; return length(max(d, 0.)) + min(max(d.x, max(d.y, d.z)), 0.); }
@@ -79,12 +79,15 @@ vec2 figure(vec3 p){
   c = min(c, sdFrame(q - vec3(.49, -.46, .49), vec3(.07, .46, .07), .018)); for (int i = 0; i < 4; i++) c = min(c, length(q - vec3(.49, -.13 - .22 * float(i), -.49)) - .08);
   vec2 r = vec2(c, 5.); if (uBody < .5) return r;
   /* 마리오네트 — 관절: 0 골반 1 가슴 2 머리 3,4 어깨 5,6 팔꿈치 7,8 손 9,10 엉덩관절 11,12 무릎 13,14 발 */
-  float b = smin(sdRC(p, uJ[0], uJ[1], .125, .165), length(p - uJ[0]) - .15, .04); b = min(b, sdCap(p, uJ[1], uJ[2], .048));
-  b = min(b, min(sdRC(p, uJ[3], uJ[5], .058, .046), sdRC(p, uJ[4], uJ[6], .058, .046))); b = min(b, min(sdRC(p, uJ[5], uJ[7], .044, .034), sdRC(p, uJ[6], uJ[8], .044, .034)));
-  b = min(b, min(sdRC(p, uJ[9], uJ[11], .085, .062), sdRC(p, uJ[10], uJ[12], .085, .062))); b = min(b, min(sdRC(p, uJ[11], uJ[13], .058, .04), sdRC(p, uJ[12], uJ[14], .058, .04)));
+  float g = uBroken * .16; vec3 J1b = mix(uJ[1], uJ[0], g), J0b = mix(uJ[0], uJ[1], g);                                                       // 부서짐: 마디마다 틈이 벌어진다
+  float b = smin(sdRC(p, J0b, J1b, .125, .165), length(p - uJ[0]) - .15, .04); if (uBroken < .5) b = min(b, sdCap(p, uJ[1], uJ[2], .048));
+  #define SEG(a, c, r1, r2) sdRC(p, mix(a, c, g), mix(c, a, g), r1, r2)
+  b = min(b, min(SEG(uJ[3], uJ[5], .058, .046), SEG(uJ[4], uJ[6], .058, .046))); b = min(b, min(SEG(uJ[5], uJ[7], .044, .034), SEG(uJ[6], uJ[8], .044, .034)));
+  b = min(b, min(SEG(uJ[9], uJ[11], .085, .062), SEG(uJ[10], uJ[12], .085, .062))); b = min(b, min(SEG(uJ[11], uJ[13], .058, .04), SEG(uJ[12], uJ[14], .058, .04)));
   b = min(b, min(sdCap(p, uJ[13], uJ[13] + vec3(0., -.02, .15), .042), sdCap(p, uJ[14], uJ[14] + vec3(0., -.02, .15), .042))); b = min(b, min(length(p - uJ[7]) - .052, length(p - uJ[8]) - .052));
   float jt = min(min(length(p - uJ[3]), length(p - uJ[4])) - .072, min(length(p - uJ[5]), length(p - uJ[6])) - .054); jt = min(jt, min(min(length(p - uJ[11]), length(p - uJ[12])) - .07, min(length(p - uJ[9]), length(p - uJ[10])) - .09));
-  return opU(opU(opU(r, vec2(b, 6.)), vec2(jt, 14.)), vec2(sdBox(p - uJ[2], vec3(.175)) - .012, 7.));
+  vec3 hp = p - uJ[2]; if (uBroken > .5) hp = rotZ(rotX(hp, .8), .55);                                                    // 굴러떨어진 머리는 기울어져 있다
+  return opU(opU(opU(r, vec2(b, 6.)), vec2(jt, 14.)), vec2(sdBox(hp, vec3(.175)) - .012, 7.));
 }
 vec3 upperP(vec3 p){ return rotY(p, uUpRot); }
 vec2 upper(vec3 p){                                                              // 원반 탑: 원반 6 + 굵은 띠 + 기둥 + 가시 원통 + 흰/검 후광 + 삼각 돌기 + 눈 고리 2
@@ -207,8 +210,9 @@ function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross
   return { pos, f, r: [r0[0] * c + u0[0] * s, r0[1] * c + u0[1] * s, r0[2] * c + u0[2] * s], u: [u0[0] * c - r0[0] * s, u0[1] * c - r0[1] * s, u0[2] * c - r0[2] * s] }; }
 const SIT = [[0, .2, -.2], [0, .78, -.3], [0, 1.2, -.26], [-.27, .8, -.3], [.27, .8, -.3], [-.33, .46, -.14], [.33, .46, -.14], [-.22, .33, .24], [.22, .33, .24], [-.13, .18, -.15], [.13, .18, -.15], [-.15, .23, .5], [.15, .23, .5], [-.15, -.4, .55], [.15, -.4, .55]];
 const LIE = [[.18, .2, 0], [-.32, .25, 0], [-.76, .16, .02], [-.34, .31, .22], [-.34, .31, -.22], [-.2, .12, .5], [-.56, .08, -.42], [-.05, .02, .58], [-.7, -.26, -.44], [.2, .2, .13], [.2, .2, -.13], [.62, .34, .15], [.64, .26, -.12], [.72, -.3, .18], [.8, -.36, -.1]];
+const BROKEN = [[.12, .16, .04], [-.42, .1, .14], [-.78, -.84, .48], [-.4, .3, .36], [-.44, .28, -.1], [-.62, .06, .58], [-.1, .34, -.42], [-.95, -.24, .7], [.36, .2, -.62], [.28, .18, .18], [.24, .16, -.12], [.72, .05, .42], [.66, .12, -.4], [.98, -.52, .55], [.9, -.46, -.5]];   // 부서진 자세: 몸통은 비틀려 쓰러지고 머리는 바닥으로 굴러떨어지고 팔다리는 의자 밖으로 흩어짐
 const HANG = [[0, .35, 0], [0, .92, -.02], [0, 1.3, .07], [-.27, .95, -.02], [.27, .95, -.02], [-.38, 1.22, .06], [.38, 1.22, .06], [-.32, 1.62, .12], [.32, 1.62, .12], [-.13, .3, 0], [.13, .3, 0], [-.17, .62, .42], [.17, .62, .42], [-.17, .05, .38], [.17, .05, .38]];   // 줄에 매달려 끌려 올라가는 자세
-const ZAP = { A: 7.05, C: 15.95, D: .24 }, STR = [[11, [11, 13], .1], [12, [12, 14], .25], [7, [5, 7], .42], [8, [6, 8], .58], [2, [1, 2, 3, 4], .76]], LIFT = .95;                            // 치지직(앉음 → 무너짐) 시각 · C4 에서 줄이 다시 걸리는 순서(줄 관절, 딸린 관절, 시각) · 끌려 올라가기 시작
+const EYE = { AT: 17.15, D: .22 }, ZAP = { A: 7.05, C: 15.95, D: .24 }, STR = [[11, [11, 13], .1], [12, [12, 14], .25], [7, [5, 7], .42], [8, [6, 8], .58], [2, [1, 2, 3, 4], .76]], LIFT = .95;                            // 치지직(앉음 → 무너짐) 시각 · C4 에서 줄이 다시 걸리는 순서(줄 관절, 딸린 관절, 시각) · 끌려 올라가기 시작
 const CHAIR_Y = 1.02, HEAD = [0, CHAIR_Y + 1.2, -.26];
 const eBackJ = (x) => 1 + 2.7 * Math.pow(x - 1, 3) + 1.7 * Math.pow(x - 1, 2);
 function zap(S, t, at) { if (t < at || t >= at + ZAP.D) return; const n = Math.floor((t - at) * 30); S.staticK = .82 + .18 * h1(n); S.tear = 1; S.inv = n % 3 === 1 ? 1 : 0; S.shake = .012; }   // 치지직: 짧은 잡음 화면
@@ -229,13 +233,13 @@ function state(t) {
   else if (t < T.C2) { const k = seg(t, T.C1, T.C2); S.shot = "C1"; S.cam = camera([.05, .45, 1.3], [0, 6, 0], t * .25); S.focal = 1.05; S.body = 0; S.lid = 1 - eOut(seg(t, T.C1, T.C1 + .35)) + pulse(t, T.C1 + .75, .06, .1); S.echo = .5; S.echoRot = .02; S.echoZoom = 1.015; }
   else if (t < T.C3) { const k = seg(t, T.C2, T.C3); S.shot = "C2"; S.cam = camera([lerp(-4, 4, k), 3.4, 9.5], [lerp(-2, 2, k), 1.5, 0], 0); S.crowd = 1; S.infinite = 1; S.board = 0; S.upper = 0; S.pose = 1; S.kal = 3; S.echo = .6; S.echoZoom = 1.03; S.echoRot = .03; S.focal = 1.35; }
   else if (t < T.C4) { const k = seg(t, T.C3, T.C4), tr = T.A3 - k * (T.A3 - T.A2) * 1.0; S.shot = "C3"; S.ts = Math.floor(tr * 10) / 10; const kk = seg(S.ts, T.A2, T.A3); S.cam = camera(mix3([1.1, 2.1, 3.9], [.7, 2.0, 3.2], kk), [0, 1.8, 0], -.06); S.glyph = Math.floor(h1(Math.floor(t * 20)) * 3); S.tear = .5; S.inv = 0; S.lines = .5; S.pose = t < ZAP.C + ZAP.D * .5 ? 0 : 1; zap(S, t, ZAP.C); }
-  else if (t < T.D) { const s = t - T.C4, k = seg(s, 0, T.D - T.C4), up = Math.floor(seg(s, LIFT, T.D - T.C4) * 8) / 8; S.shot = "C4"; S.cam = camera([.0, lerp(1.9, 2.3, k), lerp(4.1, 3.3, eOut(k))], [0, lerp(1.9, 2.2, k) + 1.3 * up, 0], 0); S.focal = 1.45; S.pose = 1; S.chair = [0, CHAIR_Y, 0];
-    S.lift = 5.2 * up * up; S.hang = STR.map(([, , at]) => (s >= LIFT ? 1 : .34 * eBackJ(seg(s, at, at + .14)))); S.strings = STR.map(([, , at]) => s >= at); S.staticK = STR.some(([, , at]) => s >= at && s < at + .05) ? .4 : .05; S.tear = s >= LIFT ? .35 : .08; S.echo = s >= LIFT ? .82 : 0; S.echoZoom = 1; S.glyph = s >= LIFT ? 3 : 2; }
+  else if (t < T.D) { const s = t - T.C4, k = seg(s, 0, T.D - T.C4), eye = t >= EYE.AT && t < EYE.AT + EYE.D, gone = t >= EYE.AT + EYE.D; S.shot = "C4"; S.cam = camera([.05, lerp(1.8, 1.95, k), lerp(3.9, 3.2, eOut(k))], [0, 1.45, 0], .02 * Math.sin(t * .7)); S.focal = 1.45; S.pose = 1; S.chair = [0, CHAIR_Y, 0];
+    S.body = gone ? 0 : 1; S.staticK = eye ? .1 : gone ? .7 * (1 - seg(t, EYE.AT + EYE.D, EYE.AT + .55)) + .05 : .06 + .04 * h1(Math.floor(t * 9)); S.tear = eye ? .25 : gone ? .6 * (1 - seg(t, EYE.AT + EYE.D, EYE.AT + .45)) : .06; S.inv = eye && Math.floor(t * 30) % 4 === 0 ? 1 : 0; S.shake = eye ? .02 : 0; S.flash = eye ? .35 * (1 - seg(t, EYE.AT, EYE.AT + .08)) : 0; S.echo = gone ? .6 : 0; S.echoZoom = .985; S.glyph = 2; }
   else if (t < T.D2) { const k = seg(t, T.D, T.D2), a = 1.2 + k * 1.1; S.shot = "D"; S.cam = camera([Math.sin(a) * lerp(8, 5.2, k), 2.6, Math.cos(a) * lerp(8, 5.2, k)], [0, 1.6, 0], 0); S.board = 0; S.upper = 0; S.body = 0; S.sceneK = seg(t, T.D + .2, T.D + 1.4); S.staticK = .08; S.focal = 1.7; }
   else if (t < T.F) { const e = t >= T.E; S.shot = e ? "E" : "D2"; S.cam = camera([0, HEAD[1], e ? lerp(.4, .58, eOut(seg(t, T.E, T.F))) : lerp(.7, .4, seg(t, T.D2, T.E))], [0, HEAD[1], HEAD[2]], 0); S.board = 0; S.upper = 0; S.chair = [0, CHAIR_Y, 0];
     S.glyph = e ? (t < T.E + .45 ? 1 : 4) : (h1(Math.floor(t * 3)) > .25 ? 2 : 3); S.lightK = e ? 1 : .55; S.flash = pulse(t, T.E, .01, .25) * .9; S.inv = e && t < T.E + .12 ? 1 : 0; S.echo = e ? .75 : 0; S.echoZoom = .97; S.shake = e ? .02 * pulse(t, T.E, .01, .5) : 0; S.staticK = e ? .1 : .16; S.tear = e ? .5 * pulse(t, T.E, .01, .6) : .05; }
   else { const k = eOut(seg(t, T.F, T.F + 1.1)); S.shot = "F"; S.cam = camera([lerp(0, 5, k), lerp(HEAD[1], 3.4, k), lerp(.6, 15, k)], [0, lerp(HEAD[1], 3.1, k), 0], 0); S.glyph = gl3; S.infinite = 0; S.lid = eIn(seg(t, T.LID, T.LID + .3)); S.staticK = .07 + .25 * seg(t, T.LID - .6, T.LID + .2); S.echo = .35; S.echoZoom = .99; }
-  const ps = S.pose; S.J = SIT.map((a, i) => mix3(a, LIE[i], eInOut(ps)));
+  const ps = S.pose; S.J = SIT.map((a, i) => mix3(a, BROKEN[i], eInOut(ps))); S.broken = ps >= .5 ? 1 : 0;
   if (S.hang) { STR.forEach(([, js], n) => js.forEach((j) => { S.J[j] = mix3(S.J[j], HANG[j], S.hang[n]); })); if (S.lift > 0 || S.hang[0] >= 1) S.J = S.J.map((p, i) => { const q = mix3(p, HANG[i], 1); return [q[0], q[1] + S.lift, q[2]]; }); }
   return S;
 }
@@ -256,6 +260,19 @@ function popup(S, anchor, dx, dy, text, kind, blue) { const a = proj(S, anchor);
 function walkers(t, y, n, dir) { tg.fillStyle = "#fff"; tg.strokeStyle = "#fff"; tg.lineCap = "round"; for (let i = 0; i < n; i++) { const x = (((t * .9 * dir + i * 1.7) % 22) + 22) % 22 - 2, X0 = x * U, s = .34 * U, ph = t * 7 + i * 1.3, sw = Math.sin(ph) * .45;
   tg.beginPath(); tg.arc(X0, y - s * 1.75, s * .2, 0, TAU); tg.fill(); tg.lineWidth = s * .2; tg.beginPath(); tg.moveTo(X0, y - s * 1.5); tg.lineTo(X0, y - s * .8); tg.stroke(); tg.lineWidth = s * .14;
   for (const k of [-1, 1]) { tg.beginPath(); tg.moveTo(X0, y - s * .8); tg.lineTo(X0 + Math.sin(sw * k) * s * .55, y - s * .1 + (k * sw > 0 ? -s * .08 : 0)); tg.moveTo(X0, y - s * 1.35); tg.lineTo(X0 - Math.sin(sw * k) * s * .4, y - s * .85); tg.stroke(); } } }
+function bigEye(t) {                                                                                   // 파랗고 기괴한 큰 눈: 화면을 가로지르는 눈꺼풀 틈, 동심원과 방사선이 가득한 홍채, 떨리는 찢어진 동공, 검은 핏줄
+  const n = Math.floor(t * 60), cx = Wd / 2 + (h1(n) - .5) * .25 * U, cy = Hd / 2 - .3 * U + (h1(n + 3) - .5) * .18 * U, w = 6.6 * U, h = (2.1 + .3 * h1(n + 7)) * U, ir = 1.95 * U;
+  tg.save(); tg.beginPath(); tg.moveTo(cx - w, cy); tg.quadraticCurveTo(cx, cy - h * 2, cx + w, cy); tg.quadraticCurveTo(cx, cy + h * 2, cx - w, cy); tg.closePath(); tg.fillStyle = "#fff"; tg.fill(); tg.clip();
+  tg.strokeStyle = "#000"; tg.lineWidth = .02 * U; for (let i = 0; i < 14; i++) { const a = i / 14 * TAU + h1(i) * .4, x0 = cx + Math.cos(a) * ir * .9, y0 = cy + Math.sin(a) * ir * .55; tg.beginPath(); tg.moveTo(x0, y0);   // 핏줄
+    for (let k = 1; k < 5; k++) { tg.lineTo(x0 + Math.cos(a) * ir * .55 * k + (h1(i * 9 + k + n) - .5) * .22 * U, y0 + Math.sin(a) * ir * .7 * k + (h1(i * 7 + k) - .5) * .3 * U); } tg.stroke(); }
+  tg.fillStyle = "#0b1aff"; tg.beginPath(); tg.arc(cx, cy, ir, 0, TAU); tg.fill(); tg.strokeStyle = "#000"; tg.lineWidth = .012 * U;
+  for (let i = 1; i < 9; i++) { tg.beginPath(); tg.arc(cx, cy, ir * i / 9 * (1 + .03 * Math.sin(i * 7 + n)), 0, TAU); tg.stroke(); }                                    // 동심원
+  tg.lineWidth = .009 * U; for (let i = 0; i < 40; i++) { const a = i / 40 * TAU + n * .02; tg.beginPath(); tg.moveTo(cx + Math.cos(a) * ir * .32, cy + Math.sin(a) * ir * .32); tg.lineTo(cx + Math.cos(a) * ir, cy + Math.sin(a) * ir); tg.stroke(); }   // 방사선
+  tg.fillStyle = "#fff"; for (let i = 0; i < 6; i++) { const a = i * 1.9 + n * .13, rr = ir * (.45 + .4 * h1(i + 2)); tg.beginPath(); tg.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, (.05 + .05 * h1(i + n)) * U, 0, TAU); tg.fill(); }               // 홍채 위를 떠도는 흰 점
+  tg.fillStyle = "#000"; tg.beginPath(); const pw = (.16 + .1 * h1(n + 11)) * U, ph = ir * .82; tg.moveTo(cx, cy - ph); tg.bezierCurveTo(cx + pw, cy - ph * .4, cx + pw * 1.6, cy + ph * .3, cx, cy + ph); tg.bezierCurveTo(cx - pw * 1.6, cy + ph * .3, cx - pw, cy - ph * .4, cx, cy - ph); tg.fill();   // 찢어진 세로 동공
+  tg.beginPath(); tg.arc(cx + (h1(n + 5) - .5) * .5 * U, cy + (h1(n + 6) - .5) * .5 * U, .09 * U, 0, TAU); tg.fill();                                                                                   // 떠도는 두 번째 동공
+  tg.restore(); tg.strokeStyle = "#000"; tg.lineWidth = .05 * U; tg.beginPath(); tg.moveTo(cx - w, cy); tg.quadraticCurveTo(cx, cy - h * 2, cx + w, cy); tg.quadraticCurveTo(cx, cy + h * 2, cx - w, cy); tg.closePath(); tg.stroke();
+}
 function nameTags(S, t, a) { const fl = (n) => (h1(Math.floor(t * 11) + n) > .82 ? (h1(Math.floor(t * 11) + n + 3) > .5 ? "#0b1aff" : "#000") : "#fff"); tg.globalAlpha = a; tg.textBaseline = "middle"; tg.textAlign = "left";
   tg.fillStyle = fl(1); tg.font = `400 ${.17 * U}px ${MONO}`; tg.fillText("1 in 0 0 0 0 0 0 0 0 0", 1.0 * U, 2.0 * U); tg.fillStyle = fl(2); tg.font = `700 ${.46 * U}px ${MONO}`; tg.fillText("illusionary", 1.0 * U, 2.5 * U); const w = tg.measureText("illusionary").width;
   tg.strokeStyle = "#fff"; tg.lineWidth = Math.max(1, U * .012); const c = proj(S, [0, 5.2, 0]) || [Wd / 2, Hd / 2]; tg.beginPath(); tg.moveTo(1.0 * U + w + .2 * U, 2.5 * U); tg.lineTo(c[0] - 1.2 * U, 2.5 * U); tg.stroke();
@@ -270,8 +287,9 @@ function drawText(t, S) {
     for (let i = 0; i < n; i++) { const a = i / n * TAU + t * .35, late = h1(i * 3.1) < sw, str = late ? s2 : s1, ch = str[i % str.length]; tg.save(); tg.translate(cx + Math.cos(a) * R, cy + Math.sin(a) * R * .42); tg.rotate(a + PI / 2); tg.globalAlpha = k * (late ? 1 : .8) * (Math.sin(a) > -.2 ? 1 : .35); tg.fillStyle = late ? "#0b1aff" : "#fff"; tg.fillText(ch, 0, 0); tg.restore(); }
     for (let i = 0; i < 26; i++) { const a = t * 1.4 - i * .06; tg.globalAlpha = k * (1 - i / 26) * .9; star8(cx + Math.cos(a) * R * 1.6, cy + Math.sin(a) * R * .7, (.13 - i * .004) * U, i ? "#0b1aff" : "#fff"); }
     tg.globalAlpha = 1; if (t > 11.5) for (let i = 0; i < Math.min(9, Math.floor((t - 11.5) / .07)); i++) { tg.globalAlpha = 1 - i * .09; tg.fillStyle = "#fff"; tg.font = `400 ${.22 * U}px ${MONO}`; tg.fillText("no, not yet.", cx, cy - .9 * U + i * .26 * U); } tg.globalAlpha = 1; return; }
-  if (S.body && !S.crowd && !S.flat && (S.pose < .5 || S.strings) && !(S.staticK > .8)) { tg.strokeStyle = "#fff"; tg.lineWidth = Math.max(1, U * .009); tg.globalAlpha = .75 * S.sceneK;                         // 꼭두각시 줄: 머리·두 손·두 무릎에서 위의 후광으로 (무너지면 끊어진다)
+  if (S.body && !S.crowd && !S.flat && S.pose < .5 && !(S.staticK > .8)) { tg.strokeStyle = "#fff"; tg.lineWidth = Math.max(1, U * .009); tg.globalAlpha = .75 * S.sceneK;                         // 꼭두각시 줄: 머리·두 손·두 무릎에서 위의 후광으로 (무너지면 끊어진다)
     [2, 7, 8, 11, 12].forEach((j) => { if (S.strings && !S.strings[STR.findIndex((x) => x[0] === j)]) return; const q = S.J[j], jy = S.chair[1] + q[1] + (j === 2 ? .19 : .05), a = proj(S, [S.chair[0] + q[0], jy, S.chair[2] + q[2]]), b = proj(S, [q[0] * .55, Math.max(4.68, jy + 2.6), q[2] * .55]); if (a && b) { tg.beginPath(); tg.moveTo(a[0], a[1]); tg.lineTo(b[0], b[1]); tg.stroke(); } }); tg.globalAlpha = 1; }
+  if (sh === "C4" && t >= EYE.AT && t < EYE.AT + EYE.D) bigEye(t);
   if (sh === "A1" || sh === "F") nameTags(S, t, sh === "A1" ? seg(t, .5, .8) : seg(t, T.F + .25, T.F + .6));
   if (sh === "A2" || sh === "C3") { popup(S, [S.chair[0] + .3, CHAIR_Y + .9, .2], 1.6, -1.2, SMALLS[0], 0, false); if (t > T.A2 + .7 || sh === "C3") popup(S, [-.5, CHAIR_Y + .1, .4], -4.6, 1.3, SMALLS[2], 1, true); }
   if (sh === "A3") { walkers(t, Hd * .2, 5, 1); walkers(t + 3, Hd * .86, 4, -1); }
@@ -288,7 +306,7 @@ function render(t) {
   const camM = new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f]), J = new Float32Array(45); S.J.forEach((p, i) => J.set(p, i * 3)); const da = S.ts * .5, cy = Math.cos(da), sy = Math.sin(da), cx = Math.cos(da * .7), sx = Math.sin(da * .7);
   if (!S.flat) X.pass(P.scene(), RT.scene, (u) => { gl.uniform2f(u.uRes, sw, shh); gl.uniform1f(u.uT, S.ts); gl.uniform3f(u.uCamPos, S.cam.pos[0], S.cam.pos[1], S.cam.pos[2]); gl.uniformMatrix3fv(u.uCam, false, camM); gl.uniform1f(u.uFocal, S.focal); gl.uniform1i(u.uZero, 0);
     gl.uniform3fv(u.uJ, J); gl.uniform3f(u.uChair, S.chair[0], S.chair[1], S.chair[2]); gl.uniformMatrix3fv(u.uDiceR, false, new Float32Array([cy, 0, -sy, sy * sx, cx, cy * sx, sy * cx, -sx, cy * cx])); X.bindTex(0, prev.tex, u.uPrev);
-    gl.uniform1f(u.uCrowd, S.crowd); gl.uniform1f(u.uBend, S.bend); gl.uniform1f(u.uUpper, S.upper); gl.uniform1f(u.uBoard, S.board); gl.uniform1f(u.uInfinite, S.infinite); gl.uniform1f(u.uBody, S.body); gl.uniform1f(u.uGlyph, S.glyph); gl.uniform1f(u.uUpRot, S.ts * .22); gl.uniform1f(u.uMirrorInv, S.mirrorInv); gl.uniform1f(u.uLightK, S.lightK); });
+    gl.uniform1f(u.uCrowd, S.crowd); gl.uniform1f(u.uBend, S.bend); gl.uniform1f(u.uUpper, S.upper); gl.uniform1f(u.uBoard, S.board); gl.uniform1f(u.uInfinite, S.infinite); gl.uniform1f(u.uBody, S.body); gl.uniform1f(u.uGlyph, S.glyph); gl.uniform1f(u.uUpRot, S.ts * .22); gl.uniform1f(u.uMirrorInv, S.mirrorInv); gl.uniform1f(u.uLightK, S.lightK); gl.uniform1f(u.uBroken, S.broken || 0); });
   const bloomTex = X.bloom(RT.scene.tex, .8);
   X.pass(P.final(), cur, (u) => { X.bindTex(0, RT.scene.tex, u.uScene); X.bindTex(1, bloomTex, u.uBloom); X.bindTex(2, txtTex, u.uTxt); X.bindTex(3, prev.tex, u.uPrev); gl.uniform2f(u.uRes, pw, ph); gl.uniform3f(u.uFlatCol, S.flatCol[0], S.flatCol[1], S.flatCol[2]); gl.uniform1f(u.uT, t);
     gl.uniform1f(u.uEcho, S.echo); gl.uniform1f(u.uEchoZoom, S.echoZoom); gl.uniform1f(u.uEchoRot, S.echoRot); gl.uniform1f(u.uTear, S.tear); gl.uniform1f(u.uStatic, S.staticK); gl.uniform1f(u.uLid, S.lid); gl.uniform1f(u.uFlash, S.flash); gl.uniform1f(u.uInv, S.inv);
@@ -302,7 +320,7 @@ const player = CSUI.create({
   no: "04", title: "ILLUSIONARY", sub: "ドリームステート", hero: "/thumbs/illusionary_hero.jpg",
   tagline: "이해하려 하지 마세요. 끝없는 판, 접히는 공간, 얼굴 속의 거울 — 그리고 줄곧 당신 뒤에 있던 것.\n파랑 · 흰색 · 검정. 대사는 없습니다.",
   meta: [["0:27", "Length"], ["1 in 0 0 0 0 0 0 0 0 0", "Rarity"], ["WebGL2 · 3D", "Renderer"]],
-  chapters: [{ t: 0, name: "the board" }, { t: T.A5, name: "the mirror" }, { t: T.B, name: "no, not yet." }, { t: T.C1, name: "the eye" }, { t: T.C4, name: "strings" }, { t: T.D, name: "the chair" }, { t: T.E, name: "☻" }],
+  chapters: [{ t: 0, name: "the board" }, { t: T.A5, name: "the mirror" }, { t: T.B, name: "no, not yet." }, { t: T.C1, name: "the eye" }, { t: T.C4, name: "the eye" }, { t: T.D, name: "the chair" }, { t: T.E, name: "☻" }],
   captions: [],
   prepare() { resize(); P.scene(); P.final(); P.copy(); },
   simulate(tt) { time = tt; if (X && RT.scene) for (let i = 8; i > 0; i--) render(Math.max(0, tt - i / 60)); },          // 되먹임 버퍼를 몇 프레임 채워 둔다
