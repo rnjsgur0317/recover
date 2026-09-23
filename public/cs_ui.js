@@ -4,6 +4,7 @@
    const player = CSUI.create({
      stage, audio, volume, duration,                    // 무대 요소(#cs), <audio>(없어도 됨), 음량, 전체 길이(초)
      recW / recH: 영상 저장 해상도(기본 1920x1080, 예: 3840x2160 = 4K)
+     maxMB: 저장 영상 크기 상한(MB) — 길이에 맞춰 비트레이트를 낮춘다(예: 100)
      theme: "ink" | "lumen", no, title, sub, tagline, meta: [[값, 이름]…], hero, variants: [{ label, href, on }],
      chapters: [{ t, name }], captions: [{ a, b, s }], capBlend: true(바탕 반대색) | false(그림자),
      prepare(),            // 재생 직전: 캔버스 크기·리소스 준비 (실패하면 throw)
@@ -170,7 +171,8 @@ function create(cfg) {
     const rc = document.createElement("canvas"); rc.width = RW; rc.height = RH; const stream = rc.captureStream(60), chunks = [];
     if (audio) { try { if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); asrc = actx.createMediaElementSource(audio); asrc.connect(actx.destination); }
       const dest = actx.createMediaStreamDestination(); asrc.connect(dest); actx.resume(); dest.stream.getAudioTracks().forEach((tr) => stream.addTrack(tr)); rec = { dest }; } catch (e) { console.warn("오디오 없이 녹화", e); } }
-    const mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: RH > 1080 ? 45e6 : 12e6, audioBitsPerSecond: 192e3 });
+    const vbr = Math.round(Math.min(RH > 1080 ? 45e6 : 12e6, cfg.maxMB ? cfg.maxMB * 8e6 * .86 / ((cfg.duration || 30) + 2.5) - 192e3 : Infinity));   // maxMB: 파일 크기 상한(MB)
+    const mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: vbr, audioBitsPerSecond: 192e3 });
     rec = Object.assign(rec || {}, { rc, rg: rc.getContext("2d"), mr, chunks, mime, cancelled: false });
     mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     mr.onstop = () => { const r0 = rec; rec = null; if (r0.dest && asrc) { try { asrc.disconnect(r0.dest); } catch (e) { /* 무시 */ } }

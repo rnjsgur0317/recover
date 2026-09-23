@@ -80,7 +80,7 @@ precision highp float; in vec2 vUv; out vec4 o;
 #define SHOT ${shot}
 uniform vec2 uRes; uniform float uT, uFocal, uTick; uniform vec3 uCamPos; uniform mat3 uCam; uniform int uZero; uniform vec4 uDigits;
 uniform float uClockG, uCupG, uBookG, uBookFlip, uWinSwap, uCrack, uRoomG, uScrOn;
-uniform vec3 uCol, uCol2, uE, uS, uF, uW0; uniform float uEat, uBuild, uBlackK, uFragOn, uAura, uGather, uForm, uWaveR, uSpin, uFlare, uStarK, uGhost, uWorldG; uniform vec4 uFrag[24], uBits[16], uTxtP[12]; uniform mat3 uR1, uR2;
+uniform vec3 uCol, uCol2, uE, uS, uF, uW0; uniform float uKick, uBeatI, uEat, uBuild, uBlackK, uFragOn, uAura, uGather, uForm, uWaveR, uSpin, uFlare, uStarK, uGhost, uWorldG; uniform vec4 uFrag[24], uBits[16], uTxtP[12]; uniform mat3 uR1, uR2;
 uniform sampler2D uScr, uAtlas;
 ${CSGL.NOISE}
 ${GL_COMMON}
@@ -243,6 +243,7 @@ float cellTop(vec2 c, out float th){ vec2 cc = c + .5; th = 0.; float r = length
   float n = fbm(c * .06 + 3.), h = floor((n - .42) * 22.) * .5; if (h < -4.) return -99.;
   float tk = floor(uT * 7.), j = hash(c + tk * 1.7); if (j < .05 * (1. + uWorldG)) h += floor((hash(c + tk + 3.) - .5) * 6.) * .5; if (j > .975) return -99.;   // 불안정하게 들썩이고, 사라졌다 나타난다
   float wd = length(cc - uW0.xz) - uWaveR; h += 3.5 * exp(-wd * wd * .015) * step(0., uWaveR);                                     // 거대한 파동이 지형을 들어 올린다
+  if (uKick > .02 && hash(c + uBeatI * 7.31) < .24) h += floor(uKick * 3.5) * .5;                                                 // 킥마다 픽셀 기둥이 튄다
   th = 1. + floor(hash(c + 9.) * 6.) * .5 + max(h, 0.) * .6;
   if (uEat > 0.){ float st = (1. - clamp(r / 110., 0., 1.)) * .7 + hash(c + 31.) * .15, k = max(uEat - st, 0.), lift = k * k * 240. + k * 18.; if (lift > 40. + 30. * hash(c + 5.)) return -99.; h += lift; }   // 먼 곳부터 하늘로 빨려 올라간다
   return h; }
@@ -278,14 +279,14 @@ vec3 tShade(vec3 p, vec3 n, vec2 c, vec2 yr, float t){
   vec2 sp = floor(e2 * 6.); float fl = abs(n.y) > .5 ? 0. : floor(p.y) * 7.; float ph = hash(sp + c * 13. + fl);                            // 면마다 켜진 픽셀 창
   col += mix(uCol, uCol2, step(.5, hash(sp + c + fl))) * step(.955, ph) * (.3 + .5 * step(.4, hash(sp + c + floor(uT * 6.))));
   vec2 pg = abs(fract(e2 * 3.) - .5); col += uCol * smoothstep(aa * 4. + .015, 0., .5 - max(pg.x, pg.y)) * .06;                          // 얇은 회로 격자
-  col += uCol * smoothstep(aa * 2. + .02, 0., ed) * (n.y > .5 ? 1.1 : .6);
+  col += uCol * smoothstep(aa * 2. + .02, 0., ed) * (n.y > .5 ? 1.1 : .6) * (1. + 1.1 * uKick);
   if (uAura > 0.){ vec3 L = uS - p; float dl = length(L); vec3 l = L / dl; col += uCol * max(dot(n, l), 0.) * uAura * (1.6 + 3. * uFlare) * 1600. / (dl * dl + 1600.) * .18;   // 거대한 별빛에 물든다
     col += mix(uCol, vec3(1.), .5) * pow(max(dot(reflect(normalize(p - uCamPos), n), l), 0.), 60.) * uAura * .8 * step(.5, n.y); }
   col += uCol2 * step(.995, hash(c + floor(uT * 5.))) * .5;
   float wd = abs(length(p.xz - uW0.xz) - uWaveR); col += (uCol2 + .6) * exp(-wd * .5) * 1.6 * step(0., uWaveR); return col; }
 vec3 platShade(vec3 p, vec3 rd, float t){
   vec2 g = abs(fract(p.xz) - .5); float aa = t * 1.6 / uRes.y / max(-rd.y, .05), grid = smoothstep(aa * 1.5 + .012, 0., .5 - max(g.x, g.y));
-  vec3 col = vec3(.004, .003, .008) + uCol * grid * .16 * (.6 + .4 * step(.5, hash(floor(p.xz) + floor(uT * 6.)))); col += gsky(reflect(rd, vec3(0., 1., 0.))) * .14;
+  vec3 col = vec3(.004, .003, .008) + uCol * grid * (.16 + .5 * uKick) * (.6 + .4 * step(.5, hash(floor(p.xz) + floor(uT * 6.)))); col += gsky(reflect(rd, vec3(0., 1., 0.))) * .14;
   float dF = length(p.xz - uF.xz); col += uAura * (uCol * (smoothstep(.1, 0., abs(dF - 2.6)) * 3. + smoothstep(.06, 0., abs(dF - 3.2)) * 1.5 + exp(-dF * 1.3) * 1.2) + vec3(1.) * smoothstep(.035, 0., abs(dF - 2.6)) * 2.5);   // 발밑의 밝은 원
   if (uAura > 0.){ vec3 L = uS - p; float dl = length(L); col += uCol * uAura * (L.y / dl) * 1600. / (dl * dl + 1600.) * .3; }
   if (uGather > 0.) col += vec3(.5, .1, 1.) * uGather * .8 / (1. + dot(p - uE, p - uE) * .6);
@@ -316,7 +317,7 @@ vec2 gmap(vec3 p){ vec2 r = vec2(1e9, -1.); gF = 1e9;
 vec3 gnormal(vec3 p){ vec3 n = vec3(0.); for (int i = uZero; i < 4; i++){ vec3 e = .5773 * (2. * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.); n += e * gmap(p + .004 * e).x; } return normalize(n); }
 vec3 gshade(vec3 p, vec3 n, vec3 rd, float id){ float ndv = max(dot(n, -rd), 0.), rim = pow(1. - ndv, 3.);
   if (id < 0.) return vec3(0.);
-  if (id < 31.5) return mix(uCol * 1.5, vec3(2.1), pow(ndv, 5.) * .6) * (1. + .7 * uFlare);                                  // 네온관: 가운데는 희고 가장자리는 색
+  if (id < 31.5) return mix(uCol * 1.5, vec3(2.1), pow(ndv, 5.) * .6) * (1. + .7 * uFlare + .6 * uKick);                                  // 네온관: 가운데는 희고 가장자리는 색
   if (id < 32.5){ vec3 q = p - uS; vec2 s2 = vec2(dot(q, uCam[0]), dot(q, uCam[1])); float rr = length(s2) / (8.5 * uStarK + .01);
     return mix(uCol * 1.5, vec3(2.), smoothstep(.6, .05, rr) * .6) * (1. + .8 * uFlare) + uCol * rim * 1.2; }
   if (id < 34.5) return vec3(.002) + uCol * rim * 1.5 + uCol * .02;
@@ -369,7 +370,7 @@ void main(){
 `;
 const FS_FINAL = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uInvert, uTear, uRGB, uBlockG, uPix, uNoiseV, uLid, uBlur, uGrade, uScan, uSwirl, uEatS, uClose; uniform vec2 uStarUV; uniform vec3 uNeon;
+uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uInvert, uTear, uRGB, uBlockG, uPix, uNoiseV, uLid, uBlur, uGrade, uScan, uSwirl, uEatS, uClose; uniform vec2 uStarUV; uniform vec3 uNeon; uniform float uGrainK;
 ${CSGL.NOISE}
 vec3 scene(vec2 uv){ vec4 c0 = texture(uScene, uv); float coc = max(clamp(abs(c0.a - uFocus) / max(c0.a, .3) * uAper, 0., 1.) * .012, uBlur * .02); if (coc < .0006) return c0.rgb;   // 피사계 심도 · 막 깬 눈의 흐림
   vec3 acc = c0.rgb; float n = 1.; for (int i = 0; i < 16; i++){ float fi = float(i) + .5, a = fi * 2.39996, r = sqrt(fi / 16.) * coc; vec2 d = vec2(cos(a), sin(a)) * r * vec2(uRes.y / uRes.x, 1.); vec4 sx = texture(uScene, uv + d); float w = 1. + 2. * max(max(sx.r, sx.g), sx.b); acc += sx.rgb * w; n += w; } return acc / n; }
@@ -390,7 +391,7 @@ void main(){
   col = mix(col, vec3(1.) - min(col, vec3(1.)), uInvert); col += vec3(1.) * uFlash;
   col = (col * (2.51 * col + .03)) / (col * (2.43 * col + .59) + .14); col = pow(clamp(col, 0., 1.), vec3(1. / 2.2));
   vec3 warm = col * vec3(1.05, 1., .9) + vec3(.012, .006, 0.), cold = col * vec3(.92, .9, 1.08) + vec3(.008, 0., .016); col = mix(warm, cold, uGrade);                                   // 따뜻한 아침 ↔ 차가운 글리치 세계
-  col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * (.03 + .03 * uGrade); float v = length((vUv - .5) * vec2(1., .8)); col *= 1. - smoothstep(.45, 1.1, v) * .55;
+  col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * (.03 + .03 * uGrade) * uGrainK; float v = length((vUv - .5) * vec2(1., .8)); col *= 1. - smoothstep(.45, 1.1, v) * .55;
   col *= 1. - uScan * .3 * (.5 + .5 * sin(gl_FragCoord.y * 2.1));
   if (uNoiseV > 0.){ vec2 q = vUv; float edge = min(min(q.x, 1. - q.x), min(q.y, 1. - q.y)), m = fbm(q * vec2(7., 4.) + vec2(uT * .6, -uT * .4)) * .7 + (.5 - edge) * 1.1;          // 시야에 검은 잡음이 번진다
     float cover = smoothstep(1.2 - uNoiseV * 1.5, 1.26 - uNoiseV * 1.5, m); col = mix(col, vec3(hash(floor(gl_FragCoord.xy / 3.) + tk)) * .18 * step(.75, hash(floor(gl_FragCoord.xy / 3.) * 1.3 + tk)), cover); }
@@ -477,6 +478,18 @@ function drawOverlay(t, S) {
 
 /* ═════════════════ 연출: 시각 t → 장면 · 카메라 · 글리치 (순수 함수) ═════════════════ */
 const TXTP = (() => { const r = rng(909), out = []; for (let i = 0; i < 12; i++) { const a = -2.2 + r() * 4.4, R = 10 + r() * 26; out.push({ p: [Math.sin(a) * R, 2.5 + r() * 11, -Math.cos(a) * R], row: Math.floor(r() * 16), ph: r() * 9, on: r() }); } return out; })();
+const BT = .5, G0 = T.AURA - 14 * BT, at = (k) => G0 + k * BT;                                           // 음원(make_glitch_audio.py)과 같은 박자 격자: 17.0 부터 120 BPM
+const KICKS = [], SNARES = [], ROLL = []; for (let k = 2; k < 12; k++) KICKS.push(at(k)); KICKS.push(at(13.5)); for (let k = 14; at(k) < T.FINAL; k++) KICKS.push(at(k));
+for (let k = 4; k < 12; k += 2) SNARES.push(at(k + 1)); for (let k = 14; at(k + 1) < T.FINAL; k += 2) SNARES.push(at(k + 1));
+{ let tr = T.GATHER; while (tr < at(12) - .01) { const u = (tr - T.GATHER) / (at(12) - T.GATHER); ROLL.push(tr); tr += BT / (u < .35 ? 2 : u < .7 ? 4 : 8); } }
+const STUT = [[5.5, BT / 8, 4], [7.5, BT / 16, 8], [9.25, BT / 8, 6], [11.5, BT / 16, 8], [17.5, BT / 8, 4]].map(([k, g, r]) => [at(k), g, r]);
+function stutterT(t) { for (const [s0, g, r] of STUT) if (t >= s0 && t < s0 + g * r) return s0 + ((t - s0) % g); return t; }   // 음원의 되풀이 편집과 같은 자리에서 화면도 되풀이된다
+function audioT(t) { if (t < T.DEVOUR) return t; const L = T.FINAL - T.DEVOUR, x = Math.min(t, T.FINAL) - T.DEVOUR; return T.DEVOUR + x - .72 * L * Math.pow(x / L, 2.4) / 2.4; }   // 빨려 드는 구간은 음원이 테이프처럼 느려진다
+const lastHit = (list, t, d) => { let v = 0; for (const h of list) { if (h > t) break; v = Math.max(v, Math.exp(-(t - h) / d)); } return v; };
+function beatAt(t) { const a = audioT(t), brk = a >= at(12) && a < at(14);
+  const kick = lastHit(KICKS, a, .085), snare = lastHit(SNARES, a, .07), roll = lastHit(ROLL, a, .05), s16 = a >= at(2) && !brk ? Math.exp(-(((a - G0) % (BT / 4)) + 1e-3) / .03) : 0;
+  const drop = a >= T.AURA, wob = drop ? .5 + .5 * Math.sin(TAU * ((a - T.AURA) * ((Math.floor((a - T.AURA) / (BT * 4)) % 2) ? 6 : 4))) : 0;
+  return { kick, snare, roll, s16, wob, brk, idx: Math.floor((a - G0) / BT) }; }
 function lidAt(t) {
   if (t < T.OPEN) return 1;
   if (t < 1.35) return 1 - .7 * eOut(seg(t, T.OPEN, 1.35));
@@ -493,7 +506,7 @@ function lidAt(t) {
 function state(t) {
   const S = { shot: 0, focal: 1.3, focus: 2, aper: .3, blur: 0, lid: lidAt(t), grade: 0, tear: 0, rgb: 0, blockG: 0, pix: 1, noiseV: 0, scan: 0, flash: 0, invert: 0, fade: 0, shake: 0,
     digits: [0, 7, 3, 0], clockG: 0, cupG: 0, bookG: 0, bookFlip: 0, winSwap: 0, crack: 0, roomG: 0, scrOn: 1, tick: Math.floor(t * 24),
-    aura: 0, eat: 0, build: 1, blackK: 1, swirl: 0, eatS: 0, close: 0, gather: 0, form: 0, waveR: -1, spin: 0, flare: 0, starK: 0, ghost: 0, worldG: 0, E: E0, S: S0, rays: .35 };
+    kick: 0, beatI: 0, zoomK: 0, aura: 0, eat: 0, build: 1, blackK: 1, swirl: 0, eatS: 0, close: 0, gather: 0, form: 0, waveR: -1, spin: 0, flare: 0, starK: 0, ghost: 0, worldG: 0, E: E0, S: S0, rays: .35 };
   const br = [Math.sin(t * 1.3) * .012, Math.sin(t * 1.9 + 1) * .01, Math.sin(t * .9 + 2) * .01];                     // 숨결 · 손떨림
   let cam;
   if (t < T.CLOCK) {                                                                                        // 눈을 뜬다
@@ -557,32 +570,35 @@ function state(t) {
     S.flash = Math.max(.9 * pulse(t, T.AURA, .01, .4), .45 * pulse(t, T.B1, .01, .25), .45 * pulse(t, T.B2, .01, .25), .3 * wPass); S.invert = (t >= T.AURA && t < T.AURA + .05) || (wPass > .9) || (t >= T.FINAL && h1(S.tick) > .6) ? 1 : 0;
     S.pix = t >= T.FINAL ? 1 + Math.floor(eIn(seg(t, T.FINAL, T.BLACK)) * 5) : pulse(t, T.FORM, .01, .3) > .3 ? 6 : 1; S.shake = Math.max(wPass, pulse(t, T.AURA, .01, .4), .6 * pulse(t, T.B1, .01, .4), .6 * pulse(t, T.B2, .01, .4), .5 * S.eat, t >= T.FINAL ? .8 : 0);
     S.fade = Math.max(1 - seg(t, T.WAKE, T.WAKE + .25), t >= T.BLACK ? 1 : 0);
-  }
+    if (t >= at(2) - .05 && t < T.FINAL) { const B = beatAt(t), d = t >= T.AURA ? 1 : .6; S.kick = B.kick * (t < T.GATHER ? .8 : 1); S.beatI = B.idx;   // 새 비트에 맞춘다
+      S.zoomK = .03 * B.kick * d; S.flash = Math.max(S.flash, .16 * B.kick * d, .1 * B.snare); S.tear = Math.max(S.tear * (B.brk ? .4 : 1), .22 * B.kick * d, .45 * B.snare * d, .35 * B.roll);
+      S.rgb = Math.max(S.rgb, .9 * B.kick * d, .7 * B.snare, .5 * B.roll); S.blockG = Math.max(S.blockG, .35 * B.snare * d); S.scan = .45 + .35 * B.s16; S.shake = Math.max(S.shake, .25 * B.kick * d);
+      if (t >= T.AURA) { S.flare = Math.max(S.flare, .55 * B.kick + .25 * B.wob); S.starK *= 1 + .045 * B.kick; S.rgb += .25 * B.wob; } } }
   S.cam = cam; return S;
 }
-function render(t) {
-  const S = state(t), gl = X.gl, pw = glc.width, ph = glc.height, TG = RT.lo && S.shot === 1 && t >= T.AURA - .1 ? RT.lo : RT.scene, sw = TG.w, sh = TG.h;
+function render(t0) {
+  const t = t0 >= T.WAKE ? stutterT(t0) : t0, S = state(t), gl = X.gl, pw = glc.width, ph = glc.height, TG = RT.lo && S.shot === 1 && t >= T.AURA - .1 ? RT.lo : RT.scene, sw = TG.w, sh = TG.h;
   if (S.shot === 0 && t >= T.DESK - .1 && t < T.DARK) { drawScreen(t); X.upload(scrTex, scv, false); } else if (t < 1) { drawScreen(0); X.upload(scrTex, scv, false); }
   drawOverlay(t, S); X.upload(txtTex, tcv, true); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
   const prog = P.s[S.shot](), u = prog.u, f1 = (n, v) => { if (u[n] != null) gl.uniform1f(u[n], v || 0); }, v3 = (n, v) => { if (u[n] != null) gl.uniform3f(u[n], v[0], v[1], v[2]); };
   X.pass(prog, TG, () => { gl.uniform2f(u.uRes, sw, sh); f1("uT", t); f1("uTick", S.tick); if (u.uZero != null) gl.uniform1i(u.uZero, 0); v3("uCamPos", S.cam.pos); gl.uniformMatrix3fv(u.uCam, false, new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f])); f1("uFocal", S.focal);
     if (u.uDigits != null) gl.uniform4f(u.uDigits, ...S.digits); if (u.uScr != null) X.bindTex(4, scrTex, u.uScr); if (u.uAtlas != null) X.bindTex(5, atlasTex, u.uAtlas);
     for (const [n, v] of [["uClockG", S.clockG], ["uCupG", S.cupG], ["uBookG", S.bookG], ["uBookFlip", S.bookFlip], ["uWinSwap", S.winSwap], ["uCrack", S.crack], ["uRoomG", S.roomG], ["uScrOn", S.scrOn],
-      ["uAura", S.aura], ["uGather", S.gather], ["uForm", S.form], ["uWaveR", S.waveR], ["uSpin", S.spin], ["uFlare", S.flare], ["uStarK", S.starK], ["uGhost", S.ghost], ["uWorldG", S.worldG], ["uEat", S.eat], ["uBuild", S.build], ["uBlackK", S.blackK], ["uFragOn", S.frag && S.frag.some((v, i) => i % 4 === 3 && v > 0) ? 1 : 0]]) f1(n, v);
+      ["uAura", S.aura], ["uGather", S.gather], ["uForm", S.form], ["uWaveR", S.waveR], ["uSpin", S.spin], ["uFlare", S.flare], ["uStarK", S.starK], ["uGhost", S.ghost], ["uWorldG", S.worldG], ["uEat", S.eat], ["uBuild", S.build], ["uBlackK", S.blackK], ["uKick", S.kick], ["uBeatI", S.beatI], ["uFragOn", S.frag && S.frag.some((v, i) => i % 4 === 3 && v > 0) ? 1 : 0]]) f1(n, v);
     if (S.shot === 1) { v3("uCol", S.col); v3("uCol2", S.col2); v3("uE", S.E); v3("uS", S0); v3("uF", F0); v3("uW0", W0); if (u.uFrag != null) gl.uniform4fv(u.uFrag, S.frag); if (u.uBits != null) gl.uniform4fv(u.uBits, S.bits); if (u.uTxtP != null) gl.uniform4fv(u.uTxtP, S.txt);
       if (u.uR1 != null) gl.uniformMatrix3fv(u.uR1, false, S.r1); if (u.uR2 != null) gl.uniformMatrix3fv(u.uR2, false, S.r2); } });
   const lp = S.shot === 0 ? proj(S, add(S.cam.pos, mul(LSUN, 40))) : proj(S, S.aura > 0 ? S0 : S.E), lu = lp ? clamp(lp[0] / Wd) : .5, lv = lp ? clamp(1 - lp[1] / Hd) : .5;
   const bloomTex = X.bloom(TG.tex, S.shot === 0 ? 1.1 : 1.), raysTex = X.rays(lu, lv, .9), r0 = rng(Math.floor(t * 60)), hit = S.shake;
   X.pass(P.final(), null, (u2) => { X.bindTex(0, TG.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);
-    gl.uniform2f(u2.uShake, (r0() - .5) * hit * .02, (r0() - .5) * hit * .02); gl.uniform1f(u2.uZoom, 1 + .02 * hit); gl.uniform1f(u2.uCA, .0012 + .006 * hit); gl.uniform1f(u2.uBloomK, S.shot === 0 ? .35 : .42); gl.uniform1f(u2.uRayK, lp ? S.rays : 0);
+    gl.uniform2f(u2.uShake, (r0() - .5) * hit * .02, (r0() - .5) * hit * .02); gl.uniform1f(u2.uZoom, 1 + .02 * hit + S.zoomK); gl.uniform1f(u2.uCA, .0012 + .006 * hit); gl.uniform1f(u2.uBloomK, S.shot === 0 ? .35 : .42); gl.uniform1f(u2.uRayK, lp ? S.rays : 0);
     for (const [n, v] of [["uFocus", S.focus], ["uAper", S.aper], ["uFlash", S.flash * S.flash], ["uFade", S.fade], ["uInvert", S.invert], ["uTear", S.tear], ["uRGB", S.rgb], ["uBlockG", S.blockG], ["uPix", S.pix * ph / 720], ["uNoiseV", S.noiseV], ["uLid", S.lid], ["uBlur", S.blur], ["uGrade", S.grade], ["uScan", S.scan], ["uSwirl", S.swirl], ["uEatS", S.eatS], ["uClose", S.close]])
       if (u2[n] != null) gl.uniform1f(u2[n], v);
-    const sp = S.shot === 1 && S.aura > 0 ? proj(S, S0) : null, nc = S.col || [1, 1, 1]; gl.uniform2f(u2.uStarUV, sp ? sp[0] / Wd : .5, sp ? 1 - sp[1] / Hd : .7); gl.uniform3f(u2.uNeon, nc[0], nc[1], nc[2]); });
+    const sp = S.shot === 1 && S.aura > 0 ? proj(S, S0) : null, nc = S.col || [1, 1, 1]; gl.uniform2f(u2.uStarUV, sp ? sp[0] / Wd : .5, sp ? 1 - sp[1] / Hd : .7); gl.uniform3f(u2.uNeon, nc[0], nc[1], nc[2]); if (u2.uGrainK != null) gl.uniform1f(u2.uGrainK, $("cs").classList.contains("rec") ? .35 : 1); });
 }
 
 /* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
 const player = CSUI.create({
-  stage: $("cs"), audio: bgm, volume: .9, duration: T.END, theme: "glitch", capBlend: false, recW: 3840, recH: 2160,
+  stage: $("cs"), audio: bgm, volume: .9, duration: T.END, theme: "glitch", capBlend: false, recW: 3840, recH: 2160, maxMB: 100,
   no: "07", title: "GLITCH", sub: "글리치", hero: "/thumbs/glitch_hero.jpg",
   tagline: "아무것도 특별하지 않은 아침이, 조금씩 망가진다.\n1 in !@#$%^&*()",
   meta: [["0:30", "Length"], ["120 BPM", "Tempo"], ["4K · 3D", "Renderer"]],
