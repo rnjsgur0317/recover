@@ -64,7 +64,7 @@ let Wd = 0, Hd = 0, U = 0, DPR = 1, DPR_CAP = 2, SCALE = 1, slow = 0, time = 0, 
 /* ═════════════════ 셰이더 ═════════════════ */
 const FS_SCENE = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform vec2 uRes; uniform float uT, uFocal, uCore, uCage, uBreak, uShipK, uBars, uVortex, uDebris, uBob, uFlare, uGrey, uPulse, uSky, uOver, uBurst, uPull, uCubesK, uShock, uBoom; uniform vec3 uCamPos, uCol, uColW; uniform vec4 uFrag[24]; uniform mat3 uCam, uCubeR[3]; uniform vec4 uShip[2]; uniform float uSpec[24]; uniform int uZero;
+uniform vec2 uRes; uniform float uT, uFocal, uCore, uCage, uBreak, uShipK, uBars, uVortex, uDebris, uBob, uFlare, uGrey, uPulse, uSky, uOver, uBurst, uPull, uCubesK, uShock, uBoom; uniform vec3 uCamPos, uCol, uColW; uniform vec4 uFrag[24]; uniform vec3 uTang[32]; uniform mat3 uCam, uCubeR[3]; uniform vec4 uShip[2]; uniform float uSpec[24]; uniform int uZero;
 ${CSGL.NOISE}
 const vec3 C0 = vec3(0., 9.5, 0.);
 float sdBox(vec3 p, vec3 b){ vec3 d = abs(p) - b; return length(max(d, 0.)) + min(max(d.x, max(d.y, d.z)), 0.); }
@@ -72,15 +72,39 @@ float sdFrame(vec3 p, vec3 b, float e){ p = abs(p) - b; vec3 q = abs(p + e) - e;
   return min(min(length(max(vec3(p.x, q.y, q.z), 0.)) + min(max(p.x, max(q.y, q.z)), 0.), length(max(vec3(q.x, p.y, q.z), 0.)) + min(max(q.x, max(p.y, q.z)), 0.)), length(max(vec3(q.x, q.y, p.z), 0.)) + min(max(q.x, max(q.y, p.z)), 0.)); }
 mat3 rotY3(float a){ float c = cos(a), s = sin(a); return mat3(c, 0., -s, 0., 1., 0., s, 0., c); }
 vec2 opU(vec2 a, vec2 b){ return a.x < b.x ? a : b; }
-float ship(vec3 q){ float d = sdBox(q, vec3(.9, .14, .24)); d = min(d, sdBox(q - vec3(-.2, 0., 0.), vec3(.3, .05, 1.15))); d = min(d, sdBox(q - vec3(-.75, .2, 0.), vec3(.15, .2, .07))); d = min(d, sdBox(q - vec3(.9, 0., 0.), vec3(.3, .07, .1))); d = min(d, sdBox(q - vec3(-.2, -.02, 0.), vec3(.5, .09, .5)) - .04); return d; }   // 우주선: 동체 · 날개 · 꼬리 · 기수 · 엔진부
+float gE = 1e9; bool gShadow = false;                                                               // gE: 이번 map 호출에서 발광체까지의 최단 거리(주 레이마칭의 빛 누적용) · 그림자 광선은 가는 발광선을 무시
+float sdSeg(vec3 p, vec3 a, vec3 b, float r){ vec3 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0., 1.)) - r; }
+float sdEll(vec3 p, vec3 r){ float k0 = length(p / r), k1 = length(p / (r * r)); return k0 * (k0 - 1.) / k1; }
+/* 우주선(기수 +x): 유선형 동체 · 후퇴익 · 쌍수직꼬리 · 쌍엔진 → part: 0 동체, 1 캐노피(발광), 2 배기구(발광) */
+float ship(vec3 q, out float part){
+  float fus = sdEll(q - vec3(.05, 0., 0.), vec3(1.15, .19, .24)); vec3 w = q - vec3(-.3, -.03, 0.); w.x += abs(w.z) * .62; float wing = sdBox(w, vec3(.3 - .12 * abs(w.z), .025, 1.18)) - .01;
+  vec3 f = vec3(q.x + .82, q.y - .22, abs(q.z) - .3); f.x += f.y * .7; float fin = sdBox(f, vec3(.17 - .1 * clamp(f.y / .2, 0., 1.), .2, .02)) - .006;
+  vec3 e = vec3(q.x + .72, q.y + .04, abs(q.z) - .34); float eng = max(length(e.yz) - .095, abs(e.x) - .36) - .01; float can = sdEll(q - vec3(.38, .13, 0.), vec3(.34, .1, .12)), exh = max(length(e.yz) - .07, abs(e.x + .37) - .02);
+  float d = min(min(fus, wing), min(fin, eng)); part = 0.; if (can < d){ d = can; part = 1.; } if (exh < d){ d = exh; part = 2.; } return d;
+}
+vec2 ego(vec3 c, float dc){                                                                          // E.G.O: 밀도 있는 발광 구조물
+  if (dc > 4.3){ gE = min(gE, dc - 4.); return vec2(dc - 4.1, -1.); }
+  float k = 1. - .12 * uOver, d = 1e9; vec3 q0 = c * uCubeR[0], q1 = c * uCubeR[1], q2 = c * uCubeR[2];
+  d = min(d, sdFrame(q0, vec3(3.1 * k), .06)); d = min(d, sdFrame(q1, vec3(1.9 * k), .05)); d = min(d, sdFrame(q2, vec3(1.05 * k), .045));                                   // 큐브 3겹
+  d = min(d, sdFrame(q0 * uCubeR[2], vec3(2.5 * k), .02)); d = min(d, sdFrame(q1 * uCubeR[0], vec3(1.45 * k), .018)); d = min(d, sdFrame(q2 * uCubeR[1], vec3(.72 * k), .016));  // 사이사이 가는 큐브 3겹
+  float sz = 3.1 * k; d = min(d, sdSeg(q0, vec3(sz), -vec3(sz), .014)); d = min(d, sdSeg(q0, vec3(-sz, sz, sz), vec3(sz, -sz, -sz), .014)); d = min(d, sdSeg(q0, vec3(sz, -sz, sz), vec3(-sz, sz, -sz), .014)); d = min(d, sdSeg(q0, vec3(-sz, -sz, sz), vec3(sz, sz, -sz), .014));   // 몸통 대각선
+  vec3 oa = abs(q1 * uCubeR[2]); float oc = 2.45 * k; d = min(d, min(sdSeg(oa, vec3(oc, 0., 0.), vec3(0., oc, 0.), .016), min(sdSeg(oa, vec3(0., oc, 0.), vec3(0., 0., oc), .016), sdSeg(oa, vec3(0., 0., oc), vec3(oc, 0., 0.), .016))));   // 팔면체
+  vec3 wq = q2 * k; for (int i = uZero; i < 16; i++) d = min(d, sdSeg(wq, uTang[i * 2], uTang[i * 2 + 1], .01));                                                         // 엉킨 선
+  float nd = min(min(length(abs(q0) - vec3(3.1 * k)) - .07, length(abs(q1) - vec3(1.9 * k)) - .055), min(length(abs(q2) - vec3(1.05 * k)) - .05, length(oa - vec3(oc, 0., 0.)) - .05));   // 꼭짓점 노드
+  float core = dc - .5 * (1. + .5 * uPulse + 2.4 * uOver * uOver) * uCore; gE = min(gE, min(min(d, nd), core));
+  return opU(vec2(min(d, nd), 2.), vec2(core, 3.));
+}
 vec2 map(vec3 p){
+  gE = 1e9;
   vec3 c = p - C0 - vec3(0., uBob, 0.); vec2 r = vec2(1e9, -1.); float dc = length(c);
   if (dc >= 9.5) r = vec2(dc - 9.4, -1.); else {
     if (uCage > .001){ float f = sdFrame(c, vec3(5.2), .17); f = min(f, sdFrame(c, vec3(5.2, .12, 5.2), .1)); f = min(f, sdFrame(c, vec3(.12, 5.2, 5.2), .1));                                                   // 봉인 우리: 큰 틀 + 가운데를 가로지르는 띠
       if (uBreak > 0.){ vec3 id = floor(c * .7 + 7.); float h = hash(id.xy + id.z * 3.7); if (h < uBreak) f = 1e9; } r = opU(r, vec2(f, 1.)); }
-    if (uCubesK > .01) for (int i = uZero; i < 3; i++){ float s = (i == 0 ? 3.1 : i == 1 ? 1.9 : 1.05) * (1. - .12 * uOver); vec3 q = c * uCubeR[i]; r = opU(r, vec2(sdFrame(q, vec3(s), .07 + .02 * float(2 - i)), 2.)); }                                           // 큐브 윤곽 3겹
-    if (uCubesK > .01) r = opU(r, vec2(dc - .5 * (1. + .5 * uPulse + 2.4 * uOver * uOver) * uCore, 3.)); }
-  if (uShipK > .001) for (int i = uZero; i < 2; i++){ vec3 q = rotY3(uShip[i].w) * (p - uShip[i].xyz); r = opU(r, length(q) < 2. ? vec2(ship(q) * .9, 4.) : vec2(length(q) - 1.9, -1.)); if (length(q) < 2.) r = opU(r, vec2(sdBox(q - vec3(-1.08, 0., 0.), vec3(.05, .07, .17)), 7.)); }   // 엔진 불빛
+    if (uCubesK > .01 && !gShadow) r = opU(r, ego(c, dc)); }
+  if (uShipK > .001) for (int i = uZero; i < 2; i++){ vec3 q = rotY3(uShip[i].w) * (p - uShip[i].xyz); float lq = length(q); if (lq > 2.3){ r = opU(r, vec2(lq - 2.2, -1.)); gE = min(gE, lq - 2.); continue; }
+    float part; float ds = ship(q, part); r = opU(r, vec2(ds * .9, part < .5 ? 4. : part < 1.5 ? 9. : 7.)); if (part > .5) gE = min(gE, ds);
+    if (!gShadow){ float sp = uT * (1.6 + .4 * float(i)); vec3 a = rotY3(sp) * q; a.xy = mat2(cos(sp * .7), -sin(sp * .7), sin(sp * .7), cos(sp * .7)) * a.xy;               // 아우라: 도는 와이어 껍질 · 기울어진 고리
+      float sh = sdFrame(a, vec3(1.3, .5, 1.3), .006), rg = length(vec2(length(vec3(q.x, q.y - q.x * .25, q.z).xz) - 1.8, q.y - q.x * .25)) - .012; float au = min(sh, rg); r = opU(r, vec2(au, 10.)); gE = min(gE, au + .05); } }
   if (uDebris > .001){ vec3 pd = C0 + (p - C0) * (1. + 2.5 * uPull); float C = 5.5, sc = 1. + 2.5 * uPull; vec3 id = floor(pd / C), lp = pd - (id + .5) * C; float h = hash(id.xy + id.z * 5.3);        // 떠다니는 복셀 파편 (과충전 때 핵으로 빨려들고, 터지면 밀려난다)
     if (h > .7 && pd.y > 1.5 && length(pd.xz) > 7. && length(p - uCamPos) > 3.){ float sz = .08 + .3 * hash(id.xz + 1.); vec3 o2 = (vec3(hash(id.xy + 2.), hash(id.yz + 3.), hash(id.xz + 4.)) - .5) * 3.5;
       vec3 q = lp - o2 - vec3(0., sin(uT * .5 + h * 9.) * .3, 0.); q = rotY3(h * 9. + uT * (.3 + h)) * q; r = opU(r, vec2(sdBox(q, vec3(sz)) / sc, 6.)); } }
@@ -89,7 +113,7 @@ vec2 map(vec3 p){
   return r;
 }
 vec3 normalAt(vec3 p){ vec3 n = vec3(0.); for (int i = uZero; i < 4; i++){ vec3 e = .5773 * (2. * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.); n += e * map(p + .003 * e).x; } return normalize(n); }
-float shadowTo(vec3 p, vec3 L){ vec3 d = L - p; float len = length(d); d /= len; float t = .3, k = 1.; for (int i = uZero; i < 26; i++){ float h = map(p + d * t).x; if (h < .02) return 0.; k = min(k, 10. * h / t); t += clamp(h, .15, 1.2); if (t > len - .8) break; } return clamp(k, 0., 1.); }   // 핵을 향한 부드러운 그림자
+float shadowTo(vec3 p, vec3 L){ vec3 d = L - p; float len = length(d); d /= len; float t = .3, k = 1.; gShadow = true; for (int i = uZero; i < 26; i++){ float h = map(p + d * t).x; if (h < .02){ gShadow = false; return 0.; } k = min(k, 10. * h / t); t += clamp(h, .15, 1.2); if (t > len - .8) break; } gShadow = false; return clamp(k, 0., 1.); }   // 핵을 향한 부드러운 그림자
 vec3 sky(vec3 rd){ vec3 L = C0 + vec3(0., uBob, 0.); float y = max(rd.y, .02); vec2 q = rd.xz / y; float n = fbm(q * .06 + vec2(uT * .01, 0.)) * .6 + fbm(q * .18 - vec2(0., uT * .02)) * .4;                    // 폭풍 구름: 핵의 색으로 밑면이 물든다
   float cloud = smoothstep(.35, .75, n), lit = exp(-length(q) * .05) ; vec3 c = mix(vec3(.004, .005, .01), vec3(.012, .014, .022), cloud) + uCol * cloud * lit * (.4 + .6 * uFlare) * uCore + uColW * pow(max(dot(rd, normalize(L - uCamPos)), 0.), 60.) * .06 * uCore;
   return mix(c, vec3(.003, .004, .008), 1. - smoothstep(0., .12, rd.y)) * uSky + (1. - uSky) * vec3(.002, .003, .006); }
@@ -98,12 +122,14 @@ vec3 shade(vec3 p, vec3 n, vec3 rd, float id){
   vec3 L = C0 + vec3(0., uBob, 0.), l = normalize(L - p), hv = normalize(l - rd); float ndl = max(dot(n, l), 0.), ndv = max(dot(n, -rd), 0.), fres = .04 + .96 * pow(1. - ndv, 5.), top = .5 + .5 * n.y; vec3 li = lightAt(p), amb = vec3(.012, .014, .022) * (.3 + .7 * top);
   if (id < 1.5){ float sh = shadowTo(p + n * .05, L), rough = .3 + .35 * fbm(p.xy * 3. + p.z * 2.), spec = pow(max(dot(n, hv), 0.), mix(220., 24., rough)) * (1.2 - rough);                 // 우리: 거친 금속 — 결 · 스펙큘러 · 환경 반사
     return amb * .5 + li * (ndl * .1 + spec * 1.4) * sh + sky(reflect(rd, n)) * fres * .9; }
-  if (id < 2.5) return mix(uCol * 1.1, uColW * 2., pow(ndv, 1.5)) * (.75 + .6 * uPulse + 2. * uOver);                                                                  // 큐브: 발광 관 — 가운데는 희고 가장자리는 색
-  if (id < 3.5) return mix(uColW, vec3(1.), uOver) * (2.6 + 2. * uPulse + 6. * uOver * uOver);                                                                         // 핵: 과충전 때 백열
-  if (id < 4.5){ float panel = step(.93, max(fract(p.x * 1.6 + p.z * .3), fract(p.y * 5.))), spec = pow(max(dot(n, hv), 0.), 110.);                                     // 우주선: 판금 · 이음새 · 스펙큘러 · 환경 반사
-    return vec3(.045, .05, .06) * (.3 + .7 * top) * (1. - .45 * panel) + li * (ndl * .12 + spec * 1.3) + sky(reflect(rd, n)) * fres * .7; }
+  if (id < 2.5) return mix(uCol * .9, uColW * 1.5, pow(ndv, 1.5)) * (.55 + .45 * uPulse + 2. * uOver);                                                                  // 큐브: 발광 관 — 가운데는 희고 가장자리는 색
+  if (id < 3.5) return mix(uColW, vec3(1.), uOver) * (1.6 + 1.2 * uPulse + 6. * uOver * uOver);                                                                         // 핵: 과충전 때 백열
+  if (id < 4.5){ float panel = step(.93, max(fract(p.x * 1.6 + p.z * .3), fract(p.y * 5.))), spec = pow(max(dot(n, hv), 0.), 110.), rim = pow(1. - ndv, 3.);                  // 우주선: 판금 · 이음새 · 스펙큘러 · 환경 반사 · 밝은 윤곽
+    vec3 lq = min(li, vec3(3.)); return vec3(.018, .02, .028) * (.3 + .7 * top) * (1. - .5 * panel) + lq * (ndl * .05 + spec * .5) + sky(reflect(rd, n)) * fres * .9 + (uColW * .7 + uCol * .9) * rim * 1.3 + uCol * panel * .25 * step(.2, top); }
   if (id < 6.5) return amb + li * (ndl * .18 + pow(max(dot(n, hv), 0.), 70.) * .9) + sky(reflect(rd, n)) * fres * .4;                                                  // 파편
-  if (id < 7.5) return uColW * 4. + uCol * 2.;                                                                                                                          // 엔진
+  if (id < 7.5) return uColW * 5. + uCol * 2.5;                                                                                                                      // 엔진 배기                                                                                                                          // 엔진
+  if (id > 8.5 && id < 9.5) return mix(uCol * 1.2, uColW * 2.2, pow(ndv, 2.)) * (.9 + .6 * uPulse);                                                                  // 캐노피: 속이 빛나는 유리
+  if (id > 9.5) return uColW * .7 + uCol * .6;                                                                                                                          // 아우라 선
   float k = clamp(uBurst * 1.3, 0., 1.); return mix(vec3(5.), uCol * 1.8 + uColW * .6, k) * (.5 + .5 * ndv) * (1. - .75 * k);                                           // 과충전 조각: 백열 → 색으로 식음
 }
 vec3 floorCol(vec3 p, vec3 rd, float t){
@@ -116,17 +142,23 @@ vec3 floorCol(vec3 p, vec3 rd, float t){
   float sh = shadowTo(p + vec3(0., .05, 0.), L); vec3 li = lightAt(p); float ndl = max(dot(vec3(0., 1., 0.), normalize(L - p)), 0.); col += li * ndl * (.08 + .14 * grain) * (1. - .5 * pud) * sh;   // 핵의 빛 + 우리의 그림자
   vec2 wv = vec2(fbm(q * 1.7 + uT * .25), fbm(q * 1.7 - uT * .25 + 5.)) - .5; vec3 nrm = normalize(vec3(wv.x * mix(.14, .012, pud), 1., wv.y * mix(.14, .012, pud))), rr = reflect(rd, nrm);          // 젖은 바닥: 웅덩이는 거울, 나머지는 흐린 반사
   float tr = .1, rid = -1.; for (int i = uZero; i < 44; i++){ vec2 m = map(p + rr * tr); if (m.x < .01 * tr){ rid = m.y; break; } tr += m.x * .95; if (tr > 50.) break; }
-  vec3 refl = rid < 0. ? sky(rr) * .8 : rid < 1.5 ? uCol * .05 : rid < 2.5 ? (uColW * .8 + uCol * .4) * (1. + 2. * uOver) : rid < 3.5 ? uColW * (2. + 8. * uOver) : rid < 4.5 ? uCol * .07 : rid < 6.5 ? uCol * .05 : rid < 7.5 ? uColW * 3. : vec3(5.) * (1. - clamp(uBurst, 0., 1.));
+  vec3 refl = rid < 0. ? sky(rr) * .8 : rid < 1.5 ? uCol * .05 : rid < 2.5 ? (uColW * .8 + uCol * .4) * (1. + 2. * uOver) : rid < 3.5 ? uColW * (2. + 8. * uOver) : rid < 4.5 ? uCol * .07 : rid < 6.5 ? uCol * .05 : rid < 7.5 ? uColW * 3. : rid < 8.5 ? vec3(5.) * (1. - clamp(uBurst, 0., 1.)) : uColW * 1.4;
   float fr = .03 + .97 * pow(1. - max(-rd.y, 0.), 5.); col += refl * exp(-tr * .02) * fr * mix(.3, 1., pud);
   if (uShock > 0. && uShock < 1.){ float rr0 = uShock * 46., w = .8 + uShock * 4.; col += mix(vec3(1.), uColW, .5) * exp(-pow((r - rr0) / w, 2.)) * 4. * (1. - uShock) * (.6 + .4 * grain); }        // 바닥을 휩쓰는 충격파
   return col;
 }
 void main(){
   vec2 s = (vUv - .5) * vec2(uRes.x / uRes.y, 1.) * 2.; vec3 ro = uCamPos, rd = normalize(uCam * vec3(s, uFocal)), col = sky(rd); float t = .05, id = -1., depth = 120.; bool hit = false;
-  for (int i = uZero; i < 100; i++){ vec2 m = map(ro + rd * t); if (m.x < .0012 * t){ hit = true; id = m.y; break; } t += m.x * .9; if (t > 90.) break; }
+  float tfl = rd.y < -1e-4 ? -ro.y / rd.y : 1e9, glow = 0., trail = 0., spark = 0.;
+  for (int i = uZero; i < 110; i++){ vec3 pp = ro + rd * t; vec2 m = map(pp); glow += exp(-max(gE, 0.) * 18.) * min(m.x, .5) * 1.1;                                                          // 발광 선 주변의 빛 (네온 안개)
+    for (int s2 = uZero; s2 < 2; s2++){ if (uShipK < .001) break; vec4 sh = uShip[s2]; float R = length(sh.xz), ang = atan(pp.z, pp.x), da = mod(sh.w - 3.14159 - ang, 6.28318); if (da < 1.3){ float dd = length(vec2(length(pp.xz) - R, pp.y - sh.y)); trail += exp(-dd * 9.) * (1. - da / 1.3) * min(m.x, .5); } }
+    { vec3 g = pp - C0; if (dot(g, g) < 64. && uCubesK > .01){ vec3 cid = floor(g / .9), fp = g - (cid + .5) * .9 - (vec3(hash(cid.xy + cid.z), hash(cid.yz + 1.), hash(cid.xz + 2.)) - .5) * .6; float hs = hash(cid.xy * 1.3 + cid.z * 7.1);   // 떠도는 빛 입자
+      spark += step(.72, hs) * exp(-length(fp) * 70.) * min(m.x, .5) * (.5 + .5 * sin(uT * (3. + 6. * hs) + hs * 40.)); } }
+    if (m.x < .0012 * t){ hit = true; id = m.y; break; } t += m.x * .9; if (t > 90. || t > tfl) break; }
   if (rd.y < -1e-4){ float tf = -ro.y / rd.y; if (tf > 0. && (!hit || tf < t)){ col = floorCol(ro + rd * tf, rd, tf); depth = tf; hit = false; t = tf; } }
   if (hit){ vec3 pp = ro + rd * t, n = normalAt(pp); col = shade(pp, n, rd, id); depth = t; }
   float fog = 1. - exp(-depth * .018); col = mix(col, vec3(.004, .005, .01) + uCol * .015 * uCore, fog);
+  col += (uColW * .4 + uCol * .6) * glow * .55 * (1. + 1.5 * uOver + .5 * uPulse) + (uColW * .6 + uCol * .8) * trail * 1.4 + uColW * spark * 26.;
   if (uBars > .001){ float R = 12.5, a2 = dot(rd.xz, rd.xz), b = dot(ro.xz, rd.xz), cc = dot(ro.xz, ro.xz) - R * R, disc = b * b - a2 * cc;                                                        // 기둥 비주얼라이저: 반지름 12.5 위의 거대한 판 48개
     if (disc > 0.){ float sq = sqrt(disc); for (int i = uZero; i < 2; i++){ float tb = (-b + (i == 0 ? sq : -sq)) / a2; if (tb < .05 || tb > depth) continue; vec3 p = ro + rd * tb; if (p.y < 0.) continue;
       float slot = atan(p.z, p.x) / 6.2832 * 48. + uT * .3, idx = floor(slot), fa = fract(slot) - .5, m = abs(mod(idx + 24., 48.) - 24.); int bi = int(min(m, 23.)); float hgt = (.3 + uSpec[bi] * 4.2 * (1. + .35 * uPulse)) * uBars, aa = tb * 2.4 / uRes.y;
@@ -222,11 +254,12 @@ const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a
 function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross(f, [0, 1, 0])), u0 = cross(r0, f), c = Math.cos(roll), s = Math.sin(roll); return { pos, r: [r0[0] * c + u0[0] * s, r0[1] * c + u0[1] * s, r0[2] * c + u0[2] * s], u: [u0[0] * c - r0[0] * s, u0[1] * c - r0[1] * s, u0[2] * c - r0[2] * s], f }; }
 function rotM(rx, ry, rz) { const cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry), cz = Math.cos(rz), sz = Math.sin(rz); return [cz * cy, sz * cy, -sy, cz * sy * sx - sz * cx, sz * sy * sx + cz * cx, cy * sx, cz * sy * cx + sz * sx, sz * sy * cx - cz * sx, cy * cx]; }
 const shipAt = (tt, i, R) => { const a = tt * 1.1 + i * PI + .3; return [Math.cos(a) * R, C0[1] + .6 * Math.sin(tt * .9 + i * 2), Math.sin(a) * R, a + PI]; };   // 기수가 중심(E.G.O)을 향한다
+const TANG = (() => { const r = rng(9119), a = new Float32Array(96); for (let i = 0; i < 16; i++) { const p = () => { const u = r() * 2 - 1, ph = r() * TAU, rr = 1.1 + 1.6 * Math.cbrt(r()), sq = Math.sqrt(1 - u * u); return [sq * Math.cos(ph) * rr, u * rr, sq * Math.sin(ph) * rr]; }; a.set(p(), i * 6); a.set(p(), i * 6 + 3); } return a; })();   // 엉킨 선 16개의 양 끝
 function state(t) {
   const tt = Math.min(t, T.STOP), S = { focal: 1.5, core: .6, cage: 1, brk: 0, shipK: 0, player: 0, bars: 0, vortex: .1, debris: 1, arrow: 0, ships: null, sky: 1, focus: 30, aper: .6, playerP: [0, 0, 0] };
   const kick = dat(D.kick, tt), beat = t >= T.KICK, built = t >= T.BUILD, dropped = t >= T.DROP; S.bob = Math.sin(tt * 1.2) * .45; S.pulse = beat ? kick : 0;
   const spin = tt * (beat ? 5 : .55) + (built ? (tt - T.BUILD) * 4.5 : 0) + (dropped ? (tt - T.DROP) * 5 : 0), ax = .5 + .3 * Math.sin(tt * 1.3);
-  S.cubeR = new Float32Array([...rotM(ax, spin, .3), ...rotM(ax + .9, -spin * 1.6 + 1, -.5), ...rotM(-ax * 1.3, spin * 2.3 + 2, .8)]);
+  S.tang = TANG; S.cubeR = new Float32Array([...rotM(ax, spin, .3), ...rotM(ax + .9, -spin * 1.6 + 1, -.5), ...rotM(-ax * 1.3, spin * 2.3 + 2, .8)]);
   const hand = [Math.sin(tt * 1.1) * .04, Math.cos(tt * .9) * .03, Math.sin(tt * .7) * .03];
   let cam;
   if (t < T.S2) { const k = eOut(seg(t, 0, T.S2)); cam = camera(add([-14 + 3 * k, 1.1, 46 - 9 * k], hand), [0, 7.5, 0], .01); S.focal = 1.5; S.core = .4 + .15 * k; S.focus = 44; S.aper = .35; }                                     // S1 평원의 낮은 카메라
@@ -251,7 +284,7 @@ function render(t) {
   drawOverlay(t, S); X.upload(txtTex, tcv, true); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
   const ships = new Float32Array(8); if (S.ships) S.ships.forEach((s, i) => ships.set(s, i * 4));
   X.pass(P.scene(), RT.scene, (u) => { gl.uniform2f(u.uRes, sw, sh); gl.uniform1f(u.uT, tt); gl.uniform1i(u.uZero, 0); gl.uniform3f(u.uCamPos, S.cam.pos[0], S.cam.pos[1], S.cam.pos[2]); gl.uniformMatrix3fv(u.uCam, false, new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f])); gl.uniform1f(u.uFocal, S.focal);
-    gl.uniform3f(u.uCol, col[0], col[1], col[2]); gl.uniform3f(u.uColW, colW[0], colW[1], colW[2]); gl.uniformMatrix3fv(u.uCubeR, false, S.cubeR); gl.uniform4fv(u.uShip, ships); gl.uniform1fv(u.uSpec, spectrum(tt)); gl.uniform4fv(u.uFrag, S.frag);
+    gl.uniform3f(u.uCol, col[0], col[1], col[2]); gl.uniform3f(u.uColW, colW[0], colW[1], colW[2]); gl.uniformMatrix3fv(u.uCubeR, false, S.cubeR); gl.uniform4fv(u.uShip, ships); gl.uniform1fv(u.uSpec, spectrum(tt)); gl.uniform4fv(u.uFrag, S.frag); gl.uniform3fv(u.uTang, S.tang);
     for (const [n, v] of [["uCore", S.core], ["uCage", S.cage], ["uBreak", S.brk], ["uShipK", S.shipK], ["uBars", S.bars], ["uVortex", S.vortex], ["uDebris", S.debris], ["uBob", S.bob], ["uFlare", S.flare], ["uGrey", 0], ["uPulse", S.pulse], ["uSky", S.sky],
       ["uOver", S.over], ["uBurst", S.burst], ["uPull", S.pull], ["uCubesK", S.cubesK], ["uShock", S.shock], ["uBoom", S.boom]]) gl.uniform1f(u[n], v); });
   const bloomTex = X.bloom(RT.scene.tex, .8), raysTex = X.rays(clamp(S.lightS[0] * .5 / (pw / ph) + .5), clamp(S.lightS[1] * .5 + .5), .9), r0 = rng(Math.floor(t * 60)), explP = S.flare;
