@@ -15,7 +15,7 @@
 <script>
 "use strict";
 /* ═══════════════════════════════════════════════════════════════
-   GLITCH — 평범한 아침이 조금씩 망가진다 (실시간 3D · 대사 없음 · 28.4초 · 4K 저장)
+   GLITCH — 평범한 아침이 조금씩 망가진다 (실시간 3D · 대사 없음 · 30.4초 · 4K 저장)
    음원: tools/make_glitch_audio.py 로 직접 합성한 오리지널(피아노 · 새소리 · 치지직 · 드론 · 120 BPM). 시각 상수 T 는 그 스크립트와 같다.
      0      눈을 뜬다 — 따뜻한 아침 햇살이 드는 방(1인칭, 두 번 깜빡임)
      4.0    알람시계 — 07:30 → 4.75 88:88 → 07:30 (치지직, 1~2프레임 흔들림)
@@ -23,9 +23,11 @@
      9.6    창문 — 10.4 바깥이 한순간 다른 공간으로 · 11.2 하늘이 검정·보라 잡음으로 갈라지고 건물·나무가 픽셀로 일그러짐 (음악이 뚝 끊김) · 12.4 한 발짝 물러남
      13.6   방 전체가 동시에 — 벽과 가구가 픽셀처럼 흔들리고, 시야에 검은 잡음이 번지고 → 14.9 눈을 감는다 → 15.5 정적
      16.8   눈을 뜬다 — 글리치 세계: 보라·검정 잡음 하늘, 불안정한 픽셀 지형, 떠다니는 오류 코드, 되풀이되며 나타났다 사라지는 방의 물건들 · 19.8 거대한 파동
-     21.8   눈앞에 검정·보라 에너지가 모인다 → 23.0 픽셀 조각으로 분해 → 다시 하나로 → 24.0 GLITCH: 밝은 원 · 솟는 입자 · 네 개의 검은 기둥 · 빠르게 도는 두 겹의 외곽선 큐브 · 네온 별 속 검은 별
-            25.0 / 26.5 별이 터진다(검은 큐브 · 숫자) · 제목은 0.1초마다 글꼴·크기·방향이 바뀐다 · 1 in !@#$%^&*()
-     27.2   치지지직 → 27.7 암전
+     21.8   눈앞에 검정·보라 에너지가 모인다 → 23.0 픽셀 조각으로 분해 → 다시 하나로 → 24.0 에너지가 하늘로 솟고, 공허 하늘에 거대한 GLITCH 가 떠오른다(올려다봄):
+            겹겹의 선으로 된 두 외곽선 큐브가 빠르게 돌며 가로로 잘려 어긋나고, 가운데 네온 별 속 검은 별, 둘레의 검은 조각들, 소용돌이치는 성운. 발밑의 밝은 원에서 입자가 솟구쳐 GLITCH 로 빨려 든다
+            25.0 / 26.3 별이 터진다(거대한 검은 큐브 · 숫자) · 제목은 0.1초마다 글꼴·크기·방향이 바뀐다 · 1 in !@#$%^&*()
+     26.6   모든 것을 삼킨다 — 먼 곳부터 지형이 하늘로 빨려 오르고, 방의 물건·글자·입자도 끌려 들고, 검은 별이 부풀어 네온 별을 삼키고, 화면이 소용돌이친다
+     28.9   플레이어의 화면이 먹힌다 — 별 쪽부터 화면이 블록째 사라지고, 위아래가 닫히며 → 29.7 암전 → 30.4 끝
    셰이더는 장면별 프로그램(#define SHOT): 0 방(태양 그림자 · 창 면광원 · 먼지 빛줄기 · 창밖 풍경 · 물건별 글리치) / 1 글리치 세계. 전부 시간의 함수(상태 없음).
    ═══════════════════════════════════════════════════════════════ */
 const TAU = Math.PI * 2, PI = Math.PI;
@@ -43,9 +45,9 @@ function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross
 function rotM(rx, ry, rz) { const cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry), cz = Math.cos(rz), sz = Math.sin(rz); return [cz * cy, sz * cy, -sy, cz * sy * sx - sz * cx, sz * sy * sx + cz * cx, cy * sx, cz * sy * cx + sz * sx, sz * sy * cx - cz * sx, cy * cx]; }
 
 const T = { OPEN: .5, CLOCK: 4.0, CG: 4.75, DESK: 6.0, CUP: 6.45, BOOK: 7.45, PC: 8.5, WIN: 9.6, WINF: 10.4, CRACK: 11.2, BACK: 12.4, ALL: 13.6, CLOSE: 14.9, DARK: 15.5, WAKE: 16.8, WAVE: 19.8,
-  GATHER: 21.8, FORM: 23.0, AURA: 24.0, B1: 25.0, B2: 26.5, FINAL: 27.2, BLACK: 27.7, END: 28.4 };
+  GATHER: 21.8, FORM: 23.0, AURA: 24.0, B1: 25.0, B2: 26.3, DEVOUR: 26.6, FINAL: 28.9, BLACK: 29.7, END: 30.4 };
 const NEON = [[1, .17, .84], [0, .94, 1], [.49, 1, .23], [1, .9, 0], [.62, .3, 1], [1, .42, 0], [.18, .42, 1], [1, .13, .27]];
-const F0 = [0, 0, -7], S0 = [0, 7.2, -7], E0 = [0, 1.6, -5], W0 = [60, 0, -90], LSUN = norm([.25, .42, -1]);
+const F0 = [0, 0, -1], S0 = [0, 38, -30], E0 = [0, 1.6, -5], W0 = [60, 0, -90], LSUN = norm([.25, .42, -1]);
 
 const $ = (id) => document.getElementById(id);
 const glc = $("glc"), bgm = $("bgm"), tcv = document.createElement("canvas"), tg = tcv.getContext("2d");
@@ -78,7 +80,7 @@ precision highp float; in vec2 vUv; out vec4 o;
 #define SHOT ${shot}
 uniform vec2 uRes; uniform float uT, uFocal, uTick; uniform vec3 uCamPos; uniform mat3 uCam; uniform int uZero; uniform vec4 uDigits;
 uniform float uClockG, uCupG, uBookG, uBookFlip, uWinSwap, uCrack, uRoomG, uScrOn;
-uniform vec3 uCol, uCol2, uE, uS, uF, uW0; uniform float uFragOn, uAura, uGather, uForm, uWaveR, uSpin, uFlare, uStarK, uGhost, uWorldG; uniform vec4 uFrag[24], uBits[16], uTxtP[12]; uniform mat3 uR1, uR2;
+uniform vec3 uCol, uCol2, uE, uS, uF, uW0; uniform float uEat, uBuild, uBlackK, uFragOn, uAura, uGather, uForm, uWaveR, uSpin, uFlare, uStarK, uGhost, uWorldG; uniform vec4 uFrag[24], uBits[16], uTxtP[12]; uniform mat3 uR1, uR2;
 uniform sampler2D uScr, uAtlas;
 ${CSGL.NOISE}
 ${GL_COMMON}
@@ -233,16 +235,20 @@ void main(){
 }
 #endif
 #if SHOT == 1
-/* ══ 글리치 세계: 떠 있는 픽셀 지형(2D DDA) · 발판 · 되풀이되는 방의 물건들 · GLITCH ══ */
-bool platMask(vec2 xz){ vec2 c = floor(xz * 2.) * .5; float e = (hash(c) - .5) * 1.1; return length(xz) < 4. + e || length(xz - uF.xz) < 5. + e || (abs(xz.x) < 1.6 + e * .4 && xz.y < 0. && xz.y > uF.z); }
-float cellTop(vec2 c, out float th){ vec2 cc = c + .5; th = 0.; if (length(cc) < 4.8 || length(cc - uF.xz) < 5.8 || (abs(cc.x) < 2.3 && cc.y < 0. && cc.y > uF.z)) return -99.;
+/* ══ 글리치 세계: 떠 있는 픽셀 지형(2D DDA) · 발판 · 되풀이되는 방의 물건들 · 공허 하늘에 뜬 거대한 GLITCH · 모든 것을 삼킨다 ══ */
+float gF = 1e9;                                                                                                               // 네온 선까지의 거리(빛 번짐)
+bool platMask(vec2 xz){ vec2 c = floor(xz * 2.) * .5; float e = (hash(c) - .5) * 1.1; bool m = length(xz) < 4.6 + e || length(xz - vec2(0., -6.)) < 3.4 + e || (abs(xz.x) < 1.7 + e * .4 && xz.y < 0. && xz.y > -6.);
+  if (uEat > .4 && hash(c + 17.) < (uEat - .4) * 2.2) m = false; return m; }                                                      // 발판도 조각조각 떨어져 나간다
+float cellTop(vec2 c, out float th){ vec2 cc = c + .5; th = 0.; float r = length(cc); if (r < 5.4 || length(cc - vec2(0., -6.)) < 4.2) return -99.;
   float n = fbm(c * .06 + 3.), h = floor((n - .42) * 22.) * .5; if (h < -4.) return -99.;
   float tk = floor(uT * 7.), j = hash(c + tk * 1.7); if (j < .05 * (1. + uWorldG)) h += floor((hash(c + tk + 3.) - .5) * 6.) * .5; if (j > .975) return -99.;   // 불안정하게 들썩이고, 사라졌다 나타난다
   float wd = length(cc - uW0.xz) - uWaveR; h += 3.5 * exp(-wd * wd * .015) * step(0., uWaveR);                                     // 거대한 파동이 지형을 들어 올린다
-  th = 1. + floor(hash(c + 9.) * 6.) * .5 + max(h, 0.) * .6; return h; }
+  th = 1. + floor(hash(c + 9.) * 6.) * .5 + max(h, 0.) * .6;
+  if (uEat > 0.){ float st = (1. - clamp(r / 110., 0., 1.)) * .7 + hash(c + 31.) * .15, k = max(uEat - st, 0.), lift = k * k * 240. + k * 18.; if (lift > 40. + 30. * hash(c + 5.)) return -99.; h += lift; }   // 먼 곳부터 하늘로 빨려 올라간다
+  return h; }
 float tHit(vec3 ro, vec3 rd, float tmax, out vec3 nrm, out vec2 cell, out vec2 yr){
   vec2 c = floor(ro.xz), sg = vec2(rd.x >= 0. ? 1. : -1., rd.z >= 0. ? 1. : -1.), tD = 1. / max(abs(rd.xz), vec2(1e-5)), tN = (sg * (c - ro.xz) + (sg * .5 + .5)) * tD; float t = 0.; int ax = -1;
-  nrm = vec3(0., 1., 0.); cell = c; yr = vec2(0.);
+  nrm = vec3(0., 1., 0.); cell = c; yr = vec2(0.); float ytop = uEat > 0. ? 80. : 18.;
   for (int i = uZero; i < 170; i++){ float th, h = cellTop(c, th), te = min(tN.x, tN.y);
     if (h > -90.){ float lo = h - th, hi = h, y0 = ro.y + rd.y * t, y1 = ro.y + rd.y * te;
       if (y0 >= lo && y0 <= hi && ax >= 0){ nrm = ax == 0 ? vec3(-sg.x, 0., 0.) : vec3(0., 0., -sg.y); cell = c; yr = vec2(lo, hi); return t; }
@@ -250,93 +256,126 @@ float tHit(vec3 ro, vec3 rd, float tmax, out vec3 nrm, out vec2 cell, out vec2 y
       if (rd.y > 0. && y0 < lo && y1 >= lo){ nrm = vec3(0., -1., 0.); cell = c; yr = vec2(lo, hi); return (lo - ro.y) / rd.y; } }
     if (te > tmax) break;
     if (tN.x < tN.y){ t = tN.x; tN.x += tD.x; c.x += sg.x; ax = 0; } else { t = tN.y; tN.y += tD.y; c.y += sg.y; ax = 1; }
-    float yt = ro.y + rd.y * t; if ((rd.y > 0. && yt > 18.) || (rd.y < 0. && yt < -30.)) break; }
+    float yt = ro.y + rd.y * t; if ((rd.y > 0. && yt > ytop) || (rd.y < 0. && yt < -30.)) break; }
   return -1.; }
-vec3 gsky(vec3 rd){                                                                                                             // 보라 · 검정 잡음으로 덮인 하늘
+vec3 gsky(vec3 rd){                                                                                                             // 보라 · 검정 잡음 하늘 → GLITCH 가 뜨면 공허, 성운이 소용돌이치며 빨려 든다
   float y = rd.y, a = atan(rd.x, -rd.z), tk = floor(uT * 12.); vec3 c = mix(vec3(.012, .001, .022), vec3(.001, 0., .003), smoothstep(-.05, .5, y)); if (y < 0.) c = mix(vec3(.02, .002, .035), vec3(0.), smoothstep(0., -.4, y));
-  float rowb = floor(y * 90.), band = fbm(vec2(a * 1.5 + hash(vec2(rowb, tk)) * .3 * uWorldG, rowb * .11 + uT * .15)); c += mix(vec3(.4, .06, .7), vec3(0., .5, .55), step(.62, hash(vec2(floor(y * 18.), floor(uT * 3.))))) * pow(band, 4.) * 1.3;
-  vec2 bq = floor(vec2(a * 50., y * 50.)); float bn = hash(bq + tk); c += mix(uCol, vec3(.45, .1, .8), .5) * step(.992, bn) * .9; c *= 1. - .8 * step(.985, hash(bq * .3 + tk + 3.));
-  c += vec3(.3, .05, .5) * exp(-abs(y) * 12.) * .28; return c; }
+  float vb = 1. - .75 * uAura, rowb = floor(y * 90.), band = fbm(vec2(a * 1.5 + hash(vec2(rowb, tk)) * .3 * uWorldG, rowb * .11 + uT * .15));
+  c += mix(vec3(.4, .06, .7), vec3(0., .5, .55), step(.62, hash(vec2(floor(y * 18.), floor(uT * 3.))))) * pow(band, 4.) * 1.3 * vb;
+  vec2 bq = floor(vec2(a * 50., y * 50.)); float bn = hash(bq + tk); c += mix(uCol, vec3(.45, .1, .8), .5) * step(.992, bn) * .9 * vb; c *= 1. - .8 * step(.985, hash(bq * .3 + tk + 3.));
+  c += vec3(.3, .05, .5) * exp(-abs(y) * 12.) * .28 * vb;
+  if (uAura > 0.){ vec3 ds = normalize(uS - uCamPos); float ang = acos(clamp(dot(rd, ds), -1., 1.)); vec3 ax1 = normalize(cross(ds, vec3(0., 1., 0.))), ax2 = cross(ax1, ds);
+    float ph = atan(dot(rd, ax2), dot(rd, ax1)), sw = ph + (.35 + 2.2 * uEat) / (ang + .12) + uT * (.15 + 1.2 * uEat), lr = log(ang + .03) * 2.2 + uT * (.25 + 2.5 * uEat);
+    float neb = fbm(vec2(cos(sw), sin(sw)) * 2.2 + vec2(lr, -lr * .7)), neb2 = fbm(vec2(cos(sw * 2.), sin(sw * 2.)) * 4. + lr * 1.7);
+    c = mix(c, vec3(0.), uAura * .85 * smoothstep(1.5, .25, ang));                                                                   // 공허
+    c += (uCol * pow(neb, 3.2) * 1.6 + mix(uCol, vec3(1.), .4) * pow(neb2, 6.) * 1.2) * uAura * smoothstep(1.9, .2, ang) * smoothstep(.02, .2, ang) * (.35 + 1.1 * uEat);
+    vec2 sq = floor(vec2(sw * 6., lr * 4.)); c += uCol * step(.975, hash(sq + tk)) * uAura * smoothstep(1.4, .3, ang) * .9; }                   // 소용돌이를 타고 도는 픽셀 조각
+  return c; }
 vec3 tShade(vec3 p, vec3 n, vec2 c, vec2 yr, float t){
   vec2 e2 = abs(n.y) > .5 ? fract(p.xz) : vec2(abs(n.x) > .5 ? fract(p.z) : fract(p.x), fract(p.y)); float aa = t * 1.6 / uRes.y;
   float ed = min(min(e2.x, 1. - e2.x), abs(n.y) > .5 ? min(e2.y, 1. - e2.y) : min(p.y - yr.x, yr.y - p.y));
-  vec3 col = vec3(.008, .005, .014) * (.5 + .5 * n.y) + uCol * smoothstep(aa * 2. + .02, 0., ed) * (n.y > .5 ? 1.3 : .7);
-  vec2 sp = floor(e2 * 4.); float fh = hash(sp + c * 13. + floor(uT * 10.)); col += uCol2 * step(.985, fh) * .9 + uCol * step(.995, hash(c + floor(uT * 5.))) * .6;
+  vec3 col = vec3(.006, .004, .011) * (.5 + .5 * n.y);
+  vec2 sp = floor(e2 * 6.); float fl = abs(n.y) > .5 ? 0. : floor(p.y) * 7.; float ph = hash(sp + c * 13. + fl);                            // 면마다 켜진 픽셀 창
+  col += mix(uCol, uCol2, step(.5, hash(sp + c + fl))) * step(.955, ph) * (.3 + .5 * step(.4, hash(sp + c + floor(uT * 6.))));
+  vec2 pg = abs(fract(e2 * 3.) - .5); col += uCol * smoothstep(aa * 4. + .015, 0., .5 - max(pg.x, pg.y)) * .06;                          // 얇은 회로 격자
+  col += uCol * smoothstep(aa * 2. + .02, 0., ed) * (n.y > .5 ? 1.1 : .6);
+  if (uAura > 0.){ vec3 L = uS - p; float dl = length(L); vec3 l = L / dl; col += uCol * max(dot(n, l), 0.) * uAura * (1.6 + 3. * uFlare) * 1600. / (dl * dl + 1600.) * .18;   // 거대한 별빛에 물든다
+    col += mix(uCol, vec3(1.), .5) * pow(max(dot(reflect(normalize(p - uCamPos), n), l), 0.), 60.) * uAura * .8 * step(.5, n.y); }
+  col += uCol2 * step(.995, hash(c + floor(uT * 5.))) * .5;
   float wd = abs(length(p.xz - uW0.xz) - uWaveR); col += (uCol2 + .6) * exp(-wd * .5) * 1.6 * step(0., uWaveR); return col; }
 vec3 platShade(vec3 p, vec3 rd, float t){
   vec2 g = abs(fract(p.xz) - .5); float aa = t * 1.6 / uRes.y / max(-rd.y, .05), grid = smoothstep(aa * 1.5 + .012, 0., .5 - max(g.x, g.y));
-  vec3 col = vec3(.004, .003, .008) + uCol * grid * .16 * (.6 + .4 * step(.5, hash(floor(p.xz) + floor(uT * 6.)))); col += gsky(reflect(rd, vec3(0., 1., 0.))) * .12;
-  float dF = length(p.xz - uF.xz); col += uAura * (uCol * (smoothstep(.14, 0., abs(dF - 2.3)) * 4. + exp(-dF * 1.4) * 1.6 + smoothstep(2.3, 0., dF) * .45) + vec3(1.) * smoothstep(.05, 0., abs(dF - 2.3)) * 3.);   // 발밑의 밝은 원
-  col += uCol * uAura * 1.1 / (1. + dot(p - uS, p - uS) * .06);
+  vec3 col = vec3(.004, .003, .008) + uCol * grid * .16 * (.6 + .4 * step(.5, hash(floor(p.xz) + floor(uT * 6.)))); col += gsky(reflect(rd, vec3(0., 1., 0.))) * .14;
+  float dF = length(p.xz - uF.xz); col += uAura * (uCol * (smoothstep(.1, 0., abs(dF - 2.6)) * 3. + smoothstep(.06, 0., abs(dF - 3.2)) * 1.5 + exp(-dF * 1.3) * 1.2) + vec3(1.) * smoothstep(.035, 0., abs(dF - 2.6)) * 2.5);   // 발밑의 밝은 원
+  if (uAura > 0.){ vec3 L = uS - p; float dl = length(L); col += uCol * uAura * (L.y / dl) * 1600. / (dl * dl + 1600.) * .3; }
   if (uGather > 0.) col += vec3(.5, .1, 1.) * uGather * .8 / (1. + dot(p - uE, p - uE) * .6);
   float wd = abs(length(p.xz - uW0.xz) - uWaveR); col += (uCol2 + .6) * exp(-wd * .5) * 1.4 * step(0., uWaveR); return col; }
-vec2 gmap(vec3 p){ vec2 r = vec2(1e9, -1.);
-  if (uGhost > 0.){                                                                                                             // 방의 물건들이 멀리서 되풀이되며 나타났다 사라진다
-    vec3 q = p - vec3(-34., 9., -48.); float k = clamp(floor(q.x / 9. + .5), 0., 2.); q.x -= k * 9.; if (hash(vec2(k, floor(uT * 6.))) < .62 - .2 * k) r = opU(r, vec2(sdRBox(q, vec3(3.2, 2., 1.2), .45), 41.)); else r = opU(r, vec2(max(sdBox(q, vec3(3.3, 2.1, 1.3)), .3), -1.));
-    vec3 m = p - vec3(38., 4., -44.); float km = clamp(floor(m.y / 7. + .5), 0., 2.); m.y -= km * 7.; if (hash(vec2(km + 5., floor(uT * 5.))) < .55){ float rr = length(m.xz), d = max(abs(rr - 2.4) - .25, abs(m.y) - 2.8); d = min(d, max(rr - 2.6, abs(m.y + 2.7) - .15));
-      vec3 hq = m - vec3(0., 0., -3.2); d = min(d, length(vec2(length(hq.yz) - 1.4, hq.x)) - .3); r = opU(r, vec2(d, 42.)); } else r = opU(r, vec2(max(length(m) - 5., .3), -1.));
-    vec3 mo = p - vec3(8., 15., -80.); float kk = clamp(floor(-mo.z / 12. + .5), 0., 2.); mo.z += kk * 12.; if (hash(vec2(kk + 9., floor(uT * 4.))) < .6) r = opU(r, vec2(sdRBox(mo, vec3(7., 4.2, .5), .2), 43.)); else r = opU(r, vec2(max(sdBox(mo, vec3(7.2, 4.4, .7)), .3), -1.)); }
-  if (uAura > 0.){ vec3 q = p - uS; float dS = length(q);
-    if (dS < 5.2){ r = opU(r, vec2(min(sdFrame(uR1 * q, vec3(2.3), .045), sdFrame(uR2 * q, vec3(1.25), .035)), 31.));                        // 빠르게 도는 두 겹의 외곽선 큐브
-      vec3 lq = vec3(dot(q, uCam[0]), dot(q, uCam[1]), dot(q, uCam[2])); lq.xy = rot(uSpin) * lq.xy;
-      r = opU(r, vec2(max(sdStar5(lq.xy, 1.15 * uStarK, .42), abs(lq.z) - .05), 32.)); r = opU(r, vec2(max(sdStar5(lq.xy * rot(-uSpin * 1.7), .55 * uStarK, .42), abs(lq.z + .1) - .06), 33.));   // 네온 별 속 검은 별
-      for (int i = uZero; i < 16; i++){ vec4 b = uBits[i]; if (b.w > 0.) r = opU(r, vec2(sdBox(q - b.xyz, vec3(b.w)), 33.)); } }
-    else r = opU(r, vec2(max(dS - 5., .3), -1.));
-    for (int i = uZero; i < 4; i++){ vec2 sgn = vec2(i == 0 || i == 3 ? 1. : -1., i < 2 ? 1. : -1.); r = opU(r, vec2(sdCap(p, uF + vec3(sgn.x * 2.6, 0., sgn.y * 2.6), uS + vec3(sgn.x * 1.2, -2.4 * uAura, sgn.y * 1.2), .1), 34.)); } }
+vec3 ghostQ(vec3 p, vec3 base, out float sc){ float ek = uEat * uEat; sc = max(1. - ek * .92, .04); return (p - mix(base, uS, ek)) / sc; }   // 방의 물건들도 빨려 들며 줄어든다
+vec2 gmap(vec3 p){ vec2 r = vec2(1e9, -1.); gF = 1e9;
+  if (uGhost > 0.){ float sc;                                                                                                 // 방의 물건들이 멀리서 되풀이되며 나타났다 사라진다
+    vec3 q = ghostQ(p, vec3(-34., 9., -48.), sc); float k = clamp(floor(q.x / 9. + .5), 0., 2.); q.x -= k * 9.; if (hash(vec2(k, floor(uT * 6.))) < .62 - .2 * k) r = opU(r, vec2(sdRBox(q, vec3(3.2, 2., 1.2), .45) * sc, 41.)); else r = opU(r, vec2(max(sdBox(q, vec3(3.3, 2.1, 1.3)), .3) * sc, -1.));
+    vec3 m = ghostQ(p, vec3(38., 4., -44.), sc); float km = clamp(floor(m.y / 7. + .5), 0., 2.); m.y -= km * 7.; if (hash(vec2(km + 5., floor(uT * 5.))) < .55){ float rr = length(m.xz), d = max(abs(rr - 2.4) - .25, abs(m.y) - 2.8); d = min(d, max(rr - 2.6, abs(m.y + 2.7) - .15));
+      vec3 hq = m - vec3(0., 0., -3.2); d = min(d, length(vec2(length(hq.yz) - 1.4, hq.x)) - .3); r = opU(r, vec2(d * sc, 42.)); } else r = opU(r, vec2(max(length(m) - 5., .3) * sc, -1.));
+    vec3 mo = ghostQ(p, vec3(8., 15., -80.), sc); float kk = clamp(floor(-mo.z / 12. + .5), 0., 2.); mo.z += kk * 12.; if (hash(vec2(kk + 9., floor(uT * 4.))) < .6) r = opU(r, vec2(sdRBox(mo, vec3(7., 4.2, .5), .2) * sc, 43.)); else r = opU(r, vec2(max(sdBox(mo, vec3(7.2, 4.4, .7)), .3) * sc, -1.)); }
+  if (uAura > 0.){ vec3 q = p - uS; float dS = length(q), K = uStarK;
+    if (dS < 44.){ float tk = floor(uT * 16.); vec3 a = uR1 * q, b = uR2 * q;                                                       // 빠르게 도는 두 겹의 외곽선 큐브 — 선이 겹겹이, 이따금 가로로 잘려 어긋난다
+      float sl = floor(a.y * .55), hs = hash(vec2(sl, tk)); if (hs < .13) a.x += (hash(vec2(sl, tk + 1.)) - .5) * 5.;
+      float sl2 = floor(b.x * .8), hs2 = hash(vec2(sl2, tk + 5.)); if (hs2 < .13) b.z += (hash(vec2(sl2, tk + 2.)) - .5) * 4.;
+      float fo = min(sdFrame(a, vec3(20.) * K, .3), min(sdFrame(a, vec3(21.3) * K, .08), sdFrame(a, vec3(18.7) * K, .08)));
+      float fi = min(sdFrame(b, vec3(11.5) * K, .24), sdFrame(b, vec3(12.4) * K, .07));
+      if (uBuild < 1.){ vec3 ca = floor(a / (3.5 * K)), cb = floor(b / (2.5 * K)); if (hash(ca.xy + ca.z * 3.1) > uBuild) fo = max(fo, .8); if (hash(cb.xz + cb.y * 5.3) > uBuild) fi = max(fi, .8); }   // 조각조각 그려지며 나타난다
+      float fr = min(fo, fi); gF = min(gF, fr); r = opU(r, vec2(fr, 31.));
+      vec3 lq = vec3(dot(q, uCam[0]), dot(q, uCam[1]), dot(q, uCam[2])); vec2 s2 = rot(uSpin) * lq.xy; float st = sdStar5(s2, 8.5 * K, .42);   // 네온 별 · 겹 테두리 · 그 속의 검은 별
+      float star = max(st, abs(lq.z) - .9) - .15; r = opU(r, vec2(star, 32.)); float ol = max(abs(st - 1.8 * K) - .11, abs(lq.z) - .1); r = opU(r, vec2(ol, 35.)); gF = min(gF, min(star, ol));
+      float ol2 = max(abs(sdStar5(rot(-uSpin * .6) * lq.xy, 13. * K, .42)) - .06, abs(lq.z - 1.) - .06); if (hash(vec2(floor(atan(lq.y, lq.x) * 5.), tk)) > .3){ r = opU(r, vec2(ol2, 35.)); gF = min(gF, ol2); }
+      r = opU(r, vec2(max(sdStar5(s2 * rot(-uSpin * 2.4), 3.8 * K * uBlackK, .42), abs(lq.z + 1.3) - .5) - .08, 33.)); }
+    else r = opU(r, vec2(max(dS - 43., .3), -1.)); }
   if (uFragOn > 0.) for (int i = uZero; i < 24; i++){ vec4 f = uFrag[i]; if (f.w <= 0.) continue; vec3 q = p - f.xyz; float dq = length(q); if (dq > f.w * 2.5){ r = opU(r, vec2(max(dq - f.w * 1.8, .1), -1.)); continue; }
     q.xz = rot(float(i) * 1.3 + uT * 2.) * q.xz; q.xy = rot(float(i) * .7) * q.xy; r = opU(r, vec2(sdBox(q, vec3(f.w)), 33.)); }
   return r; }
-vec3 gnormal(vec3 p){ vec3 n = vec3(0.); for (int i = uZero; i < 4; i++){ vec3 e = .5773 * (2. * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.); n += e * gmap(p + .002 * e).x; } return normalize(n); }
+vec3 gnormal(vec3 p){ vec3 n = vec3(0.); for (int i = uZero; i < 4; i++){ vec3 e = .5773 * (2. * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.); n += e * gmap(p + .004 * e).x; } return normalize(n); }
 vec3 gshade(vec3 p, vec3 n, vec3 rd, float id){ float ndv = max(dot(n, -rd), 0.), rim = pow(1. - ndv, 3.);
   if (id < 0.) return vec3(0.);
-  if (id < 31.5) return mix(uCol, vec3(1.), .3) * 1.7 * (1. + .8 * uFlare);
-  if (id < 32.5) return uCol * 2.2 * (1. + .9 * uFlare) + .15;
-  if (id < 34.5) return vec3(.003) + uCol * rim * 1.3 + uCol * .03;
-  vec3 base = vec3(.004) + uCol * rim * .9;
-  if (id < 41.5){ vec3 q = p - vec3(-34., 9., -48.); float k = clamp(floor(q.x / 9. + .5), 0., 2.); q.x -= k * 9.; if (q.z > 1.1){ vec2 f = clockFace(q.xy / vec2(34., 42.), vec4(8.)); base += uCol2 * (f.x * 3. + f.y * .1); } }
-  else if (id > 42.5){ vec3 mo = p - vec3(8., 15., -80.); float kk = clamp(floor(-mo.z / 12. + .5), 0., 2.); mo.z += kk * 12.; if (mo.z > .45 && abs(mo.x) < 6.6 && abs(mo.y) < 3.8) base += uCol2 * (.25 + .9 * step(.55, hash(floor(mo.xy * vec2(1.5, 3.)) + floor(uT * 8.)))); }
+  if (id < 31.5) return mix(uCol * 1.5, vec3(2.1), pow(ndv, 5.) * .6) * (1. + .7 * uFlare);                                  // 네온관: 가운데는 희고 가장자리는 색
+  if (id < 32.5){ vec3 q = p - uS; vec2 s2 = vec2(dot(q, uCam[0]), dot(q, uCam[1])); float rr = length(s2) / (8.5 * uStarK + .01);
+    return mix(uCol * 1.5, vec3(2.), smoothstep(.6, .05, rr) * .6) * (1. + .8 * uFlare) + uCol * rim * 1.2; }
+  if (id < 34.5) return vec3(.002) + uCol * rim * 1.5 + uCol * .02;
+  if (id < 35.5) return uCol * 2. * (1. + .8 * uFlare) + .15;
+  vec3 base = vec3(.004) + uCol * rim * .9; float sc;
+  if (id < 41.5){ vec3 q = ghostQ(p, vec3(-34., 9., -48.), sc); float k = clamp(floor(q.x / 9. + .5), 0., 2.); q.x -= k * 9.; if (q.z > 1.1){ vec2 f = clockFace(q.xy / vec2(34., 42.), vec4(8.)); base += uCol2 * (f.x * 3. + f.y * .1); } }
+  else if (id > 42.5){ vec3 mo = ghostQ(p, vec3(8., 15., -80.), sc); float kk = clamp(floor(-mo.z / 12. + .5), 0., 2.); mo.z += kk * 12.; if (mo.z > .45 && abs(mo.x) < 6.6 && abs(mo.y) < 3.8) base += uCol2 * (.25 + .9 * step(.55, hash(floor(mo.xy * vec2(1.5, 3.)) + floor(uT * 8.)))); }
   else if (id > 41.5) base += uCol2 * step(.8, hash(vec2(floor(p.y * 3.), floor(uT * 9.)))) * .6;
+  if (uAura > 0.){ vec3 L = normalize(uS - p); base += uCol * max(dot(n, L), 0.) * .25 * uAura; }
   return base; }
 void main(){
   vec2 s = (vUv - .5) * vec2(uRes.x / uRes.y, 1.) * 2.; vec3 ro = uCamPos, rd = normalize(uCam * vec3(s, uFocal)), col = gsky(rd), n; vec2 cc, yr;
   float depth = 1e9, tt = tHit(ro, rd, 220., n, cc, yr); if (tt > 0.) depth = tt;
   float tp = rd.y < 0. ? -ro.y / rd.y : -1.; bool plat = false; if (tp > 0. && tp < depth && platMask((ro + rd * tp).xz)){ plat = true; depth = tp; }
-  float t = .05, id = -1.; bool hit = false; float tl = min(depth, 160.);
-  for (int i = uZero; i < 80; i++){ vec2 m = gmap(ro + rd * t); if (m.x < .0012 * t && m.y > 0.){ hit = true; id = m.y; break; } t += m.x; if (t > tl) break; }
+  float t = .05, id = -1., glow = 0.; bool hit = false; float tl = min(depth, 170.);
+  for (int i = uZero; i < 96; i++){ vec2 m = gmap(ro + rd * t); glow += exp(-max(gF, 0.) * 1.3) * min(m.x, 2.); if (m.x < .0012 * t && m.y > 0.){ hit = true; id = m.y; break; } t += m.x * .8; if (t > tl) break; }
   if (hit){ depth = t; vec3 p = ro + rd * t; col = gshade(p, gnormal(p), rd, id); } else if (plat) col = platShade(ro + rd * tp, rd, tp); else if (tt > 0.) col = tShade(ro + rd * tt, n, cc, yr, tt);
-  col = mix(col, vec3(.006, .001, .012) + uCol * .004, 1. - exp(-min(depth, 400.) * .013));
+  col = mix(col, vec3(.006, .001, .012) + uCol * .004, 1. - exp(-min(depth, 400.) * .011 * (1. - .6 * uAura)));
+  col += mix(uCol, vec3(1.), .1) * glow * .03 * (1. + uFlare) * uAura;                                                          // 네온선 주위의 빛 번짐
   { vec3 pw = ro + rd * min(depth, 70.); float wd = abs(length(pw.xz - uW0.xz) - uWaveR); col += (uCol2 * .8 + .3) * exp(-wd * .25) * .5 * step(0., uWaveR); }
   for (int i = uZero; i < 12; i++){ vec4 P = uTxtP[i]; if (P.w < 0.) continue; vec3 nr = normalize(ro - P.xyz); float den = dot(rd, nr); if (den > -.05) continue;   // 떠다니는 깨진 글자 · 오류 코드
     float tq = dot(P.xyz - ro, nr) / den; if (tq < 0. || tq > depth) continue; vec3 x = ro + rd * tq - P.xyz, rg = normalize(cross(vec3(0., 1., 0.), nr)), up = cross(nr, rg);
     vec2 uv = vec2(dot(x, rg), dot(x, up)) / vec2(5.2, .65); if (abs(uv.x) > .5 || abs(uv.y) > .5) continue; float tk = floor(uT * 12. + float(i) * 3.);
     uv.x += (hash(vec2(floor(uv.y * 5.), tk)) - .5) * .12 * step(.6, hash(vec2(tk, float(i)))); float row = floor(P.w), a = texture(uAtlas, vec2(uv.x + .5, 1. - (row + .5 - uv.y) / 16.)).r;
-    col += mix(uCol, vec3(1.), .25) * a * 1.3 * step(.18, hash(vec2(tk, float(i) + 3.))) * (1. - tq / 90.); }
-  if (uAura > 0.){ vec2 oc = ro.xz - uF.xz; float a = dot(rd.xz, rd.xz), b = dot(oc, rd.xz), c = dot(oc, oc) - 2.9 * 2.9, di = b * b - a * c;   // 원에서 구조물로 솟구치는 입자(네온 · 검정)
-    if (di > 0.){ float sq = sqrt(di), t0 = max((-b - sq) / a, 0.), t1 = min((-b + sq) / a, depth); if (t1 > t0){ float dt = (t1 - t0) / 30., j = hash(gl_FragCoord.xy + fract(uT * 3.1) * 13.), Tr = 1.; vec3 acc = vec3(0.);
-      for (int i = uZero; i < 30; i++){ vec3 x = ro + rd * (t0 + (float(i) + j) * dt), q = x - uF; if (q.y < 0. || q.y > uS.y - uF.y + 1.) continue; float rr = length(q.xz);
-        vec3 g = vec3(q.x, q.y - uT * 5.5 - rr * .4, q.z) * 3.2, gi = floor(g), gf = fract(g) - .5, off = (vec3(hash(gi.xy + 1.), hash(gi.yz + 2.), hash(gi.xz + 3.)) - .5) * .5, dd = abs(gf - off);
-        float on = step(.8 - .12 * uAura, hash(gi.xz + gi.y * 13.7)) * smoothstep(2.9, 1.2, rr) * uAura, sqm = smoothstep(.13, .07, max(dd.x, max(dd.y, dd.z))) * on;
-        if (hash(gi.xy + 7.) > .45) acc += Tr * uCol * 3. * sqm; else Tr *= 1. - .55 * sqm; }
+    col += mix(uCol, vec3(1.), .25) * a * 1.3 * step(.18, hash(vec2(tk, float(i) + 3.))) * (1. - tq / 90.) * (1. - .75 * uAura) * smoothstep(60., 20., tq); }
+  if (false){ vec3 ax = normalize(uS - uF); vec3 o0 = ro - uF, dd = rd - ax * dot(rd, ax), oo = o0 - ax * dot(o0, ax); float A = dot(dd, dd), B = dot(oo, dd), C = dot(oo, oo) - 81., di = B * B - A * C;   // 발밑의 원에서 GLITCH 로 솟구치는 입자(네온 · 검정)
+    if (di > 0. && A > 1e-5){ float sq = sqrt(di), t0 = max((-B - sq) / A, 0.), t1 = min((-B + sq) / A, min(depth, 40.)); if (t1 > t0){ float L = length(uS - uF), dt = (t1 - t0) / 34., j = hash(gl_FragCoord.xy + fract(uT * 3.1) * 13.), Tr = 1.; vec3 acc = vec3(0.);
+      vec3 b1 = normalize(cross(ax, vec3(1., 0., 0.))), b2 = cross(ax, b1);
+      for (int i = uZero; i < 34; i++){ vec3 x = ro + rd * (t0 + (float(i) + j) * dt) - uF; float al = dot(x, ax); if (al < 0. || al > 26.) continue; vec3 lx = vec3(dot(x, b1), al, dot(x, b2)); float rr = length(lx.xz), Rm = mix(3.2, 9., al / L);
+        if (rr > Rm) continue; float cs = mix(.4, .9, al / 26.); vec3 g = vec3(lx.x / cs, (lx.y - uT * (11. + 30. * uEat) - rr) / (cs * 5.), lx.z / cs), gi = floor(g), gf = fract(g) - .5, off = (vec3(hash(gi.xy + 1.), hash(gi.yz + 2.), hash(gi.xz + 3.)) - .5) * .5, d3 = abs(gf - off);
+        float on = step(.9, hash(gi.xz + gi.y * 13.7)) * smoothstep(Rm, Rm * .4, rr) * smoothstep(26., 12., al) * uAura, sqm = smoothstep(.14, .08, max(d3.x, max(d3.y, d3.z))) * on;
+        if (hash(gi.xy + 7.) > .45) acc += Tr * mix(uCol, vec3(1.), .2) * 2.6 * sqm; else Tr *= 1. - .6 * sqm; }
       col = col * Tr + acc; } } }
+  if (uAura > 0.){ vec3 oc = ro - uS; float b = dot(oc, rd), c = dot(oc, oc) - 30. * 30. * uStarK * uStarK, di = b * b - c;          // 별을 둘러싼 검은 조각들
+    if (di > 0.){ float sq = sqrt(di), t0 = max(-b - sq, 0.), t1 = min(-b + sq, depth), dt = (t1 - t0) / 26., Tr = 1.; vec3 acc = vec3(0.);
+      for (int i = uZero; i < 26; i++){ vec3 x = uR2 * (ro + rd * (t0 + (float(i) + .5) * dt) - uS); float rr = length(x); if (rr < 12. * uStarK) continue; vec3 g = x / 2.3, gi = floor(g), gf = fract(g) - .5;
+        float on = step(.88, hash(gi.xy + gi.z * 7.1)), d = max(abs(gf.x), max(abs(gf.y), abs(gf.z))), sz = .12 + .16 * hash(gi.xz + 2.), sqm = smoothstep(sz + .03, sz, d) * on;
+        acc += Tr * uCol * smoothstep(sz + .03, sz, d) * smoothstep(sz - .04, sz, d) * on * .35; Tr *= 1. - .95 * sqm; }
+      col = col * Tr + acc; } }
   if (uGather > 0.){ float R = .3 + 1.25 * uGather; vec3 oc = ro - uE; float b = dot(oc, rd), c = dot(oc, oc) - R * R, di = b * b - c;                  // 검정 · 보라 에너지가 모인다
     if (di > 0.){ float sq = sqrt(di), t0 = max(-b - sq, 0.), t1 = min(-b + sq, depth), dt = (t1 - t0) / 22., Tr = 1.; vec3 acc = vec3(0.);
       for (int i = uZero; i < 22; i++){ vec3 x = ro + rd * (t0 + (float(i) + .5) * dt) - uE, xq = floor(x * 9.) / 9.; float r = length(x) / R, nz = fbm(xq.xy * 2.3 + xq.z * 1.7 + uT * 1.6), den = smoothstep(1., .15, r) * smoothstep(.32, .68, nz) * 7.;
         bool pu = hash(xq.xy * 7. + xq.z + floor(uT * 14.)) > .5; if (pu) acc += Tr * vec3(.55, .12, 1.) * 1.8 * den * dt; Tr *= exp(-den * dt * (pu ? .25 : 1.6)); }
       col = col * Tr + acc; }
     vec3 v = uE - ro; float tc = max(dot(v, rd), 0.), d = length(v - rd * tc); col += vec3(.5, .1, 1.) * uGather * .12 / (d * d * .6 + .05) * step(tc, depth + 1.); }
-  if (uAura > 0.){ vec3 v = uS - ro; float tc = max(dot(v, rd), 0.), d = length(v - rd * tc); col += uCol * (1. + 2. * uFlare) * .22 / (1. + d * d * 1.5) * uAura * step(tc, depth + 3.); }
+  if (uAura > 0.){ vec3 v = uS - ro; float tc = max(dot(v, rd), 0.), d = length(v - rd * tc); col += uCol * (1. + 2. * uFlare) * 1.4 / (1. + d * d * .03) * uAura * step(tc, depth + 3.) * .09; }   // 별빛이 공허에 번진다
   o = vec4(max(col, 0.), min(depth, 300.));
 }
 #endif
 `;
 const FS_FINAL = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uInvert, uTear, uRGB, uBlockG, uPix, uNoiseV, uLid, uBlur, uGrade, uScan;
+uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uInvert, uTear, uRGB, uBlockG, uPix, uNoiseV, uLid, uBlur, uGrade, uScan, uSwirl, uEatS, uClose; uniform vec2 uStarUV; uniform vec3 uNeon;
 ${CSGL.NOISE}
 vec3 scene(vec2 uv){ vec4 c0 = texture(uScene, uv); float coc = max(clamp(abs(c0.a - uFocus) / max(c0.a, .3) * uAper, 0., 1.) * .012, uBlur * .02); if (coc < .0006) return c0.rgb;   // 피사계 심도 · 막 깬 눈의 흐림
   vec3 acc = c0.rgb; float n = 1.; for (int i = 0; i < 16; i++){ float fi = float(i) + .5, a = fi * 2.39996, r = sqrt(fi / 16.) * coc; vec2 d = vec2(cos(a), sin(a)) * r * vec2(uRes.y / uRes.x, 1.); vec4 sx = texture(uScene, uv + d); float w = 1. + 2. * max(max(sx.r, sx.g), sx.b); acc += sx.rgb * w; n += w; } return acc / n; }
 void main(){
   vec2 c = vUv - .5, uv = c / uZoom + .5 + uShake; float tk = floor(uT * 30.);
+  if (uSwirl > 0.){ vec2 A = vec2(uRes.x / uRes.y, 1.), d = (uv - uStarUV) * A; float r = length(d), ang = uSwirl * 2.4 * exp(-r * 1.2), cs = cos(ang), sn = sin(ang); d = mat2(cs, -sn, sn, cs) * d; d *= 1. + uSwirl * .5 * exp(-r * 1.4); uv = uStarUV + d / A; }   // 별 쪽으로 빨려 드는 소용돌이
   if (uBlockG > 0.){ float gs = 6. + 10. * floor(hash(vec2(tk, 1.)) * 3.); vec2 bc = floor(uv * vec2(gs * uRes.x / uRes.y, gs)); float h = hash(bc + tk * .37);                       // 블록째 어긋남(데이터모싱)
     if (h < uBlockG * .3) uv += (vec2(hash(bc + tk + 1.), hash(bc + tk + 2.)) - .5) * .22 * uBlockG; }
   { float rw = floor(uv.y * (24. + 70. * hash(vec2(tk, 7.)))), g = hash(vec2(rw, tk)); if (g < uTear * .45) uv.x += (hash(vec2(rw, tk + 3.)) - .5) * .28 * uTear; }                         // 화면 찢어짐
@@ -357,6 +396,10 @@ void main(){
     float cover = smoothstep(1.2 - uNoiseV * 1.5, 1.26 - uNoiseV * 1.5, m); col = mix(col, vec3(hash(floor(gl_FragCoord.xy / 3.) + tk)) * .18 * step(.75, hash(floor(gl_FragCoord.xy / 3.) * 1.3 + tk)), cover); }
   if (uLid > 0.){ float x = vUv.x - .5, lc = (1. - uLid) * .64, up = .5 + lc - x * x * .55 * (1. - uLid * .5), dn = .5 - lc * .82 + x * x * .38, sf = .025 + .05 * uLid;                    // 눈꺼풀
     float op = smoothstep(up + sf, up - sf, vUv.y) * smoothstep(dn - sf, dn + sf, vUv.y); col *= op * mix(1., smoothstep(0., .14, min(up - vUv.y, vUv.y - dn)), .6); }
+  if (uEatS > 0.){ vec2 A = vec2(uRes.x / uRes.y, 1.); float bs = .048; vec2 cell = floor(vUv * A / bs), cc = (cell + .5) * bs / A; float d = length((cc - uStarUV) * A), h = hash(cell + 3.), fr = uEatS * 2. - d - h * .45;   // 플레이어의 화면이 블록째 먹힌다
+    if (fr > 0.) col = fr < .09 ? mix(uNeon * 1.3, vec3(1.), step(.7, hash(cell + tk))) * step(.3, hash(cell * 1.7 + tk)) : uNeon * .08 * step(.96, hash(cell + tk)); }
+  if (uClose > 0.){ float cx = floor(vUv.x * 48.), j = (hash(vec2(cx, tk)) - .5) * .05 * (1. - uClose), hh = .395 * uClose, top = .895 - hh + j, bot = .105 + hh - j;   // 화면이 닫힌다
+    if (vUv.y > top || vUv.y < bot) col = vec3(0.); col += uNeon * smoothstep(.005, 0., min(abs(vUv.y - top), abs(vUv.y - bot))) * 1.4 * step(uClose, .995); }
   col *= step(.105, vUv.y) * step(vUv.y, .895);
   o = vec4(max(col, 0.) * (1. - uFade), 1.);
 }`;
@@ -371,7 +414,7 @@ function initGL() { if (X) return; const x = CSGL.create(glc); x.gl.getExtension
 function resize() {
   const recording = $("cs").classList.contains("rec"); DPR = recording ? 1 : Math.min(DPR_CAP, window.devicePixelRatio || 1); Wd = glc.clientWidth || 1280; Hd = glc.clientHeight || 720; U = Math.min(Wd, Hd) / 10;
   const pw = Math.max(2, Math.round(Wd * DPR)), ph = Math.max(2, Math.round(Hd * DPR)); glc.width = tcv.width = pw; glc.height = tcv.height = ph;
-  initGL(); const sc = recording ? .66 : SCALE, sw = Math.max(2, Math.round(pw * sc)), sh = Math.max(2, Math.round(ph * sc)); X.resize(sw, sh); X.free(RT.scene); RT.scene = X.target(sw, sh);   /* 4K 녹화: 레이마칭은 0.66배, 합성은 3840x2160 */
+  initGL(); const sc = recording ? .66 : SCALE, sw = Math.max(2, Math.round(pw * sc)), sh = Math.max(2, Math.round(ph * sc)); X.resize(sw, sh); X.free(RT.scene); RT.scene = X.target(sw, sh); X.free(RT.lo); RT.lo = recording ? X.target(Math.round(pw * .55), Math.round(ph * .55)) : null;   /* 4K 녹화의 마지막 거대한 장면은 0.55배로 */   /* 4K 녹화: 레이마칭은 0.66배, 합성은 3840x2160 */
 }
 setTimeout(() => { try { initGL(); } catch (e) { /* 재생할 때 다시 시도하며 안내 */ } }, 200);
 
@@ -404,15 +447,26 @@ const rgbs = (c, a = 1) => `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 2
 function proj(S, p) { const v = sub(p, S.cam.pos), z = dot(v, S.cam.f); if (z < .1) return null; return [Wd / 2 + dot(v, S.cam.r) / z * S.focal * Hd / 2, Hd / 2 - dot(v, S.cam.u) / z * S.focal * Hd / 2, z]; }
 function warnSign(x, y, s, col) { tg.save(); tg.translate(x, y); tg.lineJoin = "round"; tg.lineWidth = s * .11; tg.strokeStyle = col; tg.fillStyle = "rgba(0,0,0,.75)"; tg.beginPath(); tg.moveTo(0, -s * .55); tg.lineTo(s * .6, s * .45); tg.lineTo(-s * .6, s * .45); tg.closePath(); tg.fill(); tg.stroke();
   tg.fillStyle = col; tg.fillRect(-s * .055, -s * .22, s * .11, s * .38); tg.fillRect(-s * .055, s * .23, s * .11, s * .11); tg.restore(); }
+const PART = (() => { const r = rng(321), a = []; for (let i = 0; i < 560; i++) a.push({ ang: r() * TAU, r0: 1.1 + 3.4 * Math.sqrt(r()), sp: .2 + .35 * r(), ph: r(), sz: .05 + .14 * r(), black: r() < .33, c: Math.floor(r() * 8), off: [(r() - .5) * 30, (r() - .5) * 22, (r() - .5) * 30], sw: (r() - .5) * 2 }); return a; })();
+function drawParticles(t, S) {                                                                            // 발밑의 원에서 GLITCH 로 솟구치는 네온 · 검은 사각 입자(빨려 들 때는 더 빨라진다)
+  const k = S.aura; if (k <= 0) return; const sp = 1 + 2.5 * S.eat, pts = [], P3 = (q, u) => { const e = Math.pow(u, 1.5), a = q.ang + e * (2.2 + q.sw * 3) + S.eat * e * 5, R = q.r0 * (1 - e) + 5 * Math.sin(e * PI) * (1 - .7 * S.eat);
+    const tgt = add(S0, mul(q.off, 1 - .85 * S.eat)); return [lerp(F0[0] + Math.cos(a) * R, tgt[0], e * e), lerp(.15, tgt[1], e), lerp(F0[2] + Math.sin(a) * R, tgt[2], e * e)]; };
+  for (const q of PART) { const u = (q.ph + t * q.sp * sp * .32) % 1; if (u > .97) continue; const a = proj(S, P3(q, u)), b = proj(S, P3(q, Math.max(0, u - .012 * sp))); if (!a || !b) continue; pts.push([a, b, q, u]); }
+  pts.sort((x, y) => y[0][2] - x[0][2]); tg.save(); tg.globalCompositeOperation = "source-over";
+  for (const [a, b, q, u] of pts) { const px = Math.min(U * .45, q.sz * S.focal * Hd / 2 / a[2]); if (px < .5) continue; const al = k * Math.min(1, u * 12) * Math.min(1, (.97 - u) * 10), c = q.black ? [0, 0, 0] : (q.c < 5 ? S.colJ : NEON[q.c]);
+    tg.globalAlpha = al * .55; tg.strokeStyle = q.black ? rgbs(S.colJ, .5) : rgbs(c); tg.lineWidth = Math.max(1, px * .5); tg.beginPath(); tg.moveTo(b[0], b[1]); tg.lineTo(a[0], a[1]); tg.stroke();
+    tg.globalAlpha = al; tg.fillStyle = rgbs(c); tg.fillRect(a[0] - px, a[1] - px, px * 2, px * 2); if (q.black && px > 1.5) { tg.strokeStyle = rgbs(S.colJ, .9); tg.lineWidth = Math.max(1, px * .22); tg.strokeRect(a[0] - px, a[1] - px, px * 2, px * 2); } }
+  tg.restore(); }
 function drawOverlay(t, S) {
   tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, tcv.width, tcv.height); tg.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (S.shot !== 1 || t < T.FORM || t >= T.BLACK) return;
   const col = S.colJ, tick = Math.floor(t * 10);
+  drawParticles(t, S);
   if (t >= T.FORM && t < T.AURA) { const e = proj(S, S.E); if (e && Math.floor(t * 14) % 3 === 0) warnSign(e[0], e[1] - U * 1.6, U * (1 + .4 * h1(tick)), rgbs(NEON[Math.floor(h1(tick + 5) * 8)])); }   // 경고 표시가 깜빡인다
   for (const b of [T.B1, T.B2]) { const k = t - b; if (k < 0 || k > 1.3) continue; const sp = proj(S, S.S); if (!sp) continue; const r = rng(Math.round(b * 100)); tg.textAlign = "center"; tg.textBaseline = "middle";   // 터지며 흩어지는 숫자 · 기호
     for (let i = 0; i < 46; i++) { const a = r() * TAU, v = (.8 + 2.2 * r()) * U * 2.2, d = v * eOut(Math.min(1, k * 1.1)), x = sp[0] + Math.cos(a) * d, y = sp[1] + Math.sin(a) * d * .8 + k * k * U * 1.2, ch = "0123456789!@#$%^&*()?"[Math.floor(r() * 21 + t * 20) % 21];
       tg.font = `bold ${Math.round(U * (.25 + .35 * r()))}px ${FONTS[Math.floor(r() * FONTS.length)]}`; tg.fillStyle = r() < .4 ? "rgba(0,0,0,.9)" : rgbs(NEON[Math.floor(r() * 8)], 1 - k / 1.3); tg.fillText(ch, x, y); } }
-  if (t >= T.AURA + .35 && t < T.FINAL + .3) { const r = rng(tick * 31 + 5), k = eOut(seg(t, T.AURA + .35, T.AURA + .6));                                          // 제목: 0.1초마다 글꼴 · 크기 · 방향이 바뀐다
+  if (t >= T.AURA + .35 && t < T.DEVOUR + .7 && !(t > T.DEVOUR && h1(Math.floor(t * 20)) < seg(t, T.DEVOUR, T.DEVOUR + .7))) { const r = rng(tick * 31 + 5), k = eOut(seg(t, T.AURA + .35, T.AURA + .6));                                          // 제목: 0.1초마다 글꼴 · 크기 · 방향이 바뀐다
     const draw = (txt, y, base) => { tg.save(); const f = FONTS[Math.floor(r() * FONTS.length)], sz = Math.round(base * (.7 + .7 * r()) * k), rot = [0, 0, 0, .09, -.09, .2, -.2, PI, PI / 2, -PI / 2][Math.floor(r() * 10)], sx = r() < .2 ? -1 : 1;
       tg.translate(Wd / 2 + (r() - .5) * U * .3, y + (r() - .5) * U * .2); tg.rotate(Math.abs(rot) > 1 ? rot * .12 : rot); tg.scale(sx, Math.abs(rot) === PI ? -1 : 1); tg.font = `${r() < .5 ? "bold" : ""} ${r() < .3 ? "italic" : ""} ${sz}px ${f}`;
       tg.textAlign = "center"; tg.textBaseline = "middle"; const c2 = NEON[Math.floor(r() * 8)]; tg.fillStyle = "rgba(0,0,0,.85)"; tg.fillText(txt, sz * .05, sz * .05); tg.fillStyle = rgbs(r() < .5 ? col : c2); tg.fillText(txt, 0, 0);
@@ -439,7 +493,7 @@ function lidAt(t) {
 function state(t) {
   const S = { shot: 0, focal: 1.3, focus: 2, aper: .3, blur: 0, lid: lidAt(t), grade: 0, tear: 0, rgb: 0, blockG: 0, pix: 1, noiseV: 0, scan: 0, flash: 0, invert: 0, fade: 0, shake: 0,
     digits: [0, 7, 3, 0], clockG: 0, cupG: 0, bookG: 0, bookFlip: 0, winSwap: 0, crack: 0, roomG: 0, scrOn: 1, tick: Math.floor(t * 24),
-    aura: 0, gather: 0, form: 0, waveR: -1, spin: 0, flare: 0, starK: 0, ghost: 0, worldG: 0, E: E0, S: S0, rays: .35 };
+    aura: 0, eat: 0, build: 1, blackK: 1, swirl: 0, eatS: 0, close: 0, gather: 0, form: 0, waveR: -1, spin: 0, flare: 0, starK: 0, ghost: 0, worldG: 0, E: E0, S: S0, rays: .35 };
   const br = [Math.sin(t * 1.3) * .012, Math.sin(t * 1.9 + 1) * .01, Math.sin(t * .9 + 2) * .01];                     // 숨결 · 손떨림
   let cam;
   if (t < T.CLOCK) {                                                                                        // 눈을 뜬다
@@ -478,47 +532,52 @@ function state(t) {
       cam = camera(add(p, [(h1(S.tick) - .5) * jolt, (h1(S.tick + 1) - .5) * jolt, 0]), add(p, [Math.sin(a) * 5, .35 + .1 * Math.sin(t * .4), -Math.cos(a) * 5]), .03 * Math.sin(t * .7) + wPass * .1 * Math.sin(t * 40)); }
     else if (t < T.AURA) { const turn = eOut(seg(t, T.GATHER, T.GATHER + .7)), a = lerp(.55, 0, turn), p = add([0, 1.6, -.9 * eInOut(seg(t, T.GATHER, T.AURA))], br);
       cam = camera(p, add(p, [Math.sin(a) * 5, lerp(.35, 0, turn), -Math.cos(a) * 5]), 0); S.focus = 4.5; S.aper = .3; }
-    else { const k = eOut(seg(t, T.AURA, T.AURA + 1.6)), fin = eIn(seg(t, T.FINAL, T.BLACK)), pos = mix3(mix3([0, 1.6, -.9], [.6, 1.25, 4.6], k), [0, 5.8, -3.2], fin), sh = .12 * (pulse(t, T.B1, .01, .5) + pulse(t, T.B2, .01, .5));
-      cam = camera(add(add(pos, br), [(h1(S.tick) - .5) * sh, (h1(S.tick + 4) - .5) * sh, 0]), mix3(mix3(E0, [0, 4.6, -7], k), S0, fin), .04 * Math.sin(t * .8)); S.focal = lerp(1.1, 1.0, k); S.focus = 11; S.aper = .2; }
+    else { const up = eOut(seg(t, T.AURA, T.AURA + 1.)), dvE = eIn(seg(t, T.DEVOUR, T.FINAL)), ea = seg(t, T.FINAL, T.BLACK), sh = .15 * (pulse(t, T.B1, .01, .5) + pulse(t, T.B2, .01, .5)) + .16 * dvE + .3 * ea;   // 공허 하늘의 거대한 GLITCH 를 올려다본다 → 빨려 올라간다
+      const pos = [0, 1.6 + 9 * dvE * dvE, -.9 - 5 * dvE], tgt = add(mix3(add(E0, [0, 1.5, 0]), sub(S0, [0, 15, 0]), up), [Math.sin(t * .45) * 2.5 * up, -14 * Math.sin(Math.min(1, seg(t, T.DEVOUR, T.FINAL) * 1.25) * PI) + 4 * eIn(seg(t, T.FINAL - .5, T.FINAL)), 0]);
+      cam = camera(add(add(pos, br), [(h1(S.tick) - .5) * sh, (h1(S.tick + 4) - .5) * sh, 0]), tgt, .05 * Math.sin(t * .8) + .22 * dvE * Math.sin(t * 2.3)); S.focal = lerp(.82, 1.2, dvE) + .5 * eIn(ea); S.focus = 55; S.aper = .08; S.rays = .3; }
     S.gather = t >= T.GATHER && t < T.AURA + .15 ? eOut(seg(t, T.GATHER, T.FORM)) * (t < T.FORM + .5 ? 1 : 1 - .5 * seg(t, T.FORM + .5, T.FORM + .9)) * (t < T.AURA ? 1 : 1 - seg(t, T.AURA, T.AURA + .15)) : 0;
     S.E = t < T.AURA - .2 ? E0 : mix3(E0, S0, eInOut(seg(t, T.AURA - .2, T.AURA + .2)));
-    S.aura = t >= T.AURA ? eOut(seg(t, T.AURA, T.AURA + .4)) : 0; S.starK = t >= T.AURA ? eBack(seg(t, T.AURA, T.AURA + .35)) : 0; S.spin = t * 1.4;
-    const sp = t * 3.2 + (t >= T.AURA ? (t - T.AURA) * 4 : 0); S.r1 = rotM(sp * .7, sp, .3); S.r2 = rotM(-sp * .9 + 1, -sp * 1.5, -.5);
-    S.flare = t >= T.AURA ? Math.max(pulse(t, T.B1, .02, .6), pulse(t, T.B2, .02, .6), .6 * pulse(t, T.AURA, .01, .5), (Math.floor(t * 2) % 2) * .15 * (t < T.FINAL ? 1 : 0)) : 0;
+    S.aura = t >= T.AURA ? eOut(seg(t, T.AURA, T.AURA + .5)) : 0; S.build = t >= T.AURA ? eOut(seg(t, T.AURA, T.AURA + 1.1)) : 0; S.starK = t >= T.AURA ? eBack(seg(t, T.AURA + .12, T.AURA + .6)) : 0; S.spin = t * 1.4 + (t >= T.DEVOUR ? Math.pow(t - T.DEVOUR, 2) * 1.5 : 0);
+    S.eat = t >= T.DEVOUR ? eInOut(seg(t, T.DEVOUR, T.FINAL + .4)) : 0; S.blackK = 1 + 2.8 * eInOut(seg(t, T.DEVOUR + .1, T.FINAL));                 // 검은 별이 부풀어 모든 것을 삼킨다
+    S.swirl = t >= T.AURA ? .04 + .9 * eIn(seg(t, T.DEVOUR, T.FINAL)) + 1.6 * eIn(seg(t, T.FINAL, T.BLACK)) : 0; S.eatS = seg(t, T.FINAL, T.BLACK - .12); S.close = eIn(seg(t, T.FINAL + .3, T.BLACK));
+    const sp = t * 3.2 + (t >= T.AURA ? (t - T.AURA) * 4 : 0) + (t >= T.DEVOUR ? Math.pow(t - T.DEVOUR, 2) * 3 : 0); S.r1 = rotM(sp * .7, sp, .3); S.r2 = rotM(-sp * .9 + 1, -sp * 1.5, -.5);
+    S.flare = t >= T.AURA ? Math.max(pulse(t, T.B1, .02, .6), pulse(t, T.B2, .02, .6), .6 * pulse(t, T.AURA, .01, .5), (Math.floor(t * 2) % 2) * .15 * (t < T.DEVOUR ? 1 : 0), .5 * S.eat * (h1(S.tick) > .5 ? 1 : .4)) : 0;
     const bits = new Float32Array(64); if (t >= T.AURA) { const r = rng(55); for (let i = 0; i < 16; i++) { const a = r() * TAU + t * (1.5 + r()), b = (r() - .5) * 2, rr = 1.1 + 1.3 * r(), cb = Math.cos(b); bits.set([Math.cos(a) * rr * cb, Math.sin(b) * rr, Math.sin(a) * rr * cb, (.05 + .08 * r()) * S.aura], i * 4); } } S.bits = bits;
     const frag = new Float32Array(96), r = rng(4242);
     for (let i = 0; i < 24; i++) { const u = r() * 2 - 1, ph = r() * TAU, sq = Math.sqrt(1 - u * u), dir = [sq * Math.cos(ph), u, sq * Math.sin(ph)], R0 = 5 + 4 * r(), sz = .08 + .16 * r(), dl = r() * .4;
       if (t >= T.GATHER && t < T.AURA) { const c = eIn(seg(t, T.GATHER + dl, T.FORM)), ex = eOut(seg(t, T.FORM, T.FORM + .45)) * (1 - eInOut(seg(t, T.FORM + .5, T.FORM + .95))), rr = lerp(R0, .25, c) + ex * (1.6 + 1.5 * r());   // 모였다 → 픽셀 조각으로 분해 → 다시 하나로
         frag.set([E0[0] + dir[0] * rr, E0[1] + dir[1] * rr * .8, E0[2] + dir[2] * rr, sz * (t < T.FORM ? c * 1.2 + .2 : 1)], i * 4); }
-      else for (const b of [T.B1, T.B2]) { const k = t - b; if (k >= 0 && k < 1.4) { const v = 5 + 9 * r(); frag.set([S0[0] + dir[0] * v * k, S0[1] + dir[1] * v * k - 3 * k * k, S0[2] + dir[2] * v * k, (.14 + .3 * r()) * (1 - k / 1.4)], i * 4); } } }
+      else for (const b of [T.B1, T.B2]) { const k = t - b; if (k >= 0 && k < 1.6) { const v = 16 + 30 * r(); frag.set([S0[0] + dir[0] * v * k, S0[1] + dir[1] * v * k - 4 * k * k, S0[2] + dir[2] * v * k, (.7 + 1.8 * r()) * (1 - k / 1.6)], i * 4); } } }   // 별이 터지며 거대한 검은 큐브가 흩어진다
     S.frag = frag;
-    S.txt = new Float32Array(48); TXTP.forEach((q, i) => { const vis = h1(Math.floor(t * (2 + q.on * 3)) + i * 7) > .25; S.txt.set([q.p[0] + Math.sin(t * .4 + q.ph) * .6, q.p[1] + Math.sin(t * .7 + q.ph) * .4, q.p[2], vis ? q.row + .1 : -1], i * 4); });
+    S.txt = new Float32Array(48); TXTP.forEach((q, i) => { const vis = h1(Math.floor(t * (2 + q.on * 3)) + i * 7) > .25, kE = eIn(clamp(S.eat * 1.5 - q.on * .5)), p0 = [q.p[0] + Math.sin(t * .4 + q.ph) * .6, q.p[1] + Math.sin(t * .7 + q.ph) * .4, q.p[2]], pp = mix3(p0, S0, kE);   // 글자들도 빨려 든다
+      S.txt.set([pp[0], pp[1], pp[2], vis && kE < .92 ? q.row + .1 : -1], i * 4); });
     const base = t < T.AURA ? .08 + .06 * (h1(S.tick) > .8 ? 1 : 0) : .1;
-    S.tear = Math.max(base, .5 * pulse(t, T.WAKE, .01, .6), .95 * wPass, t >= T.GATHER && t < T.AURA ? .15 + .35 * seg(t, T.GATHER, T.AURA) * (h1(S.tick + 3) > .5 ? 1 : .3) : 0, .7 * pulse(t, T.FORM, .01, .3), .9 * pulse(t, T.AURA, .01, .35), .6 * pulse(t, T.B1, .01, .3), .6 * pulse(t, T.B2, .01, .3), t >= T.FINAL ? 1 : 0);
-    S.rgb = Math.max(.25, S.tear * 1.3); S.blockG = Math.max(.08, .5 * pulse(t, T.WAKE, .01, .7), .8 * wPass, .6 * pulse(t, T.FORM, .01, .4), .5 * pulse(t, T.B1, .01, .3), .5 * pulse(t, T.B2, .01, .3), t >= T.FINAL ? 1 : 0); S.scan = .5;
+    S.tear = Math.max(base, .5 * pulse(t, T.WAKE, .01, .6), .95 * wPass, t >= T.GATHER && t < T.AURA ? .15 + .35 * seg(t, T.GATHER, T.AURA) * (h1(S.tick + 3) > .5 ? 1 : .3) : 0, .7 * pulse(t, T.FORM, .01, .3), .9 * pulse(t, T.AURA, .01, .35), .6 * pulse(t, T.B1, .01, .3), .6 * pulse(t, T.B2, .01, .3), .15 + .5 * eIn(seg(t, T.DEVOUR, T.FINAL)) * (t >= T.DEVOUR ? 1 : 0), t >= T.FINAL ? .9 : 0);
+    S.rgb = Math.max(.25, S.tear * 1.3); S.blockG = Math.max(.08, .5 * pulse(t, T.WAKE, .01, .7), .8 * wPass, .6 * pulse(t, T.FORM, .01, .4), .5 * pulse(t, T.B1, .01, .3), .5 * pulse(t, T.B2, .01, .3), t >= T.DEVOUR ? .1 + .4 * S.eat : 0, t >= T.FINAL ? .8 : 0); S.scan = .5;
     S.flash = Math.max(.9 * pulse(t, T.AURA, .01, .4), .45 * pulse(t, T.B1, .01, .25), .45 * pulse(t, T.B2, .01, .25), .3 * wPass); S.invert = (t >= T.AURA && t < T.AURA + .05) || (wPass > .9) || (t >= T.FINAL && h1(S.tick) > .6) ? 1 : 0;
-    S.pix = t >= T.FINAL ? 1 + Math.floor(eIn(seg(t, T.FINAL, T.BLACK)) * 40) : pulse(t, T.FORM, .01, .3) > .3 ? 6 : 1; S.shake = Math.max(wPass, pulse(t, T.AURA, .01, .4), .6 * pulse(t, T.B1, .01, .4), .6 * pulse(t, T.B2, .01, .4), t >= T.FINAL ? .8 : 0);
+    S.pix = t >= T.FINAL ? 1 + Math.floor(eIn(seg(t, T.FINAL, T.BLACK)) * 5) : pulse(t, T.FORM, .01, .3) > .3 ? 6 : 1; S.shake = Math.max(wPass, pulse(t, T.AURA, .01, .4), .6 * pulse(t, T.B1, .01, .4), .6 * pulse(t, T.B2, .01, .4), .5 * S.eat, t >= T.FINAL ? .8 : 0);
     S.fade = Math.max(1 - seg(t, T.WAKE, T.WAKE + .25), t >= T.BLACK ? 1 : 0);
   }
   S.cam = cam; return S;
 }
 function render(t) {
-  const S = state(t), gl = X.gl, pw = glc.width, ph = glc.height, sw = RT.scene.w, sh = RT.scene.h;
+  const S = state(t), gl = X.gl, pw = glc.width, ph = glc.height, TG = RT.lo && S.shot === 1 && t >= T.AURA - .1 ? RT.lo : RT.scene, sw = TG.w, sh = TG.h;
   if (S.shot === 0 && t >= T.DESK - .1 && t < T.DARK) { drawScreen(t); X.upload(scrTex, scv, false); } else if (t < 1) { drawScreen(0); X.upload(scrTex, scv, false); }
   drawOverlay(t, S); X.upload(txtTex, tcv, true); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
   const prog = P.s[S.shot](), u = prog.u, f1 = (n, v) => { if (u[n] != null) gl.uniform1f(u[n], v || 0); }, v3 = (n, v) => { if (u[n] != null) gl.uniform3f(u[n], v[0], v[1], v[2]); };
-  X.pass(prog, RT.scene, () => { gl.uniform2f(u.uRes, sw, sh); f1("uT", t); f1("uTick", S.tick); if (u.uZero != null) gl.uniform1i(u.uZero, 0); v3("uCamPos", S.cam.pos); gl.uniformMatrix3fv(u.uCam, false, new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f])); f1("uFocal", S.focal);
+  X.pass(prog, TG, () => { gl.uniform2f(u.uRes, sw, sh); f1("uT", t); f1("uTick", S.tick); if (u.uZero != null) gl.uniform1i(u.uZero, 0); v3("uCamPos", S.cam.pos); gl.uniformMatrix3fv(u.uCam, false, new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f])); f1("uFocal", S.focal);
     if (u.uDigits != null) gl.uniform4f(u.uDigits, ...S.digits); if (u.uScr != null) X.bindTex(4, scrTex, u.uScr); if (u.uAtlas != null) X.bindTex(5, atlasTex, u.uAtlas);
     for (const [n, v] of [["uClockG", S.clockG], ["uCupG", S.cupG], ["uBookG", S.bookG], ["uBookFlip", S.bookFlip], ["uWinSwap", S.winSwap], ["uCrack", S.crack], ["uRoomG", S.roomG], ["uScrOn", S.scrOn],
-      ["uAura", S.aura], ["uGather", S.gather], ["uForm", S.form], ["uWaveR", S.waveR], ["uSpin", S.spin], ["uFlare", S.flare], ["uStarK", S.starK], ["uGhost", S.ghost], ["uWorldG", S.worldG], ["uFragOn", S.frag && S.frag.some((v, i) => i % 4 === 3 && v > 0) ? 1 : 0]]) f1(n, v);
+      ["uAura", S.aura], ["uGather", S.gather], ["uForm", S.form], ["uWaveR", S.waveR], ["uSpin", S.spin], ["uFlare", S.flare], ["uStarK", S.starK], ["uGhost", S.ghost], ["uWorldG", S.worldG], ["uEat", S.eat], ["uBuild", S.build], ["uBlackK", S.blackK], ["uFragOn", S.frag && S.frag.some((v, i) => i % 4 === 3 && v > 0) ? 1 : 0]]) f1(n, v);
     if (S.shot === 1) { v3("uCol", S.col); v3("uCol2", S.col2); v3("uE", S.E); v3("uS", S0); v3("uF", F0); v3("uW0", W0); if (u.uFrag != null) gl.uniform4fv(u.uFrag, S.frag); if (u.uBits != null) gl.uniform4fv(u.uBits, S.bits); if (u.uTxtP != null) gl.uniform4fv(u.uTxtP, S.txt);
       if (u.uR1 != null) gl.uniformMatrix3fv(u.uR1, false, S.r1); if (u.uR2 != null) gl.uniformMatrix3fv(u.uR2, false, S.r2); } });
   const lp = S.shot === 0 ? proj(S, add(S.cam.pos, mul(LSUN, 40))) : proj(S, S.aura > 0 ? S0 : S.E), lu = lp ? clamp(lp[0] / Wd) : .5, lv = lp ? clamp(1 - lp[1] / Hd) : .5;
-  const bloomTex = X.bloom(RT.scene.tex, S.shot === 0 ? 1.1 : 1.), raysTex = X.rays(lu, lv, .9), r0 = rng(Math.floor(t * 60)), hit = S.shake;
-  X.pass(P.final(), null, (u2) => { X.bindTex(0, RT.scene.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);
+  const bloomTex = X.bloom(TG.tex, S.shot === 0 ? 1.1 : 1.), raysTex = X.rays(lu, lv, .9), r0 = rng(Math.floor(t * 60)), hit = S.shake;
+  X.pass(P.final(), null, (u2) => { X.bindTex(0, TG.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);
     gl.uniform2f(u2.uShake, (r0() - .5) * hit * .02, (r0() - .5) * hit * .02); gl.uniform1f(u2.uZoom, 1 + .02 * hit); gl.uniform1f(u2.uCA, .0012 + .006 * hit); gl.uniform1f(u2.uBloomK, S.shot === 0 ? .35 : .42); gl.uniform1f(u2.uRayK, lp ? S.rays : 0);
-    for (const [n, v] of [["uFocus", S.focus], ["uAper", S.aper], ["uFlash", S.flash * S.flash], ["uFade", S.fade], ["uInvert", S.invert], ["uTear", S.tear], ["uRGB", S.rgb], ["uBlockG", S.blockG], ["uPix", S.pix * ph / 720], ["uNoiseV", S.noiseV], ["uLid", S.lid], ["uBlur", S.blur], ["uGrade", S.grade], ["uScan", S.scan]])
-      if (u2[n] != null) gl.uniform1f(u2[n], v); });
+    for (const [n, v] of [["uFocus", S.focus], ["uAper", S.aper], ["uFlash", S.flash * S.flash], ["uFade", S.fade], ["uInvert", S.invert], ["uTear", S.tear], ["uRGB", S.rgb], ["uBlockG", S.blockG], ["uPix", S.pix * ph / 720], ["uNoiseV", S.noiseV], ["uLid", S.lid], ["uBlur", S.blur], ["uGrade", S.grade], ["uScan", S.scan], ["uSwirl", S.swirl], ["uEatS", S.eatS], ["uClose", S.close]])
+      if (u2[n] != null) gl.uniform1f(u2[n], v);
+    const sp = S.shot === 1 && S.aura > 0 ? proj(S, S0) : null, nc = S.col || [1, 1, 1]; gl.uniform2f(u2.uStarUV, sp ? sp[0] / Wd : .5, sp ? 1 - sp[1] / Hd : .7); gl.uniform3f(u2.uNeon, nc[0], nc[1], nc[2]); });
 }
 
 /* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
@@ -526,8 +585,8 @@ const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: .9, duration: T.END, theme: "glitch", capBlend: false, recW: 3840, recH: 2160,
   no: "07", title: "GLITCH", sub: "글리치", hero: "/thumbs/glitch_hero.jpg",
   tagline: "아무것도 특별하지 않은 아침이, 조금씩 망가진다.\n1 in !@#$%^&*()",
-  meta: [["0:28", "Length"], ["120 BPM", "Tempo"], ["4K · 3D", "Renderer"]],
-  chapters: [{ t: 0, name: "morning" }, { t: T.CLOCK, name: "07:30" }, { t: T.DESK, name: "small errors" }, { t: T.WIN, name: "window" }, { t: T.ALL, name: "eyes closed" }, { t: T.WAKE, name: "glitch world" }, { t: T.AURA, name: "GLITCH" }],
+  meta: [["0:30", "Length"], ["120 BPM", "Tempo"], ["4K · 3D", "Renderer"]],
+  chapters: [{ t: 0, name: "morning" }, { t: T.CLOCK, name: "07:30" }, { t: T.DESK, name: "small errors" }, { t: T.WIN, name: "window" }, { t: T.ALL, name: "eyes closed" }, { t: T.WAKE, name: "glitch world" }, { t: T.AURA, name: "GLITCH" }, { t: T.DEVOUR, name: "devour" }],
   captions: [],
   prepare() { resize(); P.s.forEach((p) => p()); P.final(); },
   simulate(tt) { time = tt; },

@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """GLITCH 컷씬 음원 생성 — 받은 음원이 없어 직접 합성한 오리지널 사운드 (결과 mp3 는 로컬 전용, 이 스크립트로 언제든 다시 만든다)
 흐름(초): 0 잔잔한 피아노 + 새소리 → 4.75 알람시계 치지직 → 6.45 컵 · 7.45 책장 · 8.5 컴퓨터 오류음 → 11.2 창밖이 갈라짐: 피아노·새소리 뚝 끊기고 전자음·잡음만
-→ 13.6 방 전체 → 15.5 눈을 감음: 정적 → 16.8 글리치 세계 드론 → 19.8 거대한 파동 → 21.8 에너지가 모임(상승음) → 24.0 GLITCH 등장(120 BPM 비트) · 25.0 / 26.5 폭발 → 27.2 치지지직 → 27.7 암전 → 28.4 끝
+→ 13.6 방 전체 → 15.5 눈을 감음: 정적 → 16.8 글리치 세계 드론 → 19.8 거대한 파동 → 21.8 에너지가 모임(상승음) → 24.0 GLITCH 등장(120 BPM 비트) · 25.0 / 26.3 폭발 → 26.6 모든 것이 빨려 들어감(비트가 테이프처럼 느려짐) → 28.9 화면이 먹힘(치지지직) → 29.7 암전 → 30.4 끝
 페이지(glitch_gl.html)의 시각 상수 T 와 같은 값을 쓴다."""
 import os, subprocess
 import numpy as np
 from scipy.signal import fftconvolve, butter, sosfilt
 
-SR, END = 44100, 28.4
+SR, END = 44100, 30.4
 N = int(END * SR)
 PUB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public") + os.sep
 rs = np.random.RandomState(7)
-T = dict(CG=4.75, CUP=6.45, BOOK=7.45, PC=8.5, WINF=10.4, CRACK=11.2, ALL=13.6, DARK=15.5, WAKE=16.8, WAVE=19.8, GATHER=21.8, AURA=24.0, B1=25.0, B2=26.5, FINAL=27.2, BLACK=27.7)
+T = dict(CG=4.75, CUP=6.45, BOOK=7.45, PC=8.5, WINF=10.4, CRACK=11.2, ALL=13.6, DARK=15.5, WAKE=16.8, WAVE=19.8, GATHER=21.8, AURA=24.0, B1=25.0, B2=26.3, DEVOUR=26.6, FINAL=28.9, BLACK=29.7)
 def S(t): return int(round(t * SR))
 def bp(lo, hi, x, order=4): return sosfilt(butter(order, [lo, hi], "bandpass", fs=SR, output="sos"), x)
 def lp(f, x, order=2): return sosfilt(butter(order, f, "lowpass", fs=SR, output="sos"), x)
@@ -133,10 +133,17 @@ gw[S(T["AURA"]):S(T["FINAL"]), 0] += bass + arp; gw[S(T["AURA"]):S(T["FINAL"]), 
 for tb2 in (T["B1"], T["B2"]):                                                                      # 별이 터진다
     n3 = int(1.2 * SR); t3 = np.arange(n3) / SR; imp = lp(3000, rs.randn(n3)) * np.exp(-t3 * 5) * .35 + np.sin(2 * np.pi * np.cumsum(60 * np.exp(-t3 * 2) + 28) / SR) * np.exp(-t3 * 2.5) * .6
     add(gw, imp, tb2); add(gw, crackle(.3, 1.1, int(tb2 * 7)) * .8, tb2 + .05)
+# 26.6 ~ 28.9 모든 것이 빨려 들어간다: 비트가 테이프처럼 느려지고, 빨아들이는 소리와 낮은 울림이 커진다
+d0, d1 = S(T["DEVOUR"]), S(T["FINAL"]); segd = gw[d0:d1].copy(); m = d1 - d0; u = np.arange(m) / m; pos = np.cumsum(1 - .72 * u ** 1.4); pos = np.clip(pos.astype(int), 0, m - 1)
+gw[d0:d1] = segd[pos] * (1 - .35 * u)[:, None]
+ut = np.arange(m) / SR; suck = hp(1500, rs.randn(m)) * (u ** 2.2) * .5; suck = lp(9000, suck); rum = np.sin(2 * np.pi * np.cumsum(28 + 30 * u ** 2) / SR) * (u ** 1.3) * .8
+gw[d0:d1, 0] += suck + rum; gw[d0:d1, 1] += suck[::-1] + rum
+for k in range(9): add(gw, crackle(.05 + .04 * k / 9, 1, 300 + k) * (.3 + .6 * k / 9), T["DEVOUR"] + .25 + k * .22, rs.uniform(-.7, .7))
 gw[S(T["BLACK"]):] = 0
-fin = np.zeros((N, 2)); add(fin, crackle(T["BLACK"] - T["FINAL"], 1.4, 1234, 200, 12000) * 2.2, T["FINAL"])   # 치지지직 — 암전
+fin = np.zeros((N, 2)); add(fin, crackle(T["BLACK"] - T["FINAL"], 1.4, 1234, 200, 12000) * 2.2, T["FINAL"])   # 치지지직 — 화면이 먹히며 닫힌다
+bt2 = np.arange(int(.8 * SR)) / SR; add(fin, np.sin(2 * np.pi * np.cumsum(50 * np.exp(-bt2 * 2) + 24) / SR) * np.exp(-bt2 * 3) * .7, T["FINAL"])
 
-gw[S(T["AURA"]):S(T["FINAL"])] *= 1.7
+gw[S(T["AURA"]):S(T["DEVOUR"])] *= 1.7; gw[S(T["DEVOUR"]):S(T["FINAL"])] *= 1.5
 mix = piano * .38 + birds * .6 + fx + gw + fin
 mix[S(T["BLACK"]):] = 0
 mix[:int(.3 * SR)] *= np.linspace(0, 1, int(.3 * SR))[:, None]
