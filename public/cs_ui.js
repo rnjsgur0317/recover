@@ -3,6 +3,7 @@
 
    const player = CSUI.create({
      stage, audio, volume, duration,                    // 무대 요소(#cs), <audio>(없어도 됨), 음량, 전체 길이(초)
+     recW / recH: 영상 저장 해상도(기본 1920x1080, 예: 3840x2160 = 4K)
      theme: "ink" | "lumen", no, title, sub, tagline, meta: [[값, 이름]…], hero, variants: [{ label, href, on }],
      chapters: [{ t, name }], captions: [{ a, b, s }], capBlend: true(바탕 반대색) | false(그림자),
      prepare(),            // 재생 직전: 캔버스 크기·리소스 준비 (실패하면 throw)
@@ -146,7 +147,7 @@ function create(cfg) {
   }
 
   /* ── 영상 저장: 녹화 캔버스(1920x1080)에 화면·레터박스·자막·워터마크를 합쳐 실시간 녹화 ── */
-  const RW = 1920, RH = 1080, SERIF = '"Noto Serif KR","Nanum Myeongjo","Batang","바탕",serif', SANS = '"Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif';
+  const RW = cfg.recW || 1920, RH = cfg.recH || 1080, SERIF = '"Noto Serif KR","Nanum Myeongjo","Batang","바탕",serif', SANS = '"Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif';
   function paintRec(t) {
     const g = rec.rg, cvs = stage.querySelector("canvas"); g.globalCompositeOperation = "source-over"; g.globalAlpha = 1; g.filter = "none"; g.shadowBlur = 0;
     g.fillStyle = "#000"; g.fillRect(0, 0, RW, RH); if (cvs && cvs.width) g.drawImage(cvs, 0, 0, RW, RH);
@@ -165,11 +166,11 @@ function create(cfg) {
   function record() {
     if (rec) return;
     if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) { errEl.hidden = false; errEl.textContent = "이 브라우저는 영상 저장을 지원하지 않습니다 (크롬·엣지 권장)."; return; }
-    const mime = ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m));
+    const mime = [...(RH > 1080 ? ["video/mp4;codecs=avc1.640033,mp4a.40.2"] : []), "video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m));
     const rc = document.createElement("canvas"); rc.width = RW; rc.height = RH; const stream = rc.captureStream(60), chunks = [];
     if (audio) { try { if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); asrc = actx.createMediaElementSource(audio); asrc.connect(actx.destination); }
       const dest = actx.createMediaStreamDestination(); asrc.connect(dest); actx.resume(); dest.stream.getAudioTracks().forEach((tr) => stream.addTrack(tr)); rec = { dest }; } catch (e) { console.warn("오디오 없이 녹화", e); } }
-    const mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12e6, audioBitsPerSecond: 192e3 });
+    const mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: RH > 1080 ? 45e6 : 12e6, audioBitsPerSecond: 192e3 });
     rec = Object.assign(rec || {}, { rc, rg: rc.getContext("2d"), mr, chunks, mime, cancelled: false });
     mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     mr.onstop = () => { const r0 = rec; rec = null; if (r0.dest && asrc) { try { asrc.disconnect(r0.dest); } catch (e) { /* 무시 */ } }

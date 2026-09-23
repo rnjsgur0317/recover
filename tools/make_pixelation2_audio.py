@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """pixelation2_cut.mp3 + pixelation2_data.js 생성 (음원은 로컬 전용 — 저장소에 올리지 않음)
-원곡(Censored) 앞 28.34초(마디 23 첫 박) → 테이프 스톱 0.55초 → 29.5 끝. 195 BPM, 박 0.30769s, 첫 박 0.034s
+원곡(Censored) 앞 28.34초(마디 23 첫 박, 화면이 터지는 순간) → 그 박의 원곡 타격만 1.1초 동안 빠르게 사라짐(합성 효과음 없음) → 29.5 끝. 195 BPM, 박 0.30769s, 첫 박 0.034s
 분석값: 킥 펄스 · 고역 펄스 · 음량 · 24대역 스펙트럼(36진수 한 글자씩, 오디오 비주얼라이저용)"""
 import subprocess, json, os, sys
 import numpy as np
@@ -9,7 +9,7 @@ from scipy.signal import stft
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "src_media", "Censored.mp3.mpeg")
 PUB = os.path.join(os.path.dirname(HERE), "public") + os.sep
-SR, CUT, TAIL, END = 44100, .034 + 23 * 1.23077, .55, 29.5
+SR, CUT, TAIL, END = 44100, .034 + 23 * 1.23077, 1.1, 29.5
 if not os.path.exists(SRC):
     sys.exit("원본 음원이 없습니다: " + SRC)
 raw = subprocess.run(["ffmpeg", "-v", "error", "-i", SRC, "-t", "31", "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True).stdout
@@ -17,8 +17,7 @@ x = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).astype(np.float64)
 assert len(x) > SR * 30, "원본에서 소리를 읽지 못했습니다"
 N = int(END * SR); y = np.zeros((N, 2)); n0 = int(CUT * SR)
 y[:n0] = x[:n0]; y[:int(.05 * SR)] *= np.linspace(0, 1, int(.05 * SR))[:, None]
-m = int(TAIL * SR); u = np.arange(m) / m; pos = n0 + np.cumsum((1 - u) ** 1.7); i0 = np.floor(pos).astype(int); fr = (pos - i0)[:, None]
-y[n0:n0 + m] = (x[i0] * (1 - fr) + x[i0 + 1] * fr) * ((1 - u) ** .7)[:, None]                 # 테이프 스톱
+m = int(TAIL * SR); u = np.arange(m) / m; y[n0:n0 + m] = x[n0:n0 + m] * (np.exp(-u * 4.5) * (1 - u))[:, None]            # 터지는 박의 원곡 타격만 남기고 사라짐
 y = np.clip(y, -1, 1).astype(np.float32)
 p = subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", "-c:a", "libmp3lame", "-b:a", "192k", PUB + "pixelation2_cut.mp3"], input=y.tobytes())
 print("mp3", p.returncode, round(len(y) / SR, 3))
