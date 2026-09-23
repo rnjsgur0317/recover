@@ -247,7 +247,7 @@ function render(t) {
 /* ═════════════════ 재생: 시계·HUD·시작/종료 화면은 공용 키트(cs_ui.js) ═════════════════ */
 const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: .9, duration: T.END, theme: "dream", capBlend: false,
-  no: "04", title: "DREAMMETRIC", sub: "드림메트릭", hero: "/thumbs/dreammetric_hero.jpg",
+  no: "05", title: "DREAMMETRIC", sub: "드림메트릭", hero: "/thumbs/dreammetric_hero.jpg",
   tagline: "거리, 의미, 신탁, 그리고 남은 것. 꿈속에서 넘어가는 네 장의 슬라이드.\n당신이 빠져나온 그곳은 애초에 존재한 적이 없었다 — 이 모든 건 꿈이었다.",
   meta: [["0:34", "Length"], ["140 BPM", "Tempo"], ["WebGL2", "Renderer"]],
   chapters: [{ t: 0, name: "THE DISTANCE" }, { t: CUTS[1], name: "THE MEANING" }, { t: CUTS[2], name: "THE ORACLE" }, { t: CUTS[3], name: "THE LASTING" }, { t: T.NOSIG, name: "NO SIGNAL" }],
