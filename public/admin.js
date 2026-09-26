@@ -516,16 +516,18 @@ function renderRgPreview() {
     }));
 }
 
-async function addRgFiles(files) {
+// 파일들 → 미디어 dataURL 목록 (이미지는 압축, mp4/webm 8MB 이하, 최대 4개). 게임 등록·수정 공용
+async function readMediaFiles(files, list) {
+  const out = [...list];
   for (const file of files) {
-    if (rgMedia.length >= 4) return toast("미디어는 최대 4개까지예요.", true);
+    if (out.length >= 4) { toast("미디어는 최대 4개까지예요.", true); break; }
     if (file.type.startsWith("image/")) {
       try {
-        rgMedia.push(await compressImage(file));
+        out.push(await compressImage(file));
       } catch (e) { toast(`이미지를 읽을 수 없어요: ${file.name}`, true); }
     } else if (file.type === "video/mp4" || file.type === "video/webm") {
       if (file.size > 8 * 1024 * 1024) { toast(`영상은 8MB 이하만 가능해요: ${file.name}`, true); continue; }
-      rgMedia.push(await new Promise((res, rej) => {
+      out.push(await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result);
         r.onerror = rej;
@@ -535,6 +537,11 @@ async function addRgFiles(files) {
       toast(`지원하지 않는 형식이에요: ${file.name}`, true);
     }
   }
+  return out;
+}
+
+async function addRgFiles(files) {
+  rgMedia = await readMediaFiles(files, rgMedia);
   renderRgPreview();
 }
 
@@ -587,7 +594,7 @@ function renderRegs() {
       <div class="req-card">
         <div class="head">
           <div>
-            <div class="name">${esc(r.name)} · ${fmtWon(r.price)}원</div>
+            <div class="name">${r.kind === "edit" ? "[수정] " + (r.old_name !== r.name ? `${esc(r.old_name)} → ` : "") : ""}${esc(r.name)} · ${fmtWon(r.price)}원</div>
             <div class="sub">[${esc(r.category)}] · ${fmtDate(r.created_at)}</div>
             <div class="sub" style="word-break:break-all">링크: ${esc(r.link)}</div>
             ${r.result ? `<div class="sub">${esc(r.result)}</div>` : (r.status !== "완료" ? '<div class="sub">봇이 처리 중이에요 (최대 1분)</div>' : "")}
@@ -597,6 +604,182 @@ function renderRegs() {
       </div>`).join("")
     : '<div class="empty">등록 신청 내역이 없어요.</div>';
 }
+
+// ---- 게임 관리 (확인·수정)
+let gameCache = [];
+let gmOpen = "";      // 수정 창이 열린 게임 이름
+let gmMedia = [];     // 교체할 새 미디어 dataURL (비어 있으면 기존 유지)
+
+async function loadGames() {
+  try {
+    const d = await api("/api/admin/games");
+    gameCache = d.games || [];
+    const sel = $("#gmCat");
+    const cur = sel.value;
+    const cats = [...new Set(gameCache.map((g) => g.category))];
+    sel.innerHTML = '<option value="">전체 카테고리</option>' +
+      cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+    sel.value = cats.includes(cur) ? cur : "";
+    $("#gmInfo").textContent = d.updated_at ? `봇 마지막 동기화 ${fmtDate(d.updated_at)}` : "";
+    renderGames();
+  } catch (e) { toast(e.message, true); }
+}
+
+function gmThumb(g) {
+  if (!g.media.length) return '<div class="gm-thumb gm-noimg">이미지 없음</div>';
+  const src = `/api/shop/image?name=${encodeURIComponent(g.name)}&i=0`;
+  return g.media[0] === "video"
+    ? `<video class="gm-thumb" src="${src}" muted preload="metadata"></video>`
+    : `<img class="gm-thumb" src="${src}" loading="lazy" alt="">`;
+}
+
+function gmEditor(g) {
+  const dt = g.detail || {};
+  const cur = g.media.map((m, i) => {
+    const src = `/api/shop/image?name=${encodeURIComponent(g.name)}&i=${i}`;
+    return m === "video" ? `<video src="${src}" muted preload="metadata"></video>` : `<img src="${src}" alt="">`;
+  }).join("");
+  return `
+    <div class="gm-edit">
+      <label>게임 이름</label>
+      <input type="text" data-f="name" maxlength="100" value="${esc(g.name)}">
+      <div class="row2">
+        <div><label>카테고리</label><input type="text" data-f="category" maxlength="30" list="catList" value="${esc(g.category)}"></div>
+        <div><label>판매가 (원)</label><input type="text" data-f="price" maxlength="12" value="${g.price}"></div>
+      </div>
+      <div class="row2">
+        <div><label>정가 (원, 선택)</label><input type="text" data-f="official" maxlength="12" value="${dt.official || ""}"></div>
+        <div><label>수위 (선택)</label><input type="text" data-f="rating" maxlength="40" value="${esc(dt.rating || "")}"></div>
+      </div>
+      <label>다운로드 링크</label>
+      <input type="text" data-f="link" maxlength="500" value="${esc(g.link)}">
+      <label>공식 판매처 링크 (선택)</label>
+      <input type="text" data-f="seller" maxlength="300" value="${esc(dt.seller || "")}">
+      <label>코멘트 (선택 · 한 줄당 하나)</label>
+      <textarea data-f="comment" maxlength="1500" style="min-height:70px">${esc((dt.comments || []).join("\n"))}</textarea>
+      <label>이미지·영상</label>
+      <div class="gm-media" data-gm-cur>${cur || '<span class="hint">등록된 미디어가 없어요.</span>'}</div>
+      <div class="dropzone" data-gm-drop style="margin-top:8px"><span>새 미디어로 교체하려면 클릭하거나 끌어다 놓으세요 (최대 4개, 첫 번째가 대표)</span></div>
+      <input type="file" data-gm-file accept="image/*,video/mp4,video/webm" multiple hidden>
+      <div class="gm-media" data-gm-new hidden></div>
+      <div class="controls">
+        <button class="small good" data-gm-save>수정 저장</button>
+        <button class="small" data-gm-cancel>취소</button>
+      </div>
+    </div>`;
+}
+
+function renderGames() {
+  const q = $("#gmSearch").value.trim().toLowerCase();
+  const cat = $("#gmCat").value;
+  const rows = gameCache.filter((g) => (!cat || g.category === cat) &&
+    (!q || g.name.toLowerCase().includes(q) || (g.link || "").toLowerCase().includes(q)));
+  const box = $("#gmList");
+  const head = `<div class="hint" style="margin-bottom:6px">${rows.length}개${rows.length !== gameCache.length ? ` / 전체 ${gameCache.length}개` : ""}</div>`;
+  box.innerHTML = rows.length ? head + rows.map((g) => {
+    const dt = g.detail || {};
+    const tags = [
+      g.pending ? `<span class="gm-tag">수정 ${esc(g.pending)}</span>` : "",
+      g.sale_price ? `<span class="gm-tag">할인 ${fmtWon(g.sale_price)}원</span>` : "",
+      g.best ? '<span class="gm-tag">BEST</span>' : "",
+      g.is_subscription ? '<span class="gm-tag dim">정기결제</span>' : "",
+    ].join("");
+    return `
+      <div class="req-card gm-row" data-gm="${esc(g.name)}">
+        <div class="head">
+          <div style="display:flex;gap:12px;min-width:0;flex:1">
+            ${gmThumb(g)}
+            <div style="min-width:0">
+              <div class="name">${esc(g.name)}${tags}</div>
+              <div class="sub">[${esc(g.category)}] · ${fmtWon(g.price)}원${dt.official ? ` (정가 ${fmtWon(dt.official)}원)` : ""}${dt.rating ? ` · ${esc(dt.rating)}` : ""} · 미디어 ${g.media.length}개${g.reg ? ` · 등록 ${fmtDate(g.reg)}` : ""}</div>
+              ${g.link ? `<div class="sub">링크: <a class="gm-link" href="${esc(g.link)}" target="_blank" rel="noopener noreferrer">${esc(g.link)}</a></div>` : ""}
+            </div>
+          </div>
+          ${g.is_subscription ? "" : `<button class="small" data-gm-toggle>${gmOpen === g.name ? "닫기" : "수정"}</button>`}
+        </div>
+        ${gmOpen === g.name ? gmEditor(g) : ""}
+      </div>`;
+  }).join("") : '<div class="empty">게임이 없어요.</div>';
+
+  box.querySelectorAll("[data-gm-toggle]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const name = b.closest("[data-gm]").dataset.gm;
+      gmOpen = gmOpen === name ? "" : name;
+      gmMedia = [];
+      renderGames();
+    }));
+  const card = gmOpen && [...box.querySelectorAll("[data-gm]")].find((c) => c.dataset.gm === gmOpen);
+  if (card && card.querySelector(".gm-edit")) bindGmEditor(card);
+}
+
+function renderGmNew(card) {
+  const box = card.querySelector("[data-gm-new]");
+  box.hidden = gmMedia.length === 0;
+  card.querySelector("[data-gm-cur]").style.opacity = gmMedia.length ? ".35" : "";
+  card.querySelector("[data-gm-drop]").hidden = gmMedia.length >= 4;
+  box.innerHTML = gmMedia.map((du, i) => `
+    <div style="position:relative">
+      ${du.startsWith("data:video") ? `<video src="${du}" muted></video>` : `<img src="${du}" alt="">`}
+      <button type="button" data-gmrm="${i}" style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.7);color:#fff;font-weight:800;cursor:pointer;line-height:1">×</button>
+    </div>`).join("");
+  box.querySelectorAll("[data-gmrm]").forEach((b) =>
+    b.addEventListener("click", () => { gmMedia.splice(Number(b.dataset.gmrm), 1); renderGmNew(card); }));
+}
+
+function bindGmEditor(card) {
+  const g = gameCache.find((x) => x.name === gmOpen);
+  const file = card.querySelector("[data-gm-file]");
+  const drop = card.querySelector("[data-gm-drop]");
+  const add = async (files) => { gmMedia = await readMediaFiles(files, gmMedia); renderGmNew(card); };
+  drop.addEventListener("click", () => file.click());
+  file.addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
+  ["dragover", "dragleave", "drop"].forEach((evt) =>
+    drop.addEventListener(evt, (e) => {
+      e.preventDefault();
+      drop.classList.toggle("dragover", evt === "dragover");
+      if (evt === "drop") add([...e.dataTransfer.files]);
+    }));
+  renderGmNew(card);
+  card.querySelector("[data-gm-cancel]").addEventListener("click", () => { gmOpen = ""; gmMedia = []; renderGames(); });
+  card.querySelector("[data-gm-save]").addEventListener("click", async (e) => {
+    const v = (k) => card.querySelector(`[data-f="${k}"]`).value;
+    const body = {
+      old_name: g.name,
+      name: v("name").trim(), category: v("category").trim(), price: v("price").trim(),
+      official: v("official").trim(), link: v("link").trim(), rating: v("rating").trim(),
+      seller: v("seller").trim(), comment: v("comment"), images: gmMedia,
+    };
+    if (!body.name || !body.category || !body.price || !body.link) {
+      return toast("이름/카테고리/판매가/링크는 필수입니다.", true);
+    }
+    const changes = [];
+    if (body.name !== g.name) changes.push(`이름: ${g.name} → ${body.name}`);
+    if (body.category !== g.category) changes.push(`카테고리: ${g.category} → ${body.category}`);
+    if (Number(body.price.replace(/,/g, "")) !== g.price) changes.push(`가격: ${fmtWon(g.price)} → ${fmtWon(body.price.replace(/,/g, ""))}원`);
+    if (body.link !== g.link) changes.push("다운로드 링크 변경 (만료 타이머 초기화)");
+    if (gmMedia.length) changes.push(`미디어 ${gmMedia.length}개로 교체`);
+    if (!confirm(`'${g.name}' 수정할까요?${changes.length ? "\n\n· " + changes.join("\n· ") : ""}`)) return;
+    try {
+      e.target.disabled = true;
+      const r = await api("/api/admin/product_edit", body);
+      gmOpen = "";
+      gmMedia = [];
+      toast("수정 완료!" + (r.queued ? " (판매 목록 반영은 1분 내)" : "") + (r.note ? " " + r.note : ""));
+      loadGames();
+      refresh();
+    } catch (err) {
+      toast(err.message, true);
+      e.target.disabled = false;
+    }
+  });
+}
+
+$("#gmSearch").addEventListener("input", renderGames);
+$("#gmCat").addEventListener("change", renderGames);
+$("#gmReload").addEventListener("click", loadGames);
+document.querySelector('.tabs button[data-tab="games"]').addEventListener("click", () => {
+  if (!gmOpen) loadGames();
+});
 
 // ---- BEST 관리
 $("#bestSet").addEventListener("click", async () => {

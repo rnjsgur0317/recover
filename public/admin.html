@@ -22,6 +22,7 @@
     <button data-tab="charge">충전 관리<span id="cntCharge" class="count-badge" hidden></span></button>
     <button data-tab="order">주문·예약<span id="cntReserve" class="count-badge" hidden></span></button>
     <button data-tab="register">게임 등록</button>
+    <button data-tab="games">게임 관리</button>
     <button data-tab="notice">공지</button>
     <button data-tab="upcoming">신작</button>
     <button data-tab="discount">할인·BEST</button>
@@ -93,11 +94,27 @@
       <p class="hint">· 이미지·정가·수위·판매처·코멘트는 사이트 상세페이지에 <b>즉시</b> 반영되고,
       이미지를 넣으면 <b>디스코드 소개채널에도 자동으로 소개글이 게시</b>됩니다.<br>
       · 판매 등록은 봇이 1분 내 반영, 디스코드 자판기 버튼 갱신은 <b>!자판기설치</b>.<br>
-      · 정기결제 상품 등록과 게임 수정·삭제는 로컬 관리자웹에서 해주세요.</p>
+      · 등록된 게임 확인·수정은 <b>[게임 관리]</b> 탭, 정기결제 상품 등록과 게임 삭제는 로컬 관리자웹에서 해주세요.</p>
     </div>
     <div class="card">
-      <h2>등록 신청 내역</h2>
+      <h2>등록·수정 신청 내역</h2>
       <div id="regList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
+
+  <!-- 게임 관리 -->
+  <section class="tab-page" id="page-games">
+    <div class="card">
+      <h2>게임 관리</h2>
+      <p class="desc">판매 중인 게임을 확인하고 바로 수정할 수 있어요. <b>이름·카테고리·가격·링크</b>는 봇이 <b>1분 내</b> 판매 목록에 반영하고,
+      정가·수위·판매처·코멘트·미디어는 사이트에 즉시 반영돼요. 바뀐 내용은 <b>디스코드 소개글에도 자동으로</b> 고쳐집니다.</p>
+      <div class="gm-bar">
+        <input type="text" id="gmSearch" placeholder="게임 이름·링크 검색">
+        <select id="gmCat"><option value="">전체 카테고리</option></select>
+        <button class="small" id="gmReload">새로고침</button>
+      </div>
+      <div class="hint" id="gmInfo" style="margin:8px 0 4px"></div>
+      <div id="gmList"><div class="empty">불러오는 중...</div></div>
     </div>
   </section>
 

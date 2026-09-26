@@ -595,3 +595,22 @@ button.small.danger:hover { color: #111; }
   .ga-tier { grid-template-columns: 1fr; }
   .ga-row3 { grid-template-columns: 1fr; }
 }
+
+/* 관리자 [게임 관리] */
+.gm-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.gm-bar input { flex: 1; min-width: 180px; margin: 0; }
+.gm-bar select { border: 1px solid var(--border-strong); border-radius: 8px; padding: 9px 10px; font-family: inherit; font-size: .88rem; background: #fff; }
+.gm-row .head { flex-wrap: nowrap; }
+.gm-thumb { width: 96px; height: 54px; flex: none; object-fit: cover; border: 1px solid var(--border-strong); border-radius: 6px; background: #f4f4f5; }
+.gm-noimg { display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: .7rem; }
+.gm-tag { display: inline-block; font-size: .66rem; font-weight: 800; border: 1px solid #111; border-radius: 5px; padding: 0 5px; margin-left: 6px; vertical-align: 2px; }
+.gm-tag.dim { border-color: #d4d4d8; color: #71717a; }
+.gm-link { color: var(--text-dim); text-decoration: underline; }
+.gm-edit { border-top: 1px dashed var(--border-strong); margin-top: 12px; padding-top: 4px; }
+.gm-edit .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gm-media { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.gm-media img, .gm-media video { height: 72px; border: 1px solid var(--border-strong); border-radius: 6px; }
+@media (max-width: 560px) {
+  .gm-edit .row2 { grid-template-columns: 1fr; }
+  .gm-thumb { width: 72px; height: 40px; }
+}

@@ -195,6 +195,8 @@ def init_db():
             "ALTER TABLE orders ADD COLUMN gift_link TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE gifts ADD COLUMN image TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN coupon_pct INTEGER NOT NULL DEFAULT 0",  # 할인쿠폰 적용률
+            "ALTER TABLE product_regs ADD COLUMN kind TEXT NOT NULL DEFAULT 'add'",    # add/edit
+            "ALTER TABLE product_regs ADD COLUMN old_name TEXT NOT NULL DEFAULT ''",  # edit: 수정 전 이름
         ):
             try:
                 c.execute(stmt)
@@ -1259,9 +1261,12 @@ def api_sync_pull_regs(req):
         db().execute(
             "UPDATE product_regs SET status='실패', result='처리 시간 초과 — 봇 상태를 확인하세요', updated_at=? "
             "WHERE status='처리중' AND updated_at<?", (now(), now() - 900))
+        # 수정(edit)은 그것을 아는 봇({"edits": true})에게만 — 구버전 봇이 신규 등록으로 오해하지 않게
+        kinds = ("add", "edit") if d.get("edits") else ("add",)
         rows = db().execute(
-            "SELECT id,name,category,price,link FROM product_regs "
-            "WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
+            "SELECT id,kind,old_name,name,category,price,link FROM product_regs "
+            f"WHERE status='대기' AND kind IN ({','.join('?' * len(kinds))}) ORDER BY id LIMIT 10",
+            kinds).fetchall()
         for r in rows:
             db().execute("UPDATE product_regs SET status='처리중', updated_at=? WHERE id=?",
                          (now(), r["id"]))
@@ -1274,15 +1279,25 @@ def api_sync_reg_results(req):
     d = check_sync(req)
     if d is None:
         return json_resp({"error": "인증 실패"}, 403)
+    reverts = []
     with db_lock:
         for res in (d.get("results") or [])[:50]:
             if not isinstance(res, dict) or not isinstance(res.get("id"), int):
                 continue
+            row = db().execute("SELECT kind,old_name,name,status FROM product_regs WHERE id=?",
+                               (res["id"],)).fetchone()
+            if not row or row["status"] != "처리중":
+                continue
             db().execute(
-                "UPDATE product_regs SET status=?, result=?, updated_at=? WHERE id=? AND status='처리중'",
+                "UPDATE product_regs SET status=?, result=?, updated_at=? WHERE id=?",
                 ("완료" if res.get("ok") else "실패", clean(str(res.get("msg", "")), 300),
                  now(), res["id"]))
+            if (not res.get("ok") and row["kind"] == "edit" and row["old_name"]
+                    and row["old_name"] != row["name"]):
+                reverts.append((row["name"], row["old_name"]))
         db().commit()
+    for new, old in reverts:   # 봇이 이름 변경을 거부 → 사이트에서 미리 옮긴 이미지·상세·할인 등을 되돌림
+        rename_site_keys(new, old)
     return json_resp({"ok": True})
 
 
@@ -1886,82 +1901,146 @@ def discord_post_intro(channel_id, content, media):
         return f"게시 실패: {e}"
 
 
+def parse_product_form(d):
+    """게임 등록·수정 폼 공통 검증. 반환: (값 dict, None) 또는 (None, 오류문)."""
+    f = {
+        "name": clean(d.get("name"), 100),
+        "category": clean(d.get("category"), 30),
+        "link": clean(d.get("link"), 500),
+        "rating": clean(d.get("rating"), 40),
+        "seller": clean(d.get("seller"), 300),
+        "comments": [clean(c, 200) for c in str(d.get("comment", "")).split("\n") if clean(c, 200)][:10],
+        "official": 0,
+    }
+    try:
+        f["price"] = int(str(d.get("price", "")).replace(",", "").strip())
+    except ValueError:
+        return None, "가격은 숫자로 입력하세요."
+    if str(d.get("official", "")).strip():
+        try:
+            f["official"] = int(str(d.get("official", "")).replace(",", "").strip())
+        except ValueError:
+            return None, "정가는 숫자로 입력하세요."
+    if not f["name"] or not f["category"]:
+        return None, "이름과 카테고리를 입력하세요."
+    if f["price"] <= 0 or f["official"] < 0:
+        return None, "가격을 확인하세요."
+    if not re.match(r"^https?://", f["link"]):
+        return None, "다운로드 링크는 http(s):// 로 시작해야 합니다."
+    if f["seller"] and not re.match(r"^https?://", f["seller"]):
+        return None, "공식 판매처 링크는 http(s):// 로 시작해야 합니다."
+    return f, None
+
+
+def parse_form_media(d):
+    """폼의 images(dataURL, 최대 4개) → [(bytes, ext)]. 실패 시 ValueError."""
+    return [decode_media(du, limit=8 * 1024 * 1024) for du in (d.get("images") or [])[:4]]
+
+
+def form_detail(f):
+    """폼 값 → 사이트 상세정보 dict (parse_intro_detail 과 같은 모양)."""
+    detail = {}
+    if f["official"]:
+        detail["official"] = f["official"]
+    if f["rating"]:
+        detail["rating"] = f["rating"]
+    if f["seller"]:
+        detail["seller"] = f["seller"]
+    if f["comments"]:
+        detail["comments"] = f["comments"]
+    return detail
+
+
+def save_site_media(shop, name, media):
+    """게임 미디어를 사이트에 저장(기존 파일 교체). shop 은 호출자가 저장."""
+    images = shop.setdefault("images", {})
+    for fn in entry_files(images.get(name)):
+        try:
+            os.remove(os.path.join(SHOPIMG_DIR, fn))
+        except OSError:
+            pass
+    files = []
+    for i, (raw, ext) in enumerate(media):
+        fname = shopimg_filename(f"{name}#{i}", ext)
+        with open(os.path.join(SHOPIMG_DIR, fname), "wb") as fp:
+            fp.write(raw)
+        files.append(fname)
+    att = "webreg-" + hashlib.sha1(b"".join(r for r, _ in media)).hexdigest()[:16]
+    images[name] = {"att": att, "file": files[0], "files": files}
+
+
+def site_media(shop, name):
+    """사이트에 저장된 게임 미디어 → [(bytes, ext)] (소개글 재게시용)."""
+    out = []
+    for fn in entry_files((shop.get("images") or {}).get(name)):
+        try:
+            with open(os.path.join(SHOPIMG_DIR, fn), "rb") as fp:
+                out.append((fp.read(), fn.rsplit(".", 1)[1]))
+        except OSError:
+            pass
+    return out
+
+
+def rename_site_keys(old, new):
+    """사이트 쪽 게임 이름 변경: 목록·이미지·상세·할인·BEST·사은품을 old → new 로."""
+    shop = load_shop()
+    images = shop.setdefault("images", {})
+    if old in images:
+        keep = set(entry_files(images[old]))
+        for fn in entry_files(images.get(new)):
+            if fn not in keep:
+                try:
+                    os.remove(os.path.join(SHOPIMG_DIR, fn))
+                except OSError:
+                    pass
+        images[new] = images.pop(old)
+    details = shop.setdefault("details", {})
+    if old in details:
+        details[new] = details.pop(old)
+    prods = shop.get("products") or {}
+    if old in prods:   # 목록 순서 유지
+        shop["products"] = {(new if k == old else k): v for k, v in prods.items() if k != new}
+    save_shop(shop)
+    with db_lock:
+        for table in ("discounts", "bests"):   # game UNIQUE — 새 이름이 이미 있으면 옛 것은 버림
+            db().execute(f"UPDATE OR IGNORE {table} SET game=? WHERE game=?", (new, old))
+            db().execute(f"DELETE FROM {table} WHERE game=?", (old,))
+        db().execute("UPDATE gifts SET game=? WHERE game=?", (new, old))
+        db().commit()
+
+
 def api_admin_product_reg(req):
     """게임 등록 신청 — 관리자웹 [게임출시]와 동일하게 등록 + 상세정보 + 이미지 + 소개글까지.
     상품 등록은 봇이 1분 내 products.json에 반영, 상세·이미지는 사이트에 즉시 저장,
     소개글은 소개채널에 바로 게시."""
     d = req.read_json(limit=MAX_SYNC_IMAGE) or {}
-    name = clean(d.get("name"), 100)
-    category = clean(d.get("category"), 30)
-    link = clean(d.get("link"), 500)
-    rating = clean(d.get("rating"), 40)
-    seller = clean(d.get("seller"), 300)
-    comments = [clean(c, 200) for c in str(d.get("comment", "")).split("\n") if clean(c, 200)][:10]
-    try:
-        price = int(str(d.get("price", "")).replace(",", "").strip())
-    except ValueError:
-        return json_resp({"error": "가격은 숫자로 입력하세요."}, 400)
-    official = 0
-    if str(d.get("official", "")).strip():
-        try:
-            official = int(str(d.get("official", "")).replace(",", "").strip())
-        except ValueError:
-            return json_resp({"error": "정가는 숫자로 입력하세요."}, 400)
-    if not name or not category:
-        return json_resp({"error": "이름과 카테고리를 입력하세요."}, 400)
-    if price <= 0 or official < 0:
-        return json_resp({"error": "가격을 확인하세요."}, 400)
-    if not re.match(r"^https?://", link):
-        return json_resp({"error": "다운로드 링크는 http(s):// 로 시작해야 합니다."}, 400)
-    if seller and not re.match(r"^https?://", seller):
-        return json_resp({"error": "공식 판매처 링크는 http(s):// 로 시작해야 합니다."}, 400)
+    f, err = parse_product_form(d)
+    if err:
+        return json_resp({"error": err}, 400)
+    name, category = f["name"], f["category"]
     if name in (load_shop().get("products") or {}):
-        return json_resp({"error": "이미 판매 중인 게임입니다. 수정은 로컬 관리자웹에서 해주세요."}, 400)
-    # 미디어 디코딩 (최대 4개)
-    media = []
-    for du in (d.get("images") or [])[:4]:
-        try:
-            media.append(decode_media(du, limit=8 * 1024 * 1024))
-        except ValueError as e:
-            return json_resp({"error": str(e)}, 400)
+        return json_resp({"error": "이미 판매 중인 게임입니다. 수정은 [게임 관리] 탭에서 해주세요."}, 400)
+    try:
+        media = parse_form_media(d)
+    except ValueError as e:
+        return json_resp({"error": str(e)}, 400)
     with db_lock:
         dup = db().execute(
-            "SELECT COUNT(*) FROM product_regs WHERE name=? AND status IN ('대기','처리중')",
-            (name,)).fetchone()[0]
+            "SELECT COUNT(*) FROM product_regs WHERE (name=? OR old_name=?) AND status IN ('대기','처리중')",
+            (name, name)).fetchone()[0]
         if dup:
             return json_resp({"error": "이미 등록 처리 중인 이름입니다."}, 400)
         db().execute(
             "INSERT INTO product_regs(name,category,price,link,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?)", (name, category, price, link, now(), now()))
+            "VALUES(?,?,?,?,?,?)", (name, category, f["price"], f["link"], now(), now()))
         db().commit()
     # 상세정보 + 이미지 사이트에 즉시 저장
     shop = load_shop()
-    detail = {}
-    if official:
-        detail["official"] = official
-    if rating:
-        detail["rating"] = rating
-    if seller:
-        detail["seller"] = seller
-    if comments:
-        detail["comments"] = comments
+    detail = form_detail(f)
     if detail:
         shop.setdefault("details", {})[name] = detail
     if media:
-        images = shop.setdefault("images", {})
-        for f in entry_files(images.get(name)):
-            try:
-                os.remove(os.path.join(SHOPIMG_DIR, f))
-            except OSError:
-                pass
-        files = []
-        for i, (raw, ext) in enumerate(media):
-            fname = shopimg_filename(f"{name}#{i}", ext)
-            with open(os.path.join(SHOPIMG_DIR, fname), "wb") as f:
-                f.write(raw)
-            files.append(fname)
-        att = "webreg-" + hashlib.sha1(b"".join(r for r, _ in media)).hexdigest()[:16]
-        images[name] = {"att": att, "file": files[0], "files": files}
+        save_site_media(shop, name, media)
     if detail or media:
         save_shop(shop)
     # 디스코드 소개채널에 게시
@@ -1969,8 +2048,8 @@ def api_admin_product_reg(req):
     intro = shop.get("intro") or {}
     ch_id = (intro.get("channels") or {}).get(category)
     if ch_id and media:
-        content = build_intro_content(name, official, price, rating, seller, comments,
-                                      intro.get("role", 0))
+        content = build_intro_content(name, f["official"], f["price"], f["rating"], f["seller"],
+                                      f["comments"], intro.get("role", 0))
         err = discord_post_intro(ch_id, content, media)
         note = "디스코드 소개글 게시 완료" if not err else f"소개글 게시 실패({err}) — 관리자웹에서 게시해주세요"
     elif not ch_id:
@@ -1978,6 +2057,181 @@ def api_admin_product_reg(req):
     elif not media:
         note = "이미지가 없어 소개글은 생략했어요"
     return json_resp({"ok": True, "note": note})
+
+
+INTRO_NAME_RE = re.compile(r"이름\s*:\s*(.+)")
+
+
+def _is_intro(content):
+    return "게임 정보" in content or "이름 :" in content
+
+
+def find_intro(name, chmap):
+    """소개채널들에서 name 의 가장 최신 소개글. {cid, id, content, del_ids} 또는 None.
+    del_ids 는 소개글 + (구버전) 바로 뒤에 붙은 같은 작성자의 사진 전용 메시지들."""
+    norm = lambda t: re.sub(r"\s+", "", t or "")
+    best = None
+    for cid in {str(c) for c in chmap.values()}:
+        msgs, before = [], None
+        for _ in range(3):   # 채널당 최신 300개
+            st, batch = discord_call(
+                "GET", f"/channels/{cid}/messages?limit=100" + (f"&before={before}" if before else ""), bot=True)
+            if st != 200 or not batch:
+                break
+            msgs += batch
+            before = batch[-1]["id"]
+            if len(batch) < 100:
+                break
+        for i, m in enumerate(msgs):   # 최신순
+            c = m.get("content") or ""
+            mm = INTRO_NAME_RE.search(c) if _is_intro(c) else None
+            if not mm or norm(mm.group(1)) != norm(name):
+                continue
+            del_ids = [m["id"]]
+            if not m.get("attachments"):
+                author = (m.get("author") or {}).get("id")
+                j = i - 1
+                while j >= 0:
+                    n = msgs[j]
+                    if ((n.get("content") or "").strip() or not n.get("attachments")
+                            or (n.get("author") or {}).get("id") != author):
+                        break
+                    del_ids.append(n["id"])
+                    j -= 1
+            if best is None or int(m["id"]) > int(best["id"]):
+                best = {"cid": cid, "id": m["id"], "content": c, "del_ids": del_ids}
+            break
+    return best
+
+
+def sync_intro(old_name, f, shop, new_media):
+    """게임 수정 내용을 디스코드 소개글에 반영 (봇 이미지 동기화가 소개글로 상세를 덮어쓰므로 필수).
+    채널·미디어가 그대로면 본문만 수정, 아니면 새 채널에 다시 게시하고 옛 글 삭제. 반환: 안내문."""
+    intro = shop.get("intro") or {}
+    chmap = intro.get("channels") or {}
+    if not chmap:
+        return "소개채널 매핑이 없어 디스코드 소개글은 그대로예요"
+    content = build_intro_content(f["name"], f["official"], f["price"], f["rating"], f["seller"],
+                                  f["comments"], intro.get("role", 0))
+    found = find_intro(old_name, chmap)
+    new_cid = str(chmap.get(f["category"]) or "")
+    if found and not new_media and found["cid"] == new_cid:
+        if found["content"] == content:
+            return ""
+        st, _ = discord_call("PATCH", f"/channels/{found['cid']}/messages/{found['id']}", bot=True,
+                             data={"content": content[:1990], "allowed_mentions": {"parse": []}})
+        if st == 200:
+            return "디스코드 소개글 수정 완료"
+    if not new_cid:
+        return f"'{f['category']}' 소개채널 매핑이 없어 디스코드 소개글은 수정하지 못했어요"
+    media = new_media or site_media(shop, f["name"])
+    if not found and not media:
+        return "소개글·이미지가 없어 디스코드 소개글은 생략했어요"
+    err = discord_post_intro(new_cid, content, media)
+    if err:
+        return f"소개글 게시 실패({err}) — 관리자웹에서 게시해주세요"
+    for mid in (found or {}).get("del_ids", []):
+        discord_call("DELETE", f"/channels/{found['cid']}/messages/{mid}", bot=True)
+    return "디스코드 소개글 다시 게시 완료"
+
+
+def api_admin_games(req):
+    """[게임 관리] 탭: 판매 중인 게임 전체 + 상세·미디어·할인·BEST·처리 중 수정."""
+    shop = load_shop()
+    details = shop.get("details") or {}
+    images = shop.get("images") or {}
+    sales = discount_map()
+    bests = best_set()
+    with db_lock:
+        pend = db().execute(
+            "SELECT old_name,name,status FROM product_regs WHERE status IN ('대기','처리중')").fetchall()
+    pending = {}
+    for r in pend:
+        for n in (r["name"], r["old_name"]):
+            if n:
+                pending[n] = r["status"]
+    games = []
+    for name, info in (shop.get("products") or {}).items():
+        if info.get("is_game_pass"):
+            continue
+        files = entry_files(images.get(name))
+        g = {"name": name, "category": info.get("category") or "기타",
+             "price": info.get("price", 0), "link": info.get("link", ""),
+             "reg": int(info.get("reg", 0) or 0),
+             "is_subscription": bool(info.get("is_subscription")),
+             "detail": details.get(name, {}),
+             "media": ["video" if fn.rsplit(".", 1)[-1] in VIDEO_EXTS else "img" for fn in files]}
+        if name in sales:
+            g["sale_price"] = sales[name]
+        if name in bests:
+            g["best"] = True
+        if name in pending:
+            g["pending"] = pending[name]
+        games.append(g)
+    games.sort(key=lambda g: g["reg"], reverse=True)
+    return json_resp({"games": games, "updated_at": shop.get("updated_at", 0)})
+
+
+def api_admin_product_edit(req):
+    """게임 수정. 이름·카테고리·가격·링크는 봇이 1분 내 products.json 에 반영(product_regs kind=edit),
+    사이트 표시·상세·미디어는 즉시, 디스코드 소개글도 같이 고친다."""
+    d = req.read_json(limit=MAX_SYNC_IMAGE) or {}
+    old_name = clean(d.get("old_name"), 100)
+    f, err = parse_product_form(d)
+    if err:
+        return json_resp({"error": err}, 400)
+    name = f["name"]
+    shop = load_shop()
+    prods = shop.get("products") or {}
+    cur = prods.get(old_name)
+    if not cur:
+        return json_resp({"error": "판매 목록에 없는 게임입니다. 새로고침 후 다시 시도하세요."}, 404)
+    if cur.get("is_subscription") or cur.get("is_game_pass"):
+        return json_resp({"error": "정기결제·게임패스 상품은 로컬 관리자웹에서 수정해주세요."}, 400)
+    if name != old_name and name in prods:
+        return json_resp({"error": "같은 이름의 게임이 이미 있어요."}, 400)
+    try:
+        media = parse_form_media(d)
+    except ValueError as e:
+        return json_resp({"error": str(e)}, 400)
+    cur_cat = cur.get("category") or "기타"
+    product_changed = (name != old_name or f["category"] != cur_cat
+                       or f["price"] != cur.get("price") or f["link"] != cur.get("link", ""))
+    detail = form_detail(f)
+    detail_changed = detail != (shop.get("details") or {}).get(old_name, {})
+    if not (product_changed or detail_changed or media):
+        return json_resp({"error": "바뀐 내용이 없어요."}, 400)
+    if product_changed:
+        with db_lock:
+            busy = db().execute(
+                "SELECT COUNT(*) FROM product_regs WHERE status IN ('대기','처리중') "
+                "AND (name IN (?,?) OR old_name IN (?,?))", (old_name, name, old_name, name)).fetchone()[0]
+            if busy:
+                return json_resp({"error": "이 게임의 등록·수정이 아직 처리 중이에요. 1분 뒤 다시 시도하세요."}, 400)
+            db().execute(
+                "INSERT INTO product_regs(kind,old_name,name,category,price,link,created_at,updated_at) "
+                "VALUES('edit',?,?,?,?,?,?,?)",
+                (old_name, name, f["category"], f["price"], f["link"], now(), now()))
+            db().commit()
+    if name != old_name:
+        rename_site_keys(old_name, name)
+    # 사이트 즉시 반영 (봇이 처리 후 push 하면 같은 값으로 덮이고, 실패하면 봇 값으로 되돌아감)
+    shop = load_shop()
+    if product_changed:
+        shop.setdefault("products", {}).setdefault(name, dict(cur)).update(
+            {"category": f["category"], "price": f["price"], "link": f["link"]})
+    details = shop.setdefault("details", {})
+    if detail:
+        details[name] = detail
+    else:
+        details.pop(name, None)
+    if media:
+        save_site_media(shop, name, media)
+    save_shop(shop)
+    note = ""
+    if name != old_name or detail_changed or media or f["category"] != cur_cat or f["price"] != cur.get("price"):
+        note = sync_intro(old_name, f, shop, media)
+    return json_resp({"ok": True, "queued": product_changed, "note": note})
 
 
 def api_admin_reservation_send(req):
@@ -2414,6 +2668,7 @@ GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,
     "/api/admin/image": api_admin_image,
     "/api/admin/gacha": api_admin_gacha_get,
+    "/api/admin/games": api_admin_games,
 }
 POST_ROUTES = {
     "/api/request": api_request_create,
@@ -2446,6 +2701,7 @@ POST_ADMIN_ROUTES = {
     "/api/admin/discount": api_admin_discount,
     "/api/admin/best": api_admin_best,
     "/api/admin/product_reg": api_admin_product_reg,
+    "/api/admin/product_edit": api_admin_product_edit,
     "/api/admin/gift": api_admin_gift,
     "/api/admin/reservation_send": api_admin_reservation_send,
     "/api/admin/gacha": api_admin_gacha,
