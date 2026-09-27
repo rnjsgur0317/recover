@@ -195,12 +195,12 @@ float veilK(vec3 p){ vec3 v = p - (uM + vec3(0., OY - 14., 0.)); float al = -v.y
 vec3 floorCol(vec3 p, vec3 rd, float t){
   vec2 q = p.xz - uM.xz; float r = length(q), aa = t * 1.5 / uRes.y / max(-rd.y, .02);
   float pud = smoothstep(.46, .6, fbz(p.xz * .018 + 3.)); vec3 col = vec3(.011, .009, .015) * (.6 + .6 * fbz(p.xz * .03)) * (.8 + .4 * fbz(p.xz * .4)) * (1. - .5 * pud); float rough = mix(.45 + .3 * fbz(p.xz * .2), .03, pud);   // 젖은 흑요석 · 웅덩이
-  vec2 g = p.xz * .035; vec2 gi = floor(g), gf = fract(g); float d1 = 8., d2 = 8.;
+  vec2 g = p.xz * .035 + (vec2(fbz(p.xz * .008), fbz(p.xz * .008 + 5.2)) - .5) * 1.6; vec2 gi = floor(g), gf = fract(g); float d1 = 8., d2 = 8.;                   // 비틀린 균열(격자처럼 보이지 않게)
   for (int j = uZero - 1; j <= 1; j++) for (int i = uZero - 1; i <= 1; i++){ vec2 c = vec2(float(i), float(j)), o2 = vec2(hash(gi + c), hash(gi + c + 7.1)); float d = length(c + o2 - gf); if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
   float Dd = destroyAt(p.xz), crack = smoothstep(.03 + .09 * Dd + aa * .03, 0., d2 - d1), zone = smoothstep(95., 30., r) * uCrackK + smoothstep(60., 20., r) * uEmerge * 1.5, pul = .7 + .3 * sin(uT * 1.7 - r * .08);                           // 발밑의 균열 문양(지배자와 함께 움직인다)
   col += vec3(.45, .12, 1.) * crack * (zone * 1.6 * pul + .05 * uCrackK) * (1. - Dd) + vec3(.8, .55, 1.) * smoothstep(40., 26., r) * smoothstep(20., 27., r) * uEmerge * 1.2;
   if (Dd > 0.){ float inner = smoothstep(.03 + .04 * Dd, 0., d2 - d1), fine = smoothstep(.012, 0., abs(fbz(p.xz * .06 + 9.) - .5) - .004) * Dd; col *= 1. - .75 * Dd; col += mix(vec3(1., .2, .02), vec3(1., .72, .3), inner) * (crack * (.9 + 1.2 * inner) + fine * .8) * Dd + vec3(.5, .08, .01) * Dd * .03;   // 검은 껍질 사이로 흐르는 용암
-    float cn = .6 + .6 * noise(p.xz * .3); for (int i = uZero; i < 16; i++){ vec4 b = uBeam[i]; if (b.w < 0.) continue; float dc = length(p.xz - b.xz); if (dc > 26.) continue; col += vec3(1., .4, .1) * smoothstep(26., 0., dc) * cn * exp(-b.w * .3) + vec3(1., .85, .6) * smoothstep(9., 0., dc) * 1.8 * exp(-b.w * .6); } }   // 분화구
+    float cn = .6 + .6 * noise(p.xz * .3); col += vec3(1., .7, .3) * step(.994, hash(floor(p.xz * 1.3) + floor(uT * 7.))) * Dd * 3.; for (int i = uZero; i < 16; i++){ vec4 b = uBeam[i]; if (b.w < 0.) continue; float dc = length(p.xz - b.xz); if (dc > 26.) continue; col += vec3(1., .4, .1) * smoothstep(26., 0., dc) * cn * exp(-b.w * .3) + vec3(1., .85, .6) * smoothstep(9., 0., dc) * 1.8 * exp(-b.w * .6); } }   // 분화구
   if (r > 70. && r < 78.){ float an = atan(q.y, q.x) / 6.2832 + .5, v = (r - 70.) / 8.; float a = texture(uAtlas, vec2(fract(an * 5. - uT * .01), v)).r; col += vec3(.75, .6, 1.) * a * 1.4 * uCrackK + vec3(.5, .35, 1.) * smoothstep(.05, 0., min(v, 1. - v)) * .6 * uCrackK; }
   col += vec3(.55, .35, 1.) * smoothstep(.6, 0., abs(r - 84.)) * .9 * uCrackK;
   if (uShock > 0.){ float w = abs(r - uShock); col += vec3(.8, .6, 1.) * exp(-w * .12) * 2.5 * (1. - smoothstep(300., 700., uShock)) + vec3(.5, .2, 1.) * crack * smoothstep(uShock, uShock - 80., r) * 2. * (1. - smoothstep(250., 700., uShock)); }
@@ -216,6 +216,7 @@ vec3 shade(vec3 p, vec3 n, vec3 rd, float id, float t){
   if (id < 1.5){ alb = vec3(.022, .016, .032); rough = .16; metal = .7;                                                                                    // 흑요석 몸: 이음새 · 8각 별 문장
     float an = atan(q.z, q.x), sc = .785398, a2 = mod(an + sc * .5, sc) - sc * .5, rr = length(q.xz); float seam = smoothstep(.5, 0., abs(a2) * rr - .0) * step(q.y, 99.) * step(44., q.y);
     float band = smoothstep(.5, 0., abs(fract((q.y - 40.) / 12.) - .5) * 12. - 5.6) * step(q.y, 99.); em += vec3(.5, .18, 1.) * (seam * .6 + band * .35) * (.7 + .3 * sin(uT * 2. - q.y * .05));
+    float vein = smoothstep(.035, 0., abs(fbz(vec2(an * 4., q.y * .07) + 3.) - .5)) * step(q.y, 110.); em += mix(vec3(.55, .2, 1.), vec3(1., .45, .12), uFire * .6) * vein * (.55 + .45 * sin(uT * 3. + q.y * .2));   // 흑요석 속의 결정 맥
     if (abs(an - 1.5708) < .39 && q.y > 70. && q.y < 99.){ vec2 sq = vec2(q.x, q.y - 86.); float st = sdStarN(sq, 9., 8., 3.2), st2 = sdStarN(sq, 5.5, 8., 3.6);
       em += vec3(.6, .25, 1.) * (smoothstep(.35, 0., abs(st) - .3) * 2. + smoothstep(.3, -1., st) * .2 + smoothstep(.3, 0., abs(st2) - .2) * 1.2) * (1. + .6 * uPower); } }
   else if (id < 2.5){ alb = vec3(.02, .015, .03); rough = .22; metal = .6; vec2 sq = vec2(q.x, q.y - 112. - (41. - 2.8) * .42); if (q.z > -8.5 && abs(sq.x) < 3.5 && abs(sq.y) < 3.5){ float st = sdStarN(sq, 2.3, 8., 3.2); em += vec3(.55, .2, 1.) * smoothstep(.12, 0., abs(st) - .06) * 1.6; } }
@@ -248,6 +249,7 @@ vec3 shade(vec3 p, vec3 n, vec3 rd, float id, float t){
     em += vec3(.45, .15, 1.) * rune * (.18 + .5 * uOrbK * exp(-length(p.xz - uM.xz) * .004)) + vec3(.45, .15, 1.) * smoothstep(.04, 0., .5 - abs(fract(p.y * .08 + hash(cid)) - .5)) * .12;   // 오벨리스크
     li *= 1.; }
   vec3 f0 = mix(vec3(.04), alb * 3. + .05, metal), spec = f0 * pow(max(dot(n, hv), 0.), mix(900., 20., rough)) * (1. - rough) * 4.;
+  em += (alb * 4. + f0) * vec3(1., .38, .08) * uFire * max(-n.y, 0.) * .9 + vec3(1., .35, .08) * uFire * pow(1. - ndv, 3.) * .25 * step(id, 16.5);   // 불타는 땅이 아래에서 비춘다
   if (id > 19.5){ alb = vec3(.02, .016, .014); rough = .8; metal = 0.; float hot = pow(fbz(p.xz * .4 + p.y * .5), 2.); em = vec3(1., .35, .06) * smoothstep(.35, .6, hot) * 2.2 * uFire; }
   if (id > 16.5 && id < 19.5){ spec = vec3(0.); rim = vec3(0.); }
   vec3 col = (alb * (1. - metal) * ndl + spec * ndl) * li + rim * ao + vec3(.7, .6, 1.) * uFlash * .2 * alb * 6. + em;
@@ -277,22 +279,28 @@ void main(){
     float env = smoothstep(0., .04, b.w) * exp(-b.w * 4.); if (tc < depth + 5.) col += (vec3(1., .95, 1.) * exp(-dd * 1.6) * 2.2 + vec3(.85, .3, 1.) * exp(-dd * .15) * .5) * env;
     vec3 fb = B + vec3(0., 10. + b.w * 16., 0.) - ro; float tf2 = max(dot(fb, rd), 0.), df = length(fb - rd * tf2), fr = 14. + b.w * 30.;
     if (tf2 < depth + fr) col += (vec3(1., .45, .1) * 1. + vec3(1., .85, .55) * exp(-df / fr * 5.) * 1.2) * exp(-df * df / (fr * fr)) * exp(-b.w * 1.3) * smoothstep(0., .05, b.w); }
+  if (uDestroy > 0.){ float a2 = dot(rd.xz, rd.xz); if (a2 > 1e-5) for (int i = uZero; i < 8; i++){ vec4 b = uBeam[i]; if (b.w < .15) continue; vec2 oc = ro.xz - b.xz; float tc = -dot(oc, rd.xz) / a2; if (tc < 0. || tc > depth) continue;   // 폭격 자리에서 솟는 검은 연기 기둥
+      vec3 x = ro + rd * tc; float rr = length(x.xz - b.xz), H = min(40. + b.w * 45., 190.), w = min(7. + b.w * 4. + x.y * .07, 24.); if (x.y < 0. || x.y > H || rr > w * 2.2) continue;
+      float lat = dot(x.xz - b.xz, vec2(-rd.z, rd.x)) / sqrt(a2), n1 = noise(vec2(lat * .09 + b.x, x.y * .05 - uT * .6)) * .65 + noise(vec2(lat * .23 - b.z, x.y * .13 - uT * 1.1)) * .35, den = exp(-rr * rr / (w * w)) * smoothstep(.25, .8, n1) * smoothstep(H, H * .5, x.y) * smoothstep(0., 12., x.y) * smoothstep(0., .5, b.w) * smoothstep(20., 80., tc);
+      col = mix(col, vec3(.016, .011, .012) + vec3(1., .32, .06) * exp(-x.y * .03) * .45 * uFire + vec3(.3, .1, .5) * .05, den * .55); } }
   { vec3 v = uM + vec3(0., OY, 0.) - ro; float tc = max(dot(v, rd), 0.), d = length(v - rd * tc); col += LC * uOrbI * 1.2 / (1. + d * d * .0006) * .05 * uOrbK * step(tc, depth + 20.); }
   o = vec4(max(col, 0.), min(depth, 4000.));
 }`;
 const FS_FINAL = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uGrainK, uBlock, uTrans, uCold, uWarm;
+uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uGrainK, uBlock, uTrans, uCold, uWarm, uHeat;
 ${CSGL.NOISE}
 vec3 scene(vec2 uv){ vec4 c0 = texture(uScene, uv); float coc = clamp(abs(c0.a - uFocus) / max(c0.a, .3) * uAper, 0., 1.) * .012; if (coc < .0006) return c0.rgb;
   vec3 acc = c0.rgb; float n = 1.; for (int i = 0; i < 16; i++){ float fi = float(i) + .5, a = fi * 2.39996, r = sqrt(fi / 16.) * coc; vec2 d = vec2(cos(a), sin(a)) * r * vec2(uRes.y / uRes.x, 1.); vec4 sx = texture(uScene, uv + d); float w = 1. + 2. * max(max(sx.r, sx.g), sx.b); acc += sx.rgb * w; n += w; } return acc / n; }
 void main(){
   vec2 uv = (vUv - .5) / uZoom + .5 + uShake;
   if (uBlock > 1.5){ vec2 cell = floor(uv * uRes / uBlock); float h = hash(cell + floor(uT * 30.)); uv = (cell + .5) * uBlock / uRes; if (h < uTrans * .3) uv += (vec2(hash(cell + 3.), hash(cell + 5.)) - .5) * .05 * uTrans; }   // 화면 전환: 픽셀로 흩어졌다 모인다
+  if (uHeat > 0.){ vec3 s0 = texture(uScene, uv).rgb; float wm = smoothstep(.05, .45, s0.r - s0.b * .8); uv += (vec2(noise(uv * vec2(38., 22.) + vec2(0., -uT * 2.6)), noise(uv * vec2(38., 22.) + vec2(7., -uT * 3.1))) - .5) * .006 * uHeat * wm; }   // 용암 · 불 위의 아지랑이
   if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.){ o = vec4(0., 0., 0., 1.); return; }
   vec2 dir = uv - .5; float ca = uCA * (.3 + length(dir) * 1.8) + uTrans * .01; vec3 col = scene(uv); if (ca > .0003){ vec3 c0 = texture(uScene, uv).rgb; col.r += texture(uScene, uv + dir * ca).r - c0.r; col.b += texture(uScene, uv - dir * ca).b - c0.b; col = max(col, 0.); }
   vec3 bl = texture(uBloom, uv).rgb, st = vec3(0.); for (int i = -7; i <= 7; i++){ float fi = float(i); st += texture(uBloom, uv + vec2(fi * .015, 0.)).rgb * exp(-fi * fi * .06); }
-  col += bl * uBloomK + st * .07 * uBloomK * vec3(.8, .7, 1.) + texture(uRays, uv).rgb * uRayK;
+  float dirt = pow(fbm(vUv * vec2(5., 3.) + 3.), 3.) * 1.6 + pow(noise(vUv * vec2(60., 34.)), 12.) * 2.;                                                     // 렌즈 먼지 · 할레이션
+  col += bl * uBloomK * (1. + dirt * .7) + st * .07 * uBloomK * vec3(.8, .7, 1.) + texture(uRays, uv).rgb * uRayK + bl * vec3(.18, .04, .02) * uWarm * .6;
   vec4 tx = texture(uTxt, uv); col = col * (1. - tx.a) + tx.rgb; col += vec3(.85, .8, 1.) * uFlash;
   col = (col * (2.51 * col + .03)) / (col * (2.43 * col + .59) + .14); col = pow(clamp(col, 0., 1.), vec3(1. / 2.2)); col = mix(col, col * col * (3. - 2. * col), .35) * vec3(.98, .95, 1.04); float lu = dot(col, vec3(.3, .55, .15)); col = mix(col, vec3(lu) * vec3(.72, .88, 1.15), uCold * .55); col = mix(col, col * vec3(1.1, .93, .88) + vec3(.02, .003, 0.) * (1. - lu), uWarm * .5);   // 차가운 밤 → 불지옥
   col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * .035 * uGrainK; float v = length((vUv - .5) * vec2(1., .8)); col *= 1. - smoothstep(.42, 1.1, v) * .6;
@@ -336,10 +344,21 @@ function boltPath(seed, M) { const r = rng(seed * 7919 + 13), a = r() * TAU, rad
 function drawBolt(S, pts, k, black) { const P2 = pts.map((p) => proj(S, p)); if (P2.some((q) => !q)) return;
   const line = (w, c) => { tg.strokeStyle = c; tg.lineWidth = w; tg.beginPath(); P2.forEach((q, i) => (i ? tg.lineTo(q[0], q[1]) : tg.moveTo(q[0], q[1]))); tg.stroke(); };
   tg.lineJoin = "round"; tg.lineCap = "round"; if (black) { line(U * .05, `rgba(150,80,255,${.35 * k})`); line(U * .022, `rgba(0,0,0,${.95 * k})`); } else { line(U * .09, `rgba(140,70,255,${.18 * k})`); line(U * .03, `rgba(200,150,255,${.7 * k})`); line(U * .01, `rgba(255,250,255,${k})`); } }
+const ASH = (() => { const r = rng(515), a = []; for (let i = 0; i < 420; i++) a.push({ p: [r(), r(), r()], s: .4 + r() * .9, ph: r() * TAU, k: r() }); return a; })();
+function drawAsh(t, S) {                                                                                          // 차가운 밤의 재 · 파괴 때의 불똥
+  const cold = S.cold, warm = S.warm; if (cold < .02 && warm < .02) return; const B = 60, c = S.cam.pos; tg.save(); tg.globalCompositeOperation = "lighter";
+  for (const a of ASH) { const hot = a.k < warm * .9; if (!hot && a.k > cold * .6 + .1) continue;
+    const vy = hot ? 6 + 10 * a.s : -1.2 - a.s, wx = hot ? 3 : 1.6, o = [a.p[0] * B + t * wx + Math.sin(t * .8 + a.ph) * 2, a.p[1] * B + t * vy, a.p[2] * B + Math.cos(t * .6 + a.ph) * 2];
+    const w = [c[0] + ((((o[0] - c[0]) % B) + B) % B) - B / 2, c[1] + ((((o[1] - c[1]) % B) + B) % B) - B / 2, c[2] + ((((o[2] - c[2]) % B) + B) % B) - B / 2], q = proj(S, w); if (!q || q[2] < 1.5) continue;
+    const sz = Math.min(U * .05, a.s * .12 * S.focal * Hd / 2 / q[2]); if (sz < .35) continue; const fl = hot ? .6 + .4 * Math.sin(t * 14 + a.ph * 7) : 1;
+    tg.globalAlpha = (hot ? .9 : .4) * fl * Math.min(1, q[2] / 6); const col = hot ? (a.k < .3 ? "255,240,192" : "255,138,48") : "154,166,200";
+    if (hot) { tg.strokeStyle = `rgba(${col},1)`; tg.lineWidth = Math.max(.6, sz * .7); tg.lineCap = "round"; tg.beginPath(); tg.moveTo(q[0], q[1]); tg.lineTo(q[0] - sz * .6, q[1] + sz * 4); tg.stroke(); }   // 불똥: 가는 꼬리
+    else { tg.fillStyle = `rgba(${col},1)`; tg.beginPath(); tg.arc(q[0], q[1], Math.max(.5, sz * .8), 0, TAU); tg.fill(); } }
+  tg.restore(); }
 const EMB = (() => { const r = rng(77), a = []; for (let i = 0; i < 260; i++) a.push({ a: r() * TAU, r: 10 + r() * 60, y0: r() * 120, sp: 4 + r() * 10, ph: r(), s: .25 + r() * .5 }); return a; })();
 function drawOverlay(t, S) {
   tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, tcv.width, tcv.height); tg.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const M = S.M;
+  const M = S.M; drawAsh(t, S);
   tg.save(); if (t >= T.HALO) for (const e of EMB) { const y = (e.y0 + t * e.sp) % 170, p = add(M, [Math.cos(e.a + t * .1) * e.r, 20 + y, Math.sin(e.a + t * .1) * e.r - 20 * (y / 170)]), q = proj(S, p); if (!q) continue;   // 지배자 곁에서 솟는 불티
     const sz = Math.min(U * .06, Math.max(.6, e.s * S.focal * Hd / 2 / q[2] * .45)), al = Math.min(1, y / 20) * (1 - y / 170) * .8; tg.globalAlpha = al; tg.fillStyle = h1(e.a * 9) < .3 ? "#000" : (S.warm > .3 && h1(e.a * 5) < S.warm ? "#ffa050" : "#c9a8ff"); tg.fillRect(q[0] - sz, q[1] - sz, sz * 2, sz * 2); } tg.restore();
   for (const m of METEORS) { const k = (t - m.t0) / m.dur; if (k < 0 || k > 1) continue; const h = proj(S, mix3(m.from, m.to, k)), tl = proj(S, mix3(m.from, m.to, Math.max(0, k - .22)));   // 불타며 떨어지는 유성
@@ -350,6 +369,8 @@ function drawOverlay(t, S) {
   if (t >= T.TITLE) { const k = eOut(seg(t, T.TITLE, T.TITLE + 1.4)), y = Hd * .78, sp = U * (.3 + .25 * (1 - k)); tg.save(); tg.globalAlpha = k * (1 - seg(t, T.END - .9, T.END - .4));
     tg.font = `700 ${Math.round(U * .8)}px Cinzel, 'Times New Roman', serif`; tg.textAlign = "center"; tg.textBaseline = "middle"; const word = "MONARCH", ws = [...word].map((c) => tg.measureText(c).width), w = ws.reduce((a, b) => a + b, 0) + sp * (word.length - 1);
     let x = Wd / 2 - w / 2; tg.shadowColor = "rgba(150,90,255,.9)"; tg.shadowBlur = U * .4; tg.fillStyle = "#f0e8ff"; [...word].forEach((c, i) => { tg.fillText(c, x + ws[i] / 2, y); x += ws[i] + sp; }); tg.shadowBlur = 0;
+    { const sx = Wd / 2 - w / 2 + (w + U * 2) * seg(t, T.TITLE + .2, T.TITLE + 1.4) - U, gr = tg.createLinearGradient(sx - U, 0, sx + U, 0); gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(.5, "rgba(255,250,255,.9)"); gr.addColorStop(1, "rgba(255,255,255,0)");   // 빛이 글자를 훑는다
+      tg.save(); tg.globalCompositeOperation = "source-atop"; tg.fillStyle = gr; tg.fillRect(sx - U, y - U, U * 2, U * 2); tg.restore(); }
     const lw = w * .5 * k; tg.fillStyle = "rgba(190,160,255,.85)"; tg.fillRect(Wd / 2 - w / 2 - U * .5 - lw * .4, y - 1, lw * .4, 2); tg.fillRect(Wd / 2 + w / 2 + U * .5, y - 1, lw * .4, 2);
     tg.font = `500 ${Math.round(U * .2)}px "Noto Serif KR", serif`; tg.fillStyle = "rgba(220,205,255,.8)"; tg.fillText("모 나 크", Wd / 2, y + U * .62); tg.restore(); }
 }
@@ -407,7 +428,7 @@ function render(t) {
   X.pass(P.final(), null, (u2) => { X.bindTex(0, TG.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);
     gl.uniform2f(u2.uShake, (r0() - .5) * hit * .02, (r0() - .5) * hit * .02); gl.uniform1f(u2.uZoom, 1 + .02 * hit + .05 * S.trans); gl.uniform1f(u2.uCA, .0012 + .005 * hit);
     for (const [n, v] of [["uBloomK", S.bloom], ["uRayK", lp ? S.rays : 0], ["uFocus", S.focus], ["uAper", S.aper], ["uFlash", .12 * S.flash * S.flash], ["uFade", S.fade], ["uGrainK", $("cs").classList.contains("rec") ? .4 : 1],
-      ["uBlock", 1 + Math.round(Math.pow(S.trans, 1.5) * 34) * ph / 1080], ["uTrans", S.trans], ["uCold", S.cold], ["uWarm", S.warm]]) if (u2[n] != null) gl.uniform1f(u2[n], v); });
+      ["uBlock", 1 + Math.round(Math.pow(S.trans, 1.5) * 34) * ph / 1080], ["uTrans", S.trans], ["uCold", S.cold], ["uWarm", S.warm], ["uHeat", S.fire]]) if (u2[n] != null) gl.uniform1f(u2[n], v); });
 }
 
 /* ═════════════════ 재생 ═════════════════ */
