@@ -22,8 +22,9 @@
      7.5    솟아오름 — 땅이 갈라지고 높이 190m 의 몸(거꾸로 선 흑요석 첨탑)이 옥좌를 떠받친 채 땅속에서 솟는다 · 네 뿔이 터져 나와 감긴다
      11.5   깨어남 — 옥좌 위로 어둠이 모여 공허가 되고, 12.6 그 속에서 보라 눈이 뜨인다
      14.5   대관 — 여덟 다이아가 날아와 왕관으로 맞물리고 · 두 후광이 스스로 그려지고 · 공허가 흰 별을 품은 구슬로 응축되고 · 여섯 뿔 왕관이 하늘에서 내려와 씌워진다 · 빛의 장막
-     18.5   복종 — 평원의 오벨리스크들이 가까운 것부터 차례로 지배자를 향해 고개를 숙이고, 모든 차원문의 눈이 그를 본다
-     22.5   승천 — 더 높이 떠오르고 23.8 충격파가 땅을 쓸며 폭풍 구름이 소용돌이로 열린다
+     18.5   파괴 — 북소리마다 구슬이 땅에 빛줄기를 내리꽂는다: 불덩이 · 날아가는 바위 · 번지는 용암 균열 · 쓰러지고 증발하는 오벨리스크 · 불타며 떨어지는 유성 · 무너지는 산맥과 연기 기둥 · 찢어지는 하늘
+     22.5   멸망 — 사방으로 빛줄기가 쏟아지고 23.8 충격파가 온 세계를 쓸어 모든 오벨리스크가 쓰러지고 땅은 용암 바다가 된다 · 일식이 갈라져 붉게 타오른다
+   색: 차가운 푸른 밤 → 깨어나며 보라 → 파괴의 불지옥(주황 · 진홍) → 불타는 세계 위의 보라 지배
      26.0   MONARCH
    장면이 바뀔 때마다 번쩍 · 픽셀로 흩어졌다 모이는 전환. 음원: tools/make_monarch_audio.py (오리지널, 시각 T 같음)
    ═══════════════════════════════════════════════════════════════ */
@@ -45,6 +46,9 @@ const SPEED = 14, Z0 = -300;
 const monZ = (t) => Z0 + SPEED * (t < T.POWER - 1 ? t : (T.POWER - 1) + (1 - Math.pow(1 - seg(t, T.POWER - 1, T.POWER + 1), 2)) * 1);   // 22.5 에 멈춘다(부드럽게)
 const monPos = (t) => [Math.sin(t * .21) * 6, 2 * Math.sin(t * .6), monZ(t)];
 const portAt = (t, i) => { const up = t < T.RISE ? 0 : t < T.POWER ? 90 * eOut(seg(t, T.RISE, T.FACE)) : 90 + 40 * eInOut(seg(t, T.POWER, T.HERO + .6)), a = i * PI / 2 + PI / 4 + t * .12; return [Math.cos(a) * 62, 18 + up + 8 * Math.sin(t * .5 + i * 1.7), Math.sin(a) * 62]; };
+const BEAMS = [[18.5, -30, 118], [19.17, 46, 150], [19.83, -86, 88], [20.5, 14, 176], [21.17, 210, -140], [21.5, -230, 60], [21.83, 130, 250], [22.17, -150, -210]];   // [시각, x, z] 폭격 지점(파괴가 번져 나간다)
+for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + .3; BEAMS.push([23.0 + i * .08, Math.cos(a) * 260, Math.sin(a) * 260]); }                                   // 23.0 ~ 23.6 사방으로 쏟아지는 빛줄기
+const METEORS = (() => { const r = rng(606), a = []; for (let i = 0; i < 16; i++) { const t0 = 19.4 + r() * 6.2, x = (r() - .5) * 1200, z = -200 - r() * 900; a.push({ t0, dur: .7 + r() * .6, from: [x + 300 + r() * 200, 700 + r() * 300, z - 200], to: [x, 0, z] }); } return a; })();
 const BOLTS = [[T.L1, 1], [T.L2, 2], [8.8, 3], [T.IGNITE, 4], [16.2, 5], [T.STARE, 6], [T.SHOCK, 7], [27.4, 8]];
 { const r = rng(99); for (let t = T.POWER + .1; t < T.HERO - .2; t += .18 + r() * .3) BOLTS.push([t, 20 + Math.floor(r() * 900)]); BOLTS.sort((a, b) => a[0] - b[0]); }
 
@@ -56,7 +60,7 @@ let Wd = 0, Hd = 0, U = 0, DPR = 1, DPR_CAP = 2, SCALE = 1, slow = 0, time = 0, 
 /* ═════════════════ 셰이더 ═════════════════ */
 const FS_SCENE = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform vec2 uRes; uniform float uT, uFocal, uEyeK, uFlash, uShock, uPower, uSpinA, uOrbI, uCrackK, uVoidK, uOrbK, uHornK, uCrownK, uHaloK, uTopK, uRingK, uBowT, uVortex, uEmerge; uniform float uPortK[4]; uniform vec3 uCamPos, uM; uniform mat3 uCam; uniform int uZero; uniform vec2 uPort[4]; uniform vec3 uPortP[4]; uniform sampler2D uAtlas;
+uniform vec2 uRes; uniform float uT, uFocal, uEyeK, uFlash, uShock, uPower, uSpinA, uOrbI, uCrackK, uVoidK, uOrbK, uHornK, uCrownK, uHaloK, uTopK, uRingK, uBowT, uVortex, uEmerge; uniform float uPortK[4]; uniform vec4 uBeam[16], uDeb[20], uDebB; uniform highp sampler2D uObTex; uniform float uDestroy, uFire, uRift, uCold, uAnnihR; uniform vec3 uCamPos, uM; uniform mat3 uCam; uniform int uZero; uniform vec2 uPort[4]; uniform vec3 uPortP[4]; uniform sampler2D uAtlas;
 ${CSGL.NOISE}
 const vec3 LC = vec3(.62, .45, 1.);
 const float OY = 150.;
@@ -85,6 +89,8 @@ float throne(vec3 p){
 
 float pshape(vec2 u){ vec2 a = abs(u); float mx = max(a.x, a.y) + 1e-4, mn = min(a.x, a.y), k = mn / mx; return mx - (5.2 - 1.1 * (1. - k * k)); }   // 모서리가 당겨진 사각형
 
+float destroyAt(vec2 xz){ float D = 0.; for (int i = uZero; i < 16; i++){ vec4 b = uBeam[i]; if (b.w < 0.) continue; float R = min(b.w * 140., 230.), d = length(xz - b.xz); D = max(D, smoothstep(R, R * .35, d) * smoothstep(0., .15, b.w)); }
+  if (uAnnihR > 0.) D = max(D, smoothstep(uAnnihR, uAnnihR - 260., length(xz - uM.xz))); return D; }
 float voidSph(vec3 q0){ vec3 q = q0 - vec3(0., OY, 0.); float R = 11. * uVoidK, lq = length(q); if (R < .05) return lq + 1.;                          // 옥좌 위에 모이는 공허
   float w = ((noise(q.xy * .5 + vec2(uT * .9, 0.)) + noise(q.yz * .6 - vec2(uT * .7)) - 1.) * 1. + (noise(q.xz * 1.3 + uT * 1.4) - .5) * .45) * uVoidK * smoothstep(.3, 1., lq / R); return (lq - R + w) * .7; }
 /* ── 몸: 거꾸로 선 흑요석 첨탑(8각) · 매달린 수정 조각 · 윗테두리의 가시 ── */
@@ -134,7 +140,9 @@ vec2 portals(vec3 p){ vec2 r = vec2(1e9, -1.);
 vec2 obelisk(vec3 p){ if (p.y > 56.) return vec2(p.y - 54., -1.); if (length(p.xz - uCamPos.xz) > 1100.) return vec2(40., -1.); vec2 cid = floor(p.xz / 70.), lc = p.xz - (cid + .5) * 70.; float edge = min(35. - abs(lc.x), 35. - abs(lc.y)) + 2.;                    // 평원에 흩어진 오벨리스크(크기 비교용)
   if (hash(cid) < .72 || abs((cid.x + .5) * 70.) < 60.) return vec2(edge, -1.); vec2 j = (vec2(hash(cid + 1.), hash(cid + 2.)) - .5) * 30.; float H = 20. + 22. * hash(cid + 3.), w = 2.4 + 1.6 * hash(cid + 4.);
   vec3 q = vec3(lc.x - j.x, p.y, lc.y - j.y); vec2 cw = (cid + .5) * 70. + j, dm = uM.xz - cw; float dist = length(dm);
-  float bow = uBowT > 0. ? .55 * smoothstep(0., 1.1, uT - uBowT - dist / 300.) : 0.; if (bow > 0.){ vec2 dn = dm / max(dist, 1.); float sx = dot(q.xz, dn); vec2 ry = rot(-bow) * vec2(sx, q.y); q.xz += dn * (ry.x - sx); q.y = ry.y; }   // 무릎 꿇는다
+  float fall = 0.; vec2 away = vec2(0.); ivec2 ti = ivec2(cid) + 16;                                                                            // 쓰러짐 상태(칸마다 JS 가 계산한 텍스처)
+  if (uDestroy > 0. && ti.x >= 0 && ti.y >= 0 && ti.x < 32 && ti.y < 32){ vec4 st = texelFetch(uObTex, ti, 0); if (st.w > .5) return vec2(edge, -1.); fall = st.x; away = st.yz; }
+  if (fall > 0.){ float sx = dot(q.xz, away); vec2 ry = rot(-1.42 * fall) * vec2(sx, q.y); q.xz += away * (ry.x - sx); q.y = ry.y; }
   q.xz = rot(hash(cid + 5.) * 3.) * q.xz; float tp = w * (1. - .35 * clamp(q.y / H, 0., 1.));
   q.xy = rot((hash(cid + 6.) - .5) * .08) * q.xy; bool broken = hash(cid + 9.) < .35; float Hb = broken ? H * (.5 + .25 * hash(cid + 10.)) : H;                                 // 오래되어 기울고, 몇몇은 부러졌다
   float d = max(max(abs(q.x) - tp, abs(q.z) - tp), abs(q.y - H * .5) - H * .5); d = min(d, max(max(abs(q.x), abs(q.z)) - (H + w * 2.2 - q.y) * .5, max(H - q.y, q.y - H - w * 2.2)));
@@ -151,29 +159,35 @@ vec2 map(vec3 p){
     r = opU(r, crown8(q)); r = opU(r, halos(q)); r = opU(r, vec2(topCrown(q), 11.)); }
   else r = opU(r, vec2(bd, -1.));
   r = opU(r, portals(p));
+  if (uDestroy > 0. && length(p - uDebB.xyz) < uDebB.w) for (int i = uZero; i < 20; i++){ vec4 d = uDeb[i]; if (d.w <= 0.) continue; vec3 q2 = p - d.xyz; float dq = length(q2); if (dq > d.w * 2.4){ r = opU(r, vec2(dq - d.w * 1.8, -1.)); continue; }   // 폭격에 날아가는 바위
+    q2.xz = rot(float(i) * 1.7 + uT * (1. + float(i) * .1)) * q2.xz; q2.xy = rot(float(i) * .9 + uT * .7) * q2.xy; r = opU(r, vec2((sdBox(q2, vec3(d.w, d.w * .7, d.w * .85)) - d.w * .15 + (noise(q2.xy * 2. / d.w) - .5) * d.w * .2) * .8, 20.)); }
   return r;
 }
 vec3 normalAt(vec3 p, float t){ float e = .006 + t * .0004; vec3 n = vec3(0.); for (int i = uZero; i < 4; i++){ vec3 k = .5773 * (2. * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.); n += k * map(p + e * k).x; } return normalize(n); }
 float calcAO(vec3 p, vec3 n){ return clamp(.55 + .45 * n.y + .15 * smoothstep(0., 30., p.y), 0., 1.); }                                                        // 가벼운 가림 근사(연결 시간 단축)
 const vec3 ECL = vec3(-.1152, .3265, -.9381);                                                                                                  // 지배자 뒤편 하늘의 검은 일식
 vec3 sky(vec3 rd){ float y = rd.y, az = atan(rd.x, -rd.z);
-  vec3 c = mix(vec3(.03, .012, .05), vec3(.003, .0015, .009), smoothstep(-.02, .55, y));
+  vec3 c = mix(mix(vec3(.03, .012, .05), vec3(.02, .03, .05), uCold), vec3(.003, .0015, .009), smoothstep(-.02, .55, y));
   vec2 np = vec2(az * 1.2, y * 3.); c += vec3(.12, .05, .26) * pow(fbz(np * 1.3 + 5.), 4.) * 1.3 * smoothstep(.15, .7, y) + vec3(.03, .06, .16) * pow(fbz(np * 2.5 - 3.), 5.) * smoothstep(.2, .8, y);   // 성운
   vec2 sq = floor(rd.xy / (rd.z + 1.6) * 360.); c += vec3(.8, .75, 1.) * step(.9982, hash(sq)) * (.35 + .65 * hash(sq + 3.)) * smoothstep(.12, .5, y);
   float ea = acos(clamp(dot(rd, ECL), -1., 1.)), er = .085; vec3 ex = normalize(cross(ECL, vec3(0., 1., 0.))), ey = cross(ex, ECL); float ang = atan(dot(rd, ey), dot(rd, ex));
   float cor = exp(-max(ea - er, 0.) * 16.) * (.5 + .9 * pow(fbz(vec2(ang * 5., uT * .04 + ea * 6.)), 2.)) + exp(-max(ea - er, 0.) * 4.5) * .22;         // 일식의 코로나
-  c += vec3(.62, .42, 1.) * cor * 2.2 + vec3(1., .92, 1.) * exp(-abs(ea - er) * 180.) * 3.5 + vec3(.3, .12, .6) * exp(-ea * 2.) * .3 + vec3(.7, .5, 1.) * pow(max(0., fbz(vec2(ang * 11., 3.)) - .35), 2.) * exp(-max(ea - er, 0.) * 7.) * 3.; if (ea < er) c = vec3(.0015, 0., .003);
+  vec3 cc = mix(vec3(.62, .42, 1.), vec3(1., .3, .08), uRift * .6); c += cc * cor * 2.2 + mix(vec3(1., .92, 1.), vec3(1., .6, .3), uRift) * exp(-abs(ea - er) * 180.) * 3.5 + vec3(.3, .12, .6) * exp(-ea * 2.) * .3 + vec3(.7, .5, 1.) * pow(max(0., fbz(vec2(ang * 11., 3.)) - .35), 2.) * exp(-max(ea - er, 0.) * 7.) * 3.; if (ea < er){ c = vec3(.0015, 0., .003); vec2 eq = vec2(dot(rd, ex), dot(rd, ey)) / er; c += vec3(1., .45, .1) * smoothstep(.06, 0., abs(fbz(eq * 3. + 5.) - .5) - .01) * uRift * 2.; }   // 갈라지는 일식
   if (y > -.02){ vec2 q = rd.xz / (y + .1) * .9; if (uVortex > 0.){ float lq = length(q); q = rot(uVortex * 2.6 / (1. + lq * .35)) * q; }                                  // 폭풍 구름 두 겹
     float cl = fbz(q * .45 + vec2(uT * .012, 0.)), cl2 = fbz(q * 1.3 - vec2(uT * .02) + 7.), dens = smoothstep(.42, .82, cl * .7 + cl2 * .4) * smoothstep(0., .18, y) * (1. - smoothstep(.55, .95, y));
     vec3 od = normalize(uM + vec3(0., OY, 0.) - uCamPos); float edge = smoothstep(.12, 0., abs(cl * .7 + cl2 * .4 - .6));
-    vec3 lit = vec3(.04, .02, .08) + vec3(.55, .35, 1.) * exp(-ea * 3.) * .7 + vec3(.8, .7, 1.) * uFlash * 2.2 + LC * uOrbI * uOrbK * .35 * pow(max(dot(rd, od), 0.), 4.) + LC * uVortex * .3 * exp(-length(q) * 1.2);
+    vec3 lit = vec3(.04, .02, .08) + vec3(1., .3, .06) * uFire * .45 * (1. - smoothstep(0., .5, y)) + vec3(.55, .35, 1.) * exp(-ea * 3.) * .7 + vec3(.8, .7, 1.) * uFlash * 2.2 + LC * uOrbI * uOrbK * .35 * pow(max(dot(rd, od), 0.), 4.) + LC * uVortex * .3 * exp(-length(q) * 1.2);
     c = mix(c, vec3(.005, .003, .011) + lit * .32 * (1. + 1.4 * edge), dens * .92); }
   float hz = 0.;
   for (int L = uZero; L < 3; L++){ float fl = float(L), mh = (.034 - fl * .009) + (.062 - fl * .016) * fbz(vec2(az * (2. + fl * 1.7) + fl * 9., 3. + fl)) + .018 * fbz(vec2(az * (9. + fl * 5.), fl * 4.));   // 층층의 산맥 · 폐허 기둥
+    mh *= 1. - uDestroy * .55 * smoothstep(.3, .7, fbz(vec2(az * 3., 11. + fl)));                                                                  // 무너지는 산맥
     if (L == 1){ float bin = floor(az * 46.), fx = fract(az * 46.); if (hash(vec2(bin, 2.)) > .82) mh = max(mh, mh + step(.32, fx) * step(fx, .68) * (.025 + .05 * hash(vec2(bin, 5.))) - step(.5, hash(vec2(bin, 8.))) * step(.5, fx) * .012); }
     if (y < mh && y > -.02){ float rim = smoothstep(mh - .006, mh, y) * (.25 + 1.2 * exp(-abs(az - atan(ECL.x, -ECL.z)) * 2.5)); vec3 far = mix(vec3(.028, .016, .05), vec3(.004, .003, .008), fl / 2.);
       c = far + vec3(.4, .25, .8) * rim * (.08 + .5 * uFlash) * (1. - fl * .3) + vec3(.1, .05, .2) * uFlash * .15 * (1. - fl * .4); } }
-  c += vec3(.1, .05, .2) * exp(-abs(y) * 30.) * .35;                                                                                                // 지평선의 옅은 빛
+  c += vec3(.1, .05, .2) * exp(-abs(y) * 30.) * .35 + vec3(1., .3, .05) * exp(-max(y, 0.) * 26.) * uFire * .4;                                                  // 지평선의 옅은 빛 · 불타는 지평선
+  if (uFire > 0. && y > -.01 && y < .4){ float col2 = step(.55, hash(vec2(floor(az * 14.), 3.))), sm = fbz(vec2(az * 22., y * 7. - uT * .5)) * col2 * smoothstep(.4, .02, y) * uFire; c = mix(c, vec3(.02, .012, .012) + vec3(.9, .25, .05) * .25 * exp(-y * 12.), smoothstep(.3, .7, sm) * .9); }   // 연기 기둥
+  if (uRift > 0.){ vec3 rn = normalize(vec3(.35, .2, .9)); float rv = dot(rd, rn) + (fbz(vec2(dot(rd, vec3(1., 0., -.3)) * 9., 2.)) - .5) * .05, wr = uRift * .02 * (.4 + .6 * smoothstep(-.1, .5, y));   // 하늘이 찢어진다
+    float core = smoothstep(wr, 0., abs(rv)), glow = exp(-abs(rv) / (wr * 4. + .002)); c = mix(c, vec3(1., .92, 1.) * 3., core * step(.05, y)) + (vec3(.9, .3, 1.) * .8 + vec3(1., .35, .05) * .5) * glow * uRift * step(.02, y); }
   return c; }
 vec3 skyLite(vec3 rd){ float ea = acos(clamp(dot(rd, ECL), -1., 1.)); return mix(vec3(.03, .012, .05), vec3(.003, .0015, .009), smoothstep(-.02, .55, rd.y)) + vec3(.62, .42, 1.) * exp(-max(ea - .085, 0.) * 6.) * .5 + vec3(.8, .7, 1.) * uFlash * .1; }
 vec3 orbLight(vec3 p){ vec3 L = uM + vec3(0., OY, 0.) - p; float d = length(L); return LC * uOrbI * (.12 + .88 * uOrbK) * 70000. / (d * d + 26000.); }
@@ -183,8 +197,10 @@ vec3 floorCol(vec3 p, vec3 rd, float t){
   float pud = smoothstep(.46, .6, fbz(p.xz * .018 + 3.)); vec3 col = vec3(.011, .009, .015) * (.6 + .6 * fbz(p.xz * .03)) * (.8 + .4 * fbz(p.xz * .4)) * (1. - .5 * pud); float rough = mix(.45 + .3 * fbz(p.xz * .2), .03, pud);   // 젖은 흑요석 · 웅덩이
   vec2 g = p.xz * .035; vec2 gi = floor(g), gf = fract(g); float d1 = 8., d2 = 8.;
   for (int j = uZero - 1; j <= 1; j++) for (int i = uZero - 1; i <= 1; i++){ vec2 c = vec2(float(i), float(j)), o2 = vec2(hash(gi + c), hash(gi + c + 7.1)); float d = length(c + o2 - gf); if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
-  float crack = smoothstep(.035 + aa * .03, 0., d2 - d1), zone = smoothstep(95., 30., r) * uCrackK + smoothstep(60., 20., r) * uEmerge * 1.5, pul = .7 + .3 * sin(uT * 1.7 - r * .08);                           // 발밑의 균열 문양(지배자와 함께 움직인다)
-  col += vec3(.45, .12, 1.) * crack * (zone * 1.6 * pul + .05 * uCrackK) + vec3(.8, .55, 1.) * smoothstep(40., 26., r) * smoothstep(20., 27., r) * uEmerge * 1.2;
+  float Dd = destroyAt(p.xz), crack = smoothstep(.03 + .09 * Dd + aa * .03, 0., d2 - d1), zone = smoothstep(95., 30., r) * uCrackK + smoothstep(60., 20., r) * uEmerge * 1.5, pul = .7 + .3 * sin(uT * 1.7 - r * .08);                           // 발밑의 균열 문양(지배자와 함께 움직인다)
+  col += vec3(.45, .12, 1.) * crack * (zone * 1.6 * pul + .05 * uCrackK) * (1. - Dd) + vec3(.8, .55, 1.) * smoothstep(40., 26., r) * smoothstep(20., 27., r) * uEmerge * 1.2;
+  if (Dd > 0.){ float inner = smoothstep(.03 + .04 * Dd, 0., d2 - d1), fine = smoothstep(.012, 0., abs(fbz(p.xz * .06 + 9.) - .5) - .004) * Dd; col *= 1. - .75 * Dd; col += mix(vec3(1., .2, .02), vec3(1., .72, .3), inner) * (crack * (.9 + 1.2 * inner) + fine * .8) * Dd + vec3(.5, .08, .01) * Dd * .03;   // 검은 껍질 사이로 흐르는 용암
+    float cn = .6 + .6 * noise(p.xz * .3); for (int i = uZero; i < 16; i++){ vec4 b = uBeam[i]; if (b.w < 0.) continue; float dc = length(p.xz - b.xz); if (dc > 26.) continue; col += vec3(1., .4, .1) * smoothstep(26., 0., dc) * cn * exp(-b.w * .3) + vec3(1., .85, .6) * smoothstep(9., 0., dc) * 1.8 * exp(-b.w * .6); } }   // 분화구
   if (r > 70. && r < 78.){ float an = atan(q.y, q.x) / 6.2832 + .5, v = (r - 70.) / 8.; float a = texture(uAtlas, vec2(fract(an * 5. - uT * .01), v)).r; col += vec3(.75, .6, 1.) * a * 1.4 * uCrackK + vec3(.5, .35, 1.) * smoothstep(.05, 0., min(v, 1. - v)) * .6 * uCrackK; }
   col += vec3(.55, .35, 1.) * smoothstep(.6, 0., abs(r - 84.)) * .9 * uCrackK;
   if (uShock > 0.){ float w = abs(r - uShock); col += vec3(.8, .6, 1.) * exp(-w * .12) * 2.5 * (1. - smoothstep(300., 700., uShock)) + vec3(.5, .2, 1.) * crack * smoothstep(uShock, uShock - 80., r) * 2. * (1. - smoothstep(250., 700., uShock)); }
@@ -232,7 +248,8 @@ vec3 shade(vec3 p, vec3 n, vec3 rd, float id, float t){
     em += vec3(.45, .15, 1.) * rune * (.18 + .5 * uOrbK * exp(-length(p.xz - uM.xz) * .004)) + vec3(.45, .15, 1.) * smoothstep(.04, 0., .5 - abs(fract(p.y * .08 + hash(cid)) - .5)) * .12;   // 오벨리스크
     li *= 1.; }
   vec3 f0 = mix(vec3(.04), alb * 3. + .05, metal), spec = f0 * pow(max(dot(n, hv), 0.), mix(900., 20., rough)) * (1. - rough) * 4.;
-  if (id > 16.5){ spec = vec3(0.); rim = vec3(0.); }
+  if (id > 19.5){ alb = vec3(.02, .016, .014); rough = .8; metal = 0.; float hot = pow(fbz(p.xz * .4 + p.y * .5), 2.); em = vec3(1., .35, .06) * smoothstep(.35, .6, hot) * 2.2 * uFire; }
+  if (id > 16.5 && id < 19.5){ spec = vec3(0.); rim = vec3(0.); }
   vec3 col = (alb * (1. - metal) * ndl + spec * ndl) * li + rim * ao + vec3(.7, .6, 1.) * uFlash * .2 * alb * 6. + em;
   vec3 kd = normalize(vec3(.5, .45, .7)); col += (alb * (1. - metal * .6) * max(dot(n, kd), 0.) * .7 + f0 * pow(max(dot(n, normalize(kd - rd)), 0.), mix(500., 14., rough)) * (1. - rough) * 1.6) * vec3(.3, .25, .55) * ao;   // 은은한 달빛
   col += skyLite(reflect(rd, n)) * fres * (1. - rough) * .2 * ao;
@@ -255,12 +272,17 @@ void main(){
     float fa = 1. - exp(-a * .02 * wisp); col = mix(col, vec3(.008, .004, .016) + LC * (.02 + .3 * ml * (.2 + uOrbK)) + vec3(.2, .15, .35) * uFlash * .2, fa * .7); }
   col += vec3(.6, .4, 1.) * glow * .01;
   col += veil(ro, rd, depth);
+  if (uDestroy > 0.) for (int i = uZero; i < 16; i++){ vec4 b = uBeam[i]; if (b.w < 0. || b.w > 3.) continue; vec3 A = uM + vec3(0., OY, 0.), B = vec3(b.x, 0., b.z), ba = B - A, w0 = ro - A;   // 구슬에서 땅으로 내리꽂는 빛줄기 · 불덩이
+    float e = dot(rd, ba), f = dot(ba, ba), g = dot(w0, rd), hh = dot(w0, ba), sg = clamp((hh - e * g) / max(f - e * e, 1e-5), 0., 1.), tc = max(e * sg - g, 0.), dd = length(w0 + rd * tc - ba * sg);
+    float env = smoothstep(0., .04, b.w) * exp(-b.w * 4.); if (tc < depth + 5.) col += (vec3(1., .95, 1.) * exp(-dd * 1.6) * 2.2 + vec3(.85, .3, 1.) * exp(-dd * .15) * .5) * env;
+    vec3 fb = B + vec3(0., 10. + b.w * 16., 0.) - ro; float tf2 = max(dot(fb, rd), 0.), df = length(fb - rd * tf2), fr = 14. + b.w * 30.;
+    if (tf2 < depth + fr) col += (vec3(1., .45, .1) * 1. + vec3(1., .85, .55) * exp(-df / fr * 5.) * 1.2) * exp(-df * df / (fr * fr)) * exp(-b.w * 1.3) * smoothstep(0., .05, b.w); }
   { vec3 v = uM + vec3(0., OY, 0.) - ro; float tc = max(dot(v, rd), 0.), d = length(v - rd * tc); col += LC * uOrbI * 1.2 / (1. + d * d * .0006) * .05 * uOrbK * step(tc, depth + 20.); }
   o = vec4(max(col, 0.), min(depth, 4000.));
 }`;
 const FS_FINAL = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uGrainK, uBlock, uTrans;
+uniform sampler2D uScene, uBloom, uTxt, uRays; uniform vec2 uRes, uShake; uniform float uT, uZoom, uCA, uBloomK, uRayK, uFocus, uAper, uFlash, uFade, uGrainK, uBlock, uTrans, uCold, uWarm;
 ${CSGL.NOISE}
 vec3 scene(vec2 uv){ vec4 c0 = texture(uScene, uv); float coc = clamp(abs(c0.a - uFocus) / max(c0.a, .3) * uAper, 0., 1.) * .012; if (coc < .0006) return c0.rgb;
   vec3 acc = c0.rgb; float n = 1.; for (int i = 0; i < 16; i++){ float fi = float(i) + .5, a = fi * 2.39996, r = sqrt(fi / 16.) * coc; vec2 d = vec2(cos(a), sin(a)) * r * vec2(uRes.y / uRes.x, 1.); vec4 sx = texture(uScene, uv + d); float w = 1. + 2. * max(max(sx.r, sx.g), sx.b); acc += sx.rgb * w; n += w; } return acc / n; }
@@ -272,7 +294,7 @@ void main(){
   vec3 bl = texture(uBloom, uv).rgb, st = vec3(0.); for (int i = -7; i <= 7; i++){ float fi = float(i); st += texture(uBloom, uv + vec2(fi * .015, 0.)).rgb * exp(-fi * fi * .06); }
   col += bl * uBloomK + st * .07 * uBloomK * vec3(.8, .7, 1.) + texture(uRays, uv).rgb * uRayK;
   vec4 tx = texture(uTxt, uv); col = col * (1. - tx.a) + tx.rgb; col += vec3(.85, .8, 1.) * uFlash;
-  col = (col * (2.51 * col + .03)) / (col * (2.43 * col + .59) + .14); col = pow(clamp(col, 0., 1.), vec3(1. / 2.2)); col = mix(col, col * col * (3. - 2. * col), .35) * vec3(.98, .95, 1.04);
+  col = (col * (2.51 * col + .03)) / (col * (2.43 * col + .59) + .14); col = pow(clamp(col, 0., 1.), vec3(1. / 2.2)); col = mix(col, col * col * (3. - 2. * col), .35) * vec3(.98, .95, 1.04); float lu = dot(col, vec3(.3, .55, .15)); col = mix(col, vec3(lu) * vec3(.72, .88, 1.15), uCold * .55); col = mix(col, col * vec3(1.1, .93, .88) + vec3(.02, .003, 0.) * (1. - lu), uWarm * .5);   // 차가운 밤 → 불지옥
   col += (hash(gl_FragCoord.xy + fract(uT) * 91.7) - .5) * .035 * uGrainK; float v = length((vUv - .5) * vec2(1., .8)); col *= 1. - smoothstep(.42, 1.1, v) * .6;
   col *= step(.105, vUv.y) * step(vUv.y, .895);
   o = vec4(max(col, 0.) * (1. - uFade), 1.);
@@ -287,13 +309,22 @@ function lazyProgram(vs, fs) {
 function buildAtlas() { const g = ag; g.fillStyle = "#000"; g.fillRect(0, 0, 2048, 128); g.fillStyle = "#fff"; g.textBaseline = "middle"; g.font = "500 62px Cinzel, 'Times New Roman', serif";
   const s = "MONARCH ✦ REX TENEBRARUM ✦ DOMINUS ABYSSI ✦ OMNIA SUB CORONA ✦ "; let x = 10; while (x < 2048) { g.fillText(s, x, 66); x += g.measureText(s).width; }
   X.upload(atlasTex, acv, false); const gl = X.gl; gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); }
+const OBN = 32, obData = new Float32Array(OBN * OBN * 4); let obTex = null;
+function obState(S, t) {                                                                                         // 오벨리스크 칸마다: 쓰러짐 정도 · 쓰러지는 방향 · 증발 여부
+  obData.fill(0); const M = S.M;
+  for (let j = 0; j < OBN; j++) for (let i = 0; i < OBN; i++) { const cx = (i - 16 + .5) * 70, cz = (j - 16 + .5) * 70; let fall = 0, ax = 0, az = 0, vap = 0;
+    for (const [tb, x, z] of BEAMS) { const age = t - tb; if (age < 0) continue; const db = Math.hypot(cx - x, cz - z); if (db < 42 && age > .05) vap = 1; const ar = age - db / 160; if (ar > 0 && db < 320) { const f = Math.min(1, Math.max(0, ar / .9)), fs = f * f * (3 - 2 * f); if (fs > fall) { fall = fs; ax = (cx - x) / Math.max(db, 1); az = (cz - z) / Math.max(db, 1); } } }
+    if (S.annihR > 0) { const dist = Math.hypot(cx - M[0], cz - M[2]), ar = (S.annihR - dist) / 260; if (ar > 0) { const f = Math.min(1, ar / .8), fs = f * f * (3 - 2 * f); if (fs > fall) { fall = fs; ax = (cx - M[0]) / Math.max(dist, 1); az = (cz - M[2]) / Math.max(dist, 1); } } }
+    obData.set([fall, ax, az, vap], (j * OBN + i) * 4); }
+  const gl = X.gl; gl.bindTexture(gl.TEXTURE_2D, obTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, OBN, OBN, 0, gl.RGBA, gl.FLOAT, obData); }
 function initGL() { if (X) return; const x = CSGL.create(glc); x.gl.getExtension("KHR_parallel_shader_compile"); X = x; P.scene = lazyProgram(CSGL.VS_FULL, FS_SCENE); P.final = lazyProgram(CSGL.VS_FULL, FS_FINAL);
-  txtTex = X.canvasTexture(); atlasTex = X.canvasTexture(); buildAtlas(); if (document.fonts) document.fonts.ready.then(() => { try { buildAtlas(); } catch (e) { /* 무시 */ } }); }
+  txtTex = X.canvasTexture(); atlasTex = X.canvasTexture(); buildAtlas();
+  { const gl = x.gl; obTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, obTex); for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, OBN, OBN, 0, gl.RGBA, gl.FLOAT, obData); } if (document.fonts) document.fonts.ready.then(() => { try { buildAtlas(); } catch (e) { /* 무시 */ } }); }
 const REC_SCALE = .72;
 function resize() {
   const recording = $("cs").classList.contains("rec"); DPR = recording ? 1 : Math.min(DPR_CAP, window.devicePixelRatio || 1); Wd = glc.clientWidth || 1280; Hd = glc.clientHeight || 720; U = Math.min(Wd, Hd) / 10;
   const pw = Math.max(2, Math.round(Wd * DPR)), ph = Math.max(2, Math.round(Hd * DPR)); glc.width = tcv.width = pw; glc.height = tcv.height = ph;
-  initGL(); const sc = recording ? REC_SCALE : SCALE, sw = Math.max(2, Math.round(pw * sc)), sh = Math.max(2, Math.round(ph * sc)); X.resize(sw, sh); X.free(RT.scene); RT.scene = X.target(sw, sh);
+  initGL(); const sc = recording ? REC_SCALE : SCALE, sw = Math.max(2, Math.round(pw * sc)), sh = Math.max(2, Math.round(ph * sc)); X.resize(sw, sh); X.free(RT.scene); RT.scene = X.target(sw, sh); X.free(RT.lo); RT.lo = recording ? X.target(Math.round(pw * .58), Math.round(ph * .58)) : null;   /* 4K 녹화의 파괴 장면은 0.58배 */
 }
 setTimeout(() => { try { initGL(); } catch (e) { /* 재생할 때 다시 시도하며 안내 */ } }, 200);
 
@@ -310,7 +341,11 @@ function drawOverlay(t, S) {
   tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, tcv.width, tcv.height); tg.setTransform(DPR, 0, 0, DPR, 0, 0);
   const M = S.M;
   tg.save(); if (t >= T.HALO) for (const e of EMB) { const y = (e.y0 + t * e.sp) % 170, p = add(M, [Math.cos(e.a + t * .1) * e.r, 20 + y, Math.sin(e.a + t * .1) * e.r - 20 * (y / 170)]), q = proj(S, p); if (!q) continue;   // 지배자 곁에서 솟는 불티
-    const sz = Math.min(U * .06, Math.max(.6, e.s * S.focal * Hd / 2 / q[2] * .45)), al = Math.min(1, y / 20) * (1 - y / 170) * .8; tg.globalAlpha = al; tg.fillStyle = h1(e.a * 9) < .3 ? "#000" : "#c9a8ff"; tg.fillRect(q[0] - sz, q[1] - sz, sz * 2, sz * 2); } tg.restore();
+    const sz = Math.min(U * .06, Math.max(.6, e.s * S.focal * Hd / 2 / q[2] * .45)), al = Math.min(1, y / 20) * (1 - y / 170) * .8; tg.globalAlpha = al; tg.fillStyle = h1(e.a * 9) < .3 ? "#000" : (S.warm > .3 && h1(e.a * 5) < S.warm ? "#ffa050" : "#c9a8ff"); tg.fillRect(q[0] - sz, q[1] - sz, sz * 2, sz * 2); } tg.restore();
+  for (const m of METEORS) { const k = (t - m.t0) / m.dur; if (k < 0 || k > 1) continue; const h = proj(S, mix3(m.from, m.to, k)), tl = proj(S, mix3(m.from, m.to, Math.max(0, k - .22)));   // 불타며 떨어지는 유성
+    if (!h || !tl) continue; const gr = tg.createLinearGradient(tl[0], tl[1], h[0], h[1]); gr.addColorStop(0, "rgba(40,10,10,0)"); gr.addColorStop(.6, "rgba(255,110,30,.55)"); gr.addColorStop(1, "rgba(255,240,200,.95)");
+    tg.strokeStyle = gr; tg.lineCap = "round"; tg.lineWidth = Math.max(1.5, U * .05 * 400 / Math.max(h[2], 100)); tg.beginPath(); tg.moveTo(tl[0], tl[1]); tg.lineTo(h[0], h[1]); tg.stroke();
+    tg.fillStyle = "rgba(255,230,180,.9)"; tg.beginPath(); tg.arc(h[0], h[1], Math.max(1.5, U * .04 * 400 / Math.max(h[2], 100)), 0, TAU); tg.fill(); }
   for (const [tb, sd] of BOLTS) { const k = t - tb; if (k < 0 || k > .32) continue; const vis = Math.floor(k * 30) % 3 !== 1 ? 1 - k / .32 : .25, [pts, br] = boltPath(sd, M), black = sd % 3 === 0; drawBolt(S, pts, vis, black); br.forEach((b) => drawBolt(S, b, vis * .6, black)); }
   if (t >= T.TITLE) { const k = eOut(seg(t, T.TITLE, T.TITLE + 1.4)), y = Hd * .78, sp = U * (.3 + .25 * (1 - k)); tg.save(); tg.globalAlpha = k * (1 - seg(t, T.END - .9, T.END - .4));
     tg.font = `700 ${Math.round(U * .8)}px Cinzel, 'Times New Roman', serif`; tg.textAlign = "center"; tg.textBaseline = "middle"; const word = "MONARCH", ws = [...word].map((c) => tg.measureText(c).width), w = ws.reduce((a, b) => a + b, 0) + sp * (word.length - 1);
@@ -324,12 +359,16 @@ function state(t) {
   const up = t < T.RISE ? -112 : t < T.POWER ? -112 + 112 * eOut(seg(t, T.RISE, T.FACE - .2)) : 48 * eInOut(seg(t, T.POWER, T.HERO + .6)) + 2 * (t - T.POWER) * .3;   // 땅속에서 솟고 → 승천
   const M = [0, up + (t >= T.FACE ? 1.5 * Math.sin(t * .6) : 0), 0], at = (v) => add(M, v);
   const S = { M, focal: 1.3, focus: 200, aper: .06, eyeK: 0, port: new Float32Array(8), portP: new Float32Array(12), portK: new Float32Array(4), flash: 0, shock: -1, power: 0, crackK: 0, orbI: 1, fade: 0, shake: 0, rays: .4, bloom: .6,
-    voidK: 0, orbK: 0, hornK: 0, crownK: 0, haloK: 0, topK: 0, ringK: 0, bowT: 0, vortex: 0, emerge: 0 };
+    voidK: 0, orbK: 0, hornK: 0, crownK: 0, haloK: 0, topK: 0, ringK: 0, bowT: 0, vortex: 0, emerge: 0, beam: new Float32Array(64), deb: new Float32Array(80), destroy: 0, fire: 0, rift: 0, cold: 0, warm: 0, annihR: -1 };
+  BEAMS.forEach(([tb, x, z], i) => S.beam.set([x, 0, z, t >= tb ? t - tb : -1], i * 4));
+  { let n = 0; const r = rng(31); BEAMS.forEach(([tb, x, z]) => { for (let k = 0; k < 3; k++) { const a = r() * TAU, sp = 25 + r() * 45, vy = 40 + r() * 50, sz = 2 + r() * 4.5, age = t - tb - .04; if (n < 20 && age > 0 && age < 4.5) { S.deb.set([x + Math.cos(a) * sp * age, Math.max(sz, 8 + vy * age - 22 * age * age), z + Math.sin(a) * sp * age, sz], n * 4); n++; } } }); }   // 날아가는 바위
+  S.destroy = seg(t, T.WIDE, T.POWER + 1.5); S.fire = Math.min(1, eOut(seg(t, T.WIDE + .1, 21.2)) * .8 + .5 * eOut(seg(t, T.SHOCK, T.SHOCK + 1.5))); S.rift = eInOut(seg(t, 20.5, 24.6)); S.cold = 1 - eInOut(seg(t, 3.5, 9.5)); S.warm = eOut(seg(t, T.WIDE, 21.5)) * (1 - .35 * seg(t, T.HERO, T.END));
+  S.annihR = t >= T.SHOCK ? (t - T.SHOCK) * 300 : -1;
   const br = [Math.sin(t * 1.1) * .3, Math.sin(t * 1.7 + 1) * .25, Math.sin(t * .8 + 2) * .3];
   S.emerge = t >= T.RISE ? pulse(t, T.RISE, .3, 3.2) : 0; S.crackK = eOut(seg(t, T.RISE, T.FACE)) * .6 + .4 * eOut(seg(t, T.HALO, T.WIDE));
   S.hornK = eOut(seg(t, 9.3, 11.3)); S.voidK = t < 15.6 ? eOut(seg(t, 10.6, 12.2)) : 1 - eInOut(seg(t, 15.6, 16.4)); S.eyeK = t >= T.IGNITE ? eOut(seg(t, T.IGNITE, T.IGNITE + .22)) + 1.4 * pulse(t, T.IGNITE, .02, .9) : 0;
   S.crownK = eOut(seg(t, T.HALO, T.HALO + 1.1)); S.haloK = eInOut(seg(t, 15.0, 16.4)); S.orbK = eOut(seg(t, 15.7, 16.5)); S.topK = eIn(seg(t, 16.4, 17.4)) < 1 ? 1 - Math.pow(1 - seg(t, 16.4, 17.4), 2) : 1; S.ringK = eOut(seg(t, 17.2, 17.8));
-  S.bowT = t >= T.WIDE ? T.WIDE + .3 : 0; S.vortex = eInOut(seg(t, T.POWER, T.HERO + 1)); S.orbI = 1 + .7 * pulse(t, 16.4, .02, 1.2) + .5 * pulse(t, T.SHOCK, .02, 1.);
+  S.bowT = 0; S.vortex = eInOut(seg(t, T.POWER, T.HERO + 1)); S.orbI = 1 + .7 * pulse(t, 16.4, .02, 1.2) + .5 * pulse(t, T.SHOCK, .02, 1.);
   for (let i = 0; i < 4; i++) { const t0 = T.PORT + .15 + i * .55; S.portK[i] = t < t0 ? 0 : Math.min(1.08 - .08 * seg(t, t0 + .3, t0 + .6), eOut(seg(t, t0, t0 + .35)) * 1.08); }
   let cam;
   if (t < T.PORT) { const k = seg(t, 0, T.PORT); cam = camera(add(mix3([22, 1.6, 104], [16, 1.8, 82], eOut(k)), mul(br, .15)), [0, 10, 0], .005); S.focal = 1.7; S.focus = 90; S.aper = .12; S.orbI = .6; S.rays = .1; }   // 빈 옥좌
@@ -337,44 +376,47 @@ function state(t) {
   else if (t < T.FACE) { const k = eInOut(seg(t, T.RISE, T.FACE)); cam = camera(add(mix3([36, 1.6, 78], [58, 2.4, 132], k), br), at([0, lerp(112, 128, k), 0]), -.01); S.focal = lerp(.95, .85, k); S.focus = 110; S.aper = .03; S.shake = .45 * (1 - k); }   // 땅속에서 솟아오른다
   else if (t < T.HALO) { const k = eOut(seg(t, T.FACE, T.HALO)); cam = camera(add(at(mix3([18, 142, 92], [10, 146, 64], k)), mul(br, .1)), at([0, 140, 0]), .02); S.focal = 1.45; S.focus = lerp(96, 66, k); S.aper = .2; S.rays = .1; }   // 깨어남
   else if (t < T.WIDE) { const k = seg(t, T.HALO, T.WIDE), a = lerp(.45, -.35, eInOut(k)); cam = camera(add(at([Math.sin(a) * 120, lerp(150, 175, k), Math.cos(a) * 120]), mul(br, .3)), at([0, lerp(145, 165, k), 0]), .02); S.focal = 1.15; S.focus = 120; S.aper = .04; S.rays = .3; }   // 대관
-  else if (t < T.POWER) { const k = seg(t, T.WIDE, T.POWER); cam = camera(add(mix3([-100, 2.6, 175], [-92, 2.9, 160], k), br), at([0, 118, 0]), 0); S.focal = 1.05; S.focus = 190; S.aper = .03; S.rays = .35; }   // 복종: 오벨리스크들이 고개를 숙인다
-  else if (t < T.HERO) { const k = seg(t, T.POWER, T.HERO), sh = 3 * pulse(t, T.SHOCK, .02, 1.); cam = camera(add([70, 2.4, 150], [(h1(t * 60) - .5) * sh, (h1(t * 60 + 3) - .5) * sh, 0]), at([0, 120, 0]), .02); S.focal = lerp(1.05, .85, eInOut(k)); S.focus = 200; S.aper = .03; S.rays = .45; }   // 승천
-  else { const k = eOut(seg(t, T.HERO, T.END)); cam = camera(add(mix3([0, 2.2, 150], [0, 3, 128], k), mul(br, .3)), at([0, 125, 0]), 0); S.focal = .9; S.focus = 150; S.aper = .03; S.rays = .45; }
+  else if (t < T.STARE) { const k = seg(t, T.WIDE, T.STARE), sh = BEAMS.reduce((m, [tb]) => Math.max(m, pulse(t, tb, .02, .5)), 0) * 3.5; cam = camera(add(mix3([-24, 2.4, 238], [-14, 2.8, 222], k), [(h1(t * 50) - .5) * sh, (h1(t * 50 + 3) - .5) * sh, 0]), at([0, 105, 0]), .03 * Math.sin(t * 2.)); S.focal = 1.0; S.focus = 150; S.aper = .03; S.rays = .3; }   // 땅에서: 빛줄기가 주위에 내리꽂힌다
+  else if (t < T.POWER) { const k = seg(t, T.STARE, T.POWER), sh = BEAMS.reduce((m, [tb]) => Math.max(m, pulse(t, tb, .02, .5)), 0) * 2.5; cam = camera(add(mix3([330, 300, 420], [300, 260, 380], eOut(k)), [(h1(t * 50) - .5) * sh, (h1(t * 50 + 3) - .5) * sh, 0]), at([0, 20, 40]), -.05); S.focal = 1.1; S.focus = 480; S.aper = .02; S.aper = .03; S.rays = .35; }   // 복종: 오벨리스크들이 고개를 숙인다
+  else if (t < T.HERO) { const k = seg(t, T.POWER, T.HERO), sh = 3.5 * pulse(t, T.SHOCK, .02, 1.) + 1.2 * pulse(t, 23.0, .02, .7); cam = camera(add([70 + 40 * eInOut(k), 2.4 + 30 * eInOut(k), 150 + 60 * eInOut(k)], [(h1(t * 60) - .5) * sh, (h1(t * 60 + 3) - .5) * sh, 0]), at([0, 120, 0]), .02); S.focal = lerp(1.05, .85, eInOut(k)); S.focus = 200; S.aper = .03; S.rays = .45; }   // 승천
+  else { const k = eOut(seg(t, T.HERO, T.END)); cam = camera(add(mix3([20, 16, 200], [14, 14, 175], k), mul(br, .3)), at([0, 88, 0]), 0); S.focal = .95; S.focus = 190; S.aper = .03; S.rays = .45; }
   S.cam = cam;
   for (let i = 0; i < 4; i++) S.portP.set(portAt(t, i), i * 3);
   const pv = (i, o, l) => { S.port[i * 2] = o; S.port[i * 2 + 1] = l; };
   { const o = Math.min(eOut(seg(t, T.EYEO, T.EYEO + .35)), 1 - eIn(seg(t, T.EYEC - .3, T.EYEC))); pv(0, o, lerp(1, -1, eInOut(seg(t, T.EYEO + .45, T.EYEC - .45)))); }
   if (t >= T.STARE) for (let i = 0; i < 4; i++) { const o = t < T.POWER ? eOut(seg(t, T.STARE, T.STARE + .25)) : Math.max(0, Math.sin((t - T.POWER) * 1.4 + i * 1.7)) > .35 ? 1 : 0; pv(i, o, 0); }
   for (const [tb] of BOLTS) S.flash = Math.max(S.flash, pulse(t, tb, .01, .25) * (tb > T.POWER && tb < T.HERO ? .35 : .6));
-  S.flash = Math.max(S.flash, .9 * pulse(t, T.IGNITE, .01, .3), .5 * pulse(t, 16.4, .01, .4), .6 * pulse(t, 17.4, .01, .3), .6 * pulse(t, T.STARE, .01, .3), 1.1 * pulse(t, T.SHOCK, .01, .45), .5 * pulse(t, T.HERO, .01, .6));
+  S.flash = Math.max(S.flash, BEAMS.reduce((m, [tb]) => Math.max(m, pulse(t, tb, .01, .18)), 0) * .45, .9 * pulse(t, T.IGNITE, .01, .3), .5 * pulse(t, 16.4, .01, .4), .6 * pulse(t, 17.4, .01, .3), .6 * pulse(t, T.STARE, .01, .3), 1.1 * pulse(t, T.SHOCK, .01, .45), .5 * pulse(t, T.HERO, .01, .6));
   S.shock = t >= T.SHOCK && t < T.SHOCK + 2.6 ? (t - T.SHOCK) * 260 : -1; S.power = Math.max(pulse(t, T.SHOCK, .05, 1.6), t >= T.POWER && t < T.HERO ? .25 : 0, .6 * pulse(t, T.IGNITE, .02, .8), .5 * pulse(t, 17.4, .02, 1.));
-  S.shake = Math.max(S.shake, pulse(t, T.IGNITE, .01, .4) * .5, pulse(t, T.SHOCK, .01, .9), .3 * pulse(t, T.STARE, .01, .4), .4 * pulse(t, T.HERO, .01, .5), .5 * pulse(t, 17.4, .01, .4));
+  S.shake = Math.max(S.shake, BEAMS.reduce((m, [tb]) => Math.max(m, pulse(t, tb, .01, .35)), 0) * .6, pulse(t, T.IGNITE, .01, .4) * .5, pulse(t, T.SHOCK, .01, .9), .3 * pulse(t, T.STARE, .01, .4), .4 * pulse(t, T.HERO, .01, .5), .5 * pulse(t, 17.4, .01, .4));
   S.fade = Math.max(1 - seg(t, 0, .5), seg(t, T.END - .5, T.END - .1)); S.spinA = t * .4 + (t >= T.POWER ? (t - T.POWER) * .5 : 0);
   S.trans = CUTS.reduce((m, c) => Math.max(m, t < c ? Math.pow(seg(t, c - .14, c), 2) : 1 - seg(t, c, c + .24)), 0); S.flash = Math.max(S.flash, .45 * CUTS.reduce((m, c) => Math.max(m, pulse(t, c, .005, .12)), 0));
   return S;
 }
 function render(t) {
-  const S = state(t), gl = X.gl, pw = glc.width, ph = glc.height, sw = RT.scene.w, sh = RT.scene.h;
+  const S = state(t), gl = X.gl, pw = glc.width, ph = glc.height, TG = RT.lo && t >= T.WIDE - .05 ? RT.lo : RT.scene, sw = TG.w, sh = TG.h;
   drawOverlay(t, S); X.upload(txtTex, tcv, true); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  if (S.destroy > 0) obState(S, t);
   const prog = P.scene(), u = prog.u, f1 = (n, v) => { if (u[n] != null) gl.uniform1f(u[n], v || 0); };
-  X.pass(prog, RT.scene, () => { gl.uniform2f(u.uRes, sw, sh); f1("uT", t); if (u.uZero != null) gl.uniform1i(u.uZero, 0); gl.uniform3f(u.uCamPos, ...S.cam.pos); gl.uniform3f(u.uM, ...S.M); gl.uniformMatrix3fv(u.uCam, false, new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f])); f1("uFocal", S.focal);
+  X.pass(prog, TG, () => { gl.uniform2f(u.uRes, sw, sh); f1("uT", t); if (u.uZero != null) gl.uniform1i(u.uZero, 0); gl.uniform3f(u.uCamPos, ...S.cam.pos); gl.uniform3f(u.uM, ...S.M); gl.uniformMatrix3fv(u.uCam, false, new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f])); f1("uFocal", S.focal);
     if (u.uPort != null) gl.uniform2fv(u.uPort, S.port); if (u.uPortP != null) gl.uniform3fv(u.uPortP, S.portP); if (u.uAtlas != null) X.bindTex(4, atlasTex, u.uAtlas);
-    if (u.uPortK != null) gl.uniform1fv(u.uPortK, S.portK);
-    for (const [n, v] of [["uEyeK", S.eyeK], ["uFlash", S.flash], ["uShock", S.shock], ["uPower", S.power], ["uSpinA", S.spinA], ["uOrbI", S.orbI], ["uCrackK", S.crackK], ["uVoidK", S.voidK], ["uOrbK", S.orbK], ["uHornK", S.hornK], ["uCrownK", S.crownK], ["uHaloK", S.haloK], ["uTopK", S.topK], ["uRingK", S.ringK], ["uBowT", S.bowT], ["uVortex", S.vortex], ["uEmerge", S.emerge]]) f1(n, v); });
-  const lp = proj(S, add(S.M, [0, 150, 0])), bloomTex = X.bloom(RT.scene.tex, 1.1), raysTex = X.rays(lp ? clamp(lp[0] / Wd) : .5, lp ? clamp(1 - lp[1] / Hd) : .9, .92), r0 = rng(Math.floor(t * 60)), hit = S.shake;
-  X.pass(P.final(), null, (u2) => { X.bindTex(0, RT.scene.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);
+    if (u.uPortK != null) gl.uniform1fv(u.uPortK, S.portK); if (u.uBeam != null) gl.uniform4fv(u.uBeam, S.beam); if (u.uDeb != null) gl.uniform4fv(u.uDeb, S.deb); if (u.uObTex != null) X.bindTex(5, obTex, u.uObTex);
+    if (u.uDebB != null) { let c = [0, 0, 0], n = 0; for (let i = 0; i < 20; i++) if (S.deb[i * 4 + 3] > 0) { c = add(c, [S.deb[i * 4], S.deb[i * 4 + 1], S.deb[i * 4 + 2]]); n++; } c = n ? mul(c, 1 / n) : c; let R = 0; for (let i = 0; i < 20; i++) if (S.deb[i * 4 + 3] > 0) R = Math.max(R, Math.hypot(S.deb[i * 4] - c[0], S.deb[i * 4 + 1] - c[1], S.deb[i * 4 + 2] - c[2]) + S.deb[i * 4 + 3] * 3); gl.uniform4f(u.uDebB, c[0], c[1], c[2], n ? R + 5 : -1); }
+    for (const [n, v] of [["uEyeK", S.eyeK], ["uFlash", S.flash], ["uShock", S.shock], ["uPower", S.power], ["uSpinA", S.spinA], ["uOrbI", S.orbI], ["uCrackK", S.crackK], ["uVoidK", S.voidK], ["uOrbK", S.orbK], ["uHornK", S.hornK], ["uCrownK", S.crownK], ["uHaloK", S.haloK], ["uTopK", S.topK], ["uRingK", S.ringK], ["uBowT", S.bowT], ["uVortex", S.vortex], ["uEmerge", S.emerge], ["uDestroy", S.destroy], ["uFire", S.fire], ["uRift", S.rift], ["uCold", S.cold], ["uAnnihR", S.annihR]]) f1(n, v); });
+  const lp = proj(S, add(S.M, [0, 150, 0])), bloomTex = X.bloom(TG.tex, 1.1), raysTex = X.rays(lp ? clamp(lp[0] / Wd) : .5, lp ? clamp(1 - lp[1] / Hd) : .9, .92), r0 = rng(Math.floor(t * 60)), hit = S.shake;
+  X.pass(P.final(), null, (u2) => { X.bindTex(0, TG.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);
     gl.uniform2f(u2.uShake, (r0() - .5) * hit * .02, (r0() - .5) * hit * .02); gl.uniform1f(u2.uZoom, 1 + .02 * hit + .05 * S.trans); gl.uniform1f(u2.uCA, .0012 + .005 * hit);
     for (const [n, v] of [["uBloomK", S.bloom], ["uRayK", lp ? S.rays : 0], ["uFocus", S.focus], ["uAper", S.aper], ["uFlash", .12 * S.flash * S.flash], ["uFade", S.fade], ["uGrainK", $("cs").classList.contains("rec") ? .4 : 1],
-      ["uBlock", 1 + Math.round(Math.pow(S.trans, 1.5) * 34) * ph / 1080], ["uTrans", S.trans]]) if (u2[n] != null) gl.uniform1f(u2[n], v); });
+      ["uBlock", 1 + Math.round(Math.pow(S.trans, 1.5) * 34) * ph / 1080], ["uTrans", S.trans], ["uCold", S.cold], ["uWarm", S.warm]]) if (u2[n] != null) gl.uniform1f(u2[n], v); });
 }
 
 /* ═════════════════ 재생 ═════════════════ */
 const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: .9, duration: T.END, theme: "monarch", capBlend: false, recW: 3840, recH: 2160, maxMB: 100,
   no: "09", title: "MONARCH", sub: "모나크 · V2", hero: "/thumbs/monarch2_hero.jpg",
-  tagline: "버려진 옥좌가 땅에서 솟아오르고, 왕관이 씌워진다.\n그리고 온 땅이 무릎을 꿇는다.",
+  tagline: "버려진 옥좌가 땅에서 솟아오르고, 왕관이 씌워진다.\n그리고 세계가 불타 무너진다.",
   meta: [["0:30", "Length"], ["4K · 3D", "Renderer"], ["Original", "Score"]],
-  chapters: [{ t: 0, name: "the vacant throne" }, { t: T.PORT, name: "the summons" }, { t: T.RISE, name: "rising" }, { t: T.FACE, name: "awakening" }, { t: T.HALO, name: "coronation" }, { t: T.WIDE, name: "kneel" }, { t: T.POWER, name: "ascension" }, { t: T.HERO, name: "MONARCH" }],
+  chapters: [{ t: 0, name: "the vacant throne" }, { t: T.PORT, name: "the summons" }, { t: T.RISE, name: "rising" }, { t: T.FACE, name: "awakening" }, { t: T.HALO, name: "coronation" }, { t: T.WIDE, name: "destruction" }, { t: T.POWER, name: "annihilation" }, { t: T.HERO, name: "MONARCH" }],
   captions: [],
   prepare() { resize(); P.scene(); P.final(); },
   simulate(tt) { time = tt; },
