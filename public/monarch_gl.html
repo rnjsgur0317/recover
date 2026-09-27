@@ -15,12 +15,12 @@
 <script>
 "use strict";
 /* ═══════════════════════════════════════════════════════════════
-   MONARCH — 어둠의 옥좌에 앉은 거대한 지배자 (실시간 3D · 대사 없음 · 30초 · 4K 저장)
+   MONARCH — 빈 옥좌의 거대한 지배자, 사람 없이 추상적으로 (실시간 3D · 대사 없음 · 30초 · 4K 저장)
    음원: tools/make_monarch_audio.py 로 직접 합성한 오리지널(합창 · 오르간 · 금관 · 팀파니 · 타이코 · 천둥). 시각 상수 T 는 그 스크립트와 같다.
      0      어둠 — 번개가 금 간 바닥(보라 · 연보라 균열, 바깥의 글자 고리)과 X 자로 놓인 네 개의 거대한 뿔을 비춘다
      4.0    떠 있는 차원문 — 검은 흰자에 보라 눈동자, 눈이 떠져 오른쪽에서 왼쪽으로 훑고 사라진다
-     7.5    발치에서 올려다보며 크레인 업 — 사람보다 훨씬 큰 도끼 · 옥좌 · 앉은 지배자 · 8각 별 문장
-     11.5   얼굴 — 그림자 속에서 오른눈이 보라로 타오른다(번개 · 총주 일격)
+     7.5    발치에서 올려다보며 크레인 업 — 단상에 박혀 우뚝 선 거대한 도끼 · 빈 옥좌 · 8각 별 문장 · 옥좌 위로 어둠이 모이기 시작
+     11.5   검은 공허 — 일렁이는 공허 위에 왕관이 떠 돌고, 12.6 그 속에서 세로로 찢어진 보라 눈이 뜨인다(번개 · 총주 일격)
      14.5   위로 — 반시계로 도는 왕관(8개의 남보라 다이아) → 서로 반대로 도는 두 후광 → 흰 별을 품은 거대한 구슬이 빛의 장막을 내린다
      18.5   땅에서 올려다본 전체 — 100m 가 넘는 지배자, 여섯 뿔 왕관 · 연보라 고리 · 20.5 네 차원문의 눈이 동시에 뜨여 이쪽을 본다
      22.5   권능 — 23.8 충격파가 바닥을 쓸고, 검은 · 보라 번개 폭풍
@@ -40,7 +40,7 @@ const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a
 function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross(f, [0, 1, 0])), u0 = cross(r0, f), c = Math.cos(roll), s = Math.sin(roll); return { pos, r: [r0[0] * c + u0[0] * s, r0[1] * c + u0[1] * s, r0[2] * c + u0[2] * s], u: [u0[0] * c - r0[0] * s, u0[1] * c - r0[1] * s, u0[2] * c - r0[2] * s], f }; }
 
 const T = { L1: .6, L2: 2.9, PORT: 4.0, EYEO: 5.1, EYEC: 7.0, RISE: 7.5, FACE: 11.5, IGNITE: 12.6, HALO: 14.5, WIDE: 18.5, STARE: 20.5, POWER: 22.5, SHOCK: 23.8, HERO: 26.0, TITLE: 26.6, END: 30.0 };
-const ORB = [0, 76, -6], TC = [0, 0, -3], EYE = [1.13, 34.51, -.8];
+const ORB = [0, 76, -6], TC = [0, 0, -3], VC = [0, 23, -4], EYE = [0, 23, 2.4];
 const PORTS = [[-25, 18, -2], [25, 18, -2], [-25, 38, -7], [25, 38, -7]];
 const BOLTS = [[T.L1, 1], [T.L2, 2], [8.8, 3], [T.IGNITE, 4], [16.2, 5], [T.STARE, 6], [T.SHOCK, 7], [27.4, 8]];
 { const r = rng(99); for (let t = T.POWER + .1; t < T.HERO - .2; t += .18 + r() * .3) BOLTS.push([t, 20 + Math.floor(r() * 900)]); BOLTS.sort((a, b) => a[0] - b[0]); }
@@ -53,7 +53,7 @@ let Wd = 0, Hd = 0, U = 0, DPR = 1, DPR_CAP = 2, SCALE = 1, slow = 0, time = 0, 
 /* ═════════════════ 셰이더 ═════════════════ */
 const FS_SCENE = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform vec2 uRes; uniform float uT, uFocal, uEyeK, uFlash, uShock, uPower, uCrownA, uHaloA, uTopA, uOrbI, uCrackK; uniform vec3 uCamPos; uniform mat3 uCam; uniform int uZero; uniform vec2 uPort[4]; uniform sampler2D uAtlas;
+uniform vec2 uRes; uniform float uT, uFocal, uEyeK, uVoidK, uFlash, uShock, uPower, uCrownA, uHaloA, uTopA, uOrbI, uCrackK; uniform vec3 uCamPos; uniform mat3 uCam; uniform int uZero; uniform vec2 uPort[4]; uniform sampler2D uAtlas;
 ${CSGL.NOISE}
 const vec3 ORB = vec3(${ORB.join(".,")}.), TC = vec3(0., 0., -3.), ORBC = vec3(.6, .46, 1.), EYEP = vec3(${EYE.join(", ")});
 float gE = 1e9; bool gSh = false;
@@ -69,31 +69,19 @@ float sdRC(vec3 p, vec3 a, vec3 b, float r1, float r2){ vec3 ba = b - a; float l
   if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2; if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1; return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1; }
 float sdStarN(vec2 p, float r, float n, float m){ float an = 3.141593 / n, en = 3.141593 / m; vec2 acs = vec2(cos(an), sin(an)), ecs = vec2(cos(en), sin(en)); float bn = mod(atan(p.x, p.y), 2. * an) - an;   // n 각 별
   p = length(p) * vec2(cos(bn), abs(sin(bn))); p -= r * acs; p += ecs * clamp(-dot(p, ecs), 0., r * acs.y / ecs.y); return length(p) * sign(p.x); }
-/* ── 지배자: 앉은 자세(오른다리를 세우고, 왼손으로 머리를 받치고, 오른손엔 도끼) ── */
-float figure(vec3 p){
-  float d = sdEll(p - vec3(0., 15., -4.), vec3(6.5, 3.2, 4.5));
-  d = smin(d, sdRC(p, vec3(0., 16., -4.6), vec3(0., 25.5, -5.), 4.8, 6.), 1.5);
-  d = smin(d, sdEll(p - vec3(0., 24.5, -3.6), vec3(6.6, 4.6, 3.4)), 1.2);
-  d = smin(d, sdCap(p, vec3(.8, 28., -4.6), vec3(1.5, 31.3, -3.9), 1.5), .8);
-  vec3 hq = p - vec3(2., 34., -3.2); hq.xy = rot(-.18) * hq.xy; float hd = sdEll(hq, vec3(2.3, 2.9, 2.6));                                     // 투구: 눈높이의 깊은 틈 · 콧대 · 뺨가리개
-  hd = min(hd, sdRC(hq, vec3(0., 1.9, 2.1), vec3(0., -1.3, 2.75), .42, .22)); hd = smin(hd, sdEll(vec3(abs(hq.x) - 1.3, hq.y + 1.1, hq.z - 1.4), vec3(1., 1.5, 1.2)), .3);
-  hd = min(hd, sdRC(vec3(abs(hq.x), hq.y, hq.z), vec3(1.6, 1.2, 1.7), vec3(2.5, 1.9, .2), .45, .15)); hd = max(hd, -sdBox(hq - vec3(0., .5, 2.4), vec3(2.2, .3, 1.2))); d = smin(d, hd, .35);
-  float pa = min(sdEll(p - vec3(7., 27.6, -4.6), vec3(3.3, 2.4, 3.2)), sdEll(p - vec3(-7., 27.6, -4.6), vec3(3.3, 2.4, 3.2))); d = smin(d, pa, .5);
-  d = smin(d, sdRC(p, vec3(-7.6, 26.6, -4.6), vec3(-10., 17.9, -1.2), 2., 1.6), .8); d = smin(d, sdRC(p, vec3(-10., 17.9, -1.2), vec3(-10.5, 18.4, 5.8), 1.6, 1.3), .6); d = smin(d, sdEll(p - vec3(-10.6, 18.5, 7.), vec3(1.5, 1.4, 1.3)), .5);
-  d = smin(d, sdRC(p, vec3(7.6, 26.6, -4.6), vec3(10.2, 17.9, -1.6), 2., 1.6), .8); d = smin(d, sdRC(p, vec3(10.2, 17.9, -1.6), vec3(4.6, 31.2, -1.6), 1.6, 1.25), .7); d = smin(d, sdEll(p - vec3(4.1, 32.2, -1.5), vec3(1.2, 1.5, 1.1)), .6);
-  d = smin(d, sdRC(p, vec3(3.6, 14.6, -2.), vec3(4.5, 14.8, 7.), 2.6, 2.1), 1.); d = smin(d, sdRC(p, vec3(4.5, 14.8, 7.), vec3(4.8, 4.2, 8.4), 2.1, 1.5), .7); d = smin(d, sdEll(p - vec3(4.9, 3.6, 10.), vec3(1.5, 1., 2.6)), .5);
-  d = smin(d, sdRC(p, vec3(-3.6, 14.6, -2.), vec3(-4.6, 21.6, 5.6), 2.6, 2.1), 1.); d = smin(d, sdRC(p, vec3(-4.6, 21.6, 5.6), vec3(-4.8, 14.5, 4.6), 2.1, 1.5), .7); d = smin(d, sdEll(p - vec3(-4.9, 13.9, 6.2), vec3(1.5, 1., 2.6)), .5);
-  d = smin(d, sdRC(p, vec3(0., 28.5, -7.2), vec3(0., 7., -9.6), 7., 10.), 1.8);                                                            // 등 뒤로 흘러내린 망토
-  float hood = max(sdEll(hq - vec3(0., .5, -.5), vec3(3.3, 3.9, 3.5)), -sdEll(hq - vec3(0., -.3, 1.3), vec3(2.5, 3.1, 3.2))); d = min(d, max(hood, hq.y - 3.2 + .6 * hq.z));   // 두건(앞은 트이고 얼굴은 그 안의 어둠)
-  return d;
-}
-float fcrown(vec3 p){ vec3 q = p - vec3(2.35, 36.7, -3.2); q.xy = rot(-.18) * q.xy; float r = length(q.xz), ring = length(vec2(r - 2.15, q.y)) - .32;   // 머리 위의 왕관
-  float an = atan(q.z, q.x), sc = 6.2832 / 8., a2 = mod(an + sc * .5, sc) - sc * .5; vec3 l = vec3(cos(a2) * r - 2.15, q.y, sin(a2) * r); return min(ring, sdRC(l, vec3(0.), vec3(0., 1.9, 0.), .38, .03)); }
-vec2 axe(vec3 p){ vec3 q = p - vec3(-10.6, 0., 7.);                                                                                         // 한쪽 날 전투 도끼
-  float h = sdCap(p, vec3(-10.6, 2.8, 7.), vec3(-10.6, 47., 7.), .5); h = min(h, length(p - vec3(-10.6, 2.6, 7.)) - .85);
+/* ── 지배자의 현현: 사람 대신, 빈 옥좌 위로 모여드는 검은 공허 · 그 속에서 뜨이는 보라 눈 · 공허 위에 떠 도는 왕관 ── */
+const vec3 VC = vec3(0., 23., -4.);
+float voidSph(vec3 p){ vec3 q = p - VC; float R = 6.2 * uVoidK, lq = length(q); if (R < .05) return lq + 1.;
+  float w = ((noise(q.xy * .9 + vec2(uT * .9, 0.)) + noise(q.yz * 1.1 - vec2(uT * .7)) - 1.) * .55 + (noise(q.xz * 2.3 + uT * 1.4) - .5) * .25) * uVoidK * smoothstep(.3, 1., lq / R);   // 가장자리가 잘게 일렁인다
+  return (lq - R + w) * .7; }
+float vcrown(vec3 p){ float k = max(uVoidK, .02); vec3 q = (p - (VC + vec3(0., 8.4 + .35 * sin(uT * 1.3), 0.))) / k; q.xz = rot(-uT * .5) * q.xz; float r = length(q.xz), ring = length(vec2(r - 3.3, q.y)) - .38;
+  ring = min(ring, length(vec2(r - 3.1, q.y + .9)) - .18); float an = atan(q.z, q.x), sc = 6.2832 / 8., a2 = mod(an + sc * .5, sc) - sc * .5; vec3 l = vec3(cos(a2) * r - 3.3, q.y, sin(a2) * r);
+  float sp = sdRC(l, vec3(0.), vec3(0., mod(floor(an / sc + .5), 2.) < .5 ? 3.2 : 2., 0.), .52, .04); return min(ring, sp) * k; }
+vec2 axe(vec3 p){ vec3 q = p - vec3(-16.5, 0., 6.);                                                                                         // 한쪽 날 전투 도끼
+  float h = sdCap(p, vec3(-16.5, 1., 6.), vec3(-16.5, 47., 6.), .5); h = min(h, max(length(p.xz - vec2(-16.5, 6.)) - 2.4, abs(p.y - 1.9) - .8) - .1);   // 단상에 박힌 자리
   vec2 b = vec2(q.x, q.y - 41.5); float bl2 = max(max(length(b - vec2(-2.2, 0.)) - 6.6, -(length(b - vec2(3.4, 0.)) - 5.6)), b.x + .3);
   float th = .55 - .45 * clamp((-b.x - .3) / 7., 0., 1.), blade = max(bl2, abs(q.z) - th) * .8;
-  float sp = min(sdRC(p, vec3(-10.6, 46.5, 7.), vec3(-10.6, 51.5, 7.), .75, .05), sdRC(p, vec3(-10.3, 41.5, 7.), vec3(-8., 42.4, 7.), .8, .12));
+  float sp = min(sdRC(p, vec3(-16.5, 46.5, 6.), vec3(-16.5, 51.5, 6.), .75, .05), sdRC(p, vec3(-16.2, 41.5, 6.), vec3(-13.9, 42.4, 6.), .8, .12));
   vec2 r = vec2(min(h, sp), 3.); if (blade < r.x) r = vec2(blade, bl2 > -.45 ? 3.5 : 3.); return r; }
 float throne(vec3 p){
   float d = sdRBox(p - vec3(0., 8., -3.), vec3(11., 5.2, 8.5), .6);
@@ -135,9 +123,9 @@ float topCrown(vec3 p){ vec3 q = p - vec3(0., 95., -6.); float bd = length(q) - 
   return min(ring, hn); }
 vec2 map(vec3 p){
   vec2 r = vec2(1e9, -1.); gE = 1e9;
-  float bd = sdBox(p - vec3(-2.5, 29., -3.), vec3(20., 34., 16.));
-  if (bd < 1.){ r = opU(r, vec2(throne(p), 1.)); r = opU(r, vec2(figure(p), 2.)); r = opU(r, axe(p)); r = opU(r, vec2(fcrown(p), 16.));
-    float ey = length(p - EYEP) - .36; r = opU(r, vec2(ey, 13.)); gE = min(gE, ey + .2 / max(uEyeK, .05));
+  float bd = sdBox(p - vec3(-4.5, 29., -3.), vec3(22.5, 34., 16.));
+  if (bd < 1.){ r = opU(r, vec2(throne(p), 1.)); r = opU(r, axe(p));
+    if (uVoidK > .01){ float vd = voidSph(p); r = opU(r, vec2(vd, 17.)); r = opU(r, vec2(vcrown(p), 16.)); }
     float gem = length(vec3(abs(p.x) - 11.4, p.y - 16.2, p.z - 6.9)) - 1.25; r = opU(r, vec2(gem, 14.)); }
   else r = opU(r, vec2(bd, -1.));
   r = opU(r, vec2(dais(p), 15.)); r = opU(r, vec2(horn(p), 4.));
@@ -184,7 +172,7 @@ vec3 shade(vec3 p, vec3 n, vec3 rd, float id, float t){
       em += vec3(.55, .2, 1.) * (smoothstep(.12, 0., abs(st) - .12) * 1.6 + smoothstep(.1, -.3, st) * .18 + smoothstep(.1, 0., abs(st2) - .08) * 1.1) * (.8 + .2 * sin(uT * 2.)); }
     float edge = smoothstep(.06, 0., abs(abs(p.x) - 11.4) - 1.85) * step(15., p.y) * step(p.y, 17.) + smoothstep(.1, 0., abs(abs(p.x) - 11.8)) * step(12., p.y) * step(p.y, 48.) * step(-9.3, p.z);
     em += vec3(.4, .12, .95) * edge * .9; }
-  else if (id < 2.5){ alb = vec3(.075, .062, .095); rough = .32; metal = .7; vec3 fq = p - vec3(2., 34., -3.2); float face = smoothstep(3.2, 2.2, length(fq.xy * vec2(1., .9))) * step(-1.5, fq.z); alb *= 1. - face * .9; float seam = smoothstep(.05, 0., .5 - abs(fract(p.y * .8 + sin(p.x * .6) * .3) - .5)); em += vec3(.35, .1, .8) * seam * .1 * step(12., p.y) * step(p.y, 30.) * (1. - face); }
+  else if (id < 2.5){ alb = vec3(.075, .062, .095); rough = .32; metal = .7; float face = 0.; float seam = smoothstep(.05, 0., .5 - abs(fract(p.y * .8 + sin(p.x * .6) * .3) - .5)); em += vec3(.35, .1, .8) * seam * .1 * step(12., p.y) * step(p.y, 30.) * (1. - face); }
   else if (id < 3.2){ alb = vec3(.05, .045, .06); rough = .22; metal = 1.; }
   else if (id < 3.7){ alb = vec3(.06, .05, .08); rough = .1; metal = 1.; em += vec3(.6, .3, 1.) * 1.2; }
   else if (id < 4.5){ vec3 q = p - TC; float hgt = clamp(p.y / 25., 0., 1.); alb = mix(vec3(.08, .02, .2), vec3(.3, .15, .55), hgt); rough = .15;                  // 보라 수정 뿔
@@ -209,12 +197,20 @@ vec3 shade(vec3 p, vec3 n, vec3 rd, float id, float t){
   else if (id < 13.5){ alb = vec3(0.); em += vec3(.85, .35, 1.) * 9. * uEyeK + vec3(.02); }
   else if (id < 14.5){ alb = vec3(.1, .02, .25); rough = .05; em += vec3(.5, .15, 1.) * 1.2; }
   else if (id < 15.5){ alb = vec3(.02, .018, .026); rough = .5; float r = length(p.xz - TC.xz); em += vec3(.4, .12, .9) * smoothstep(.04, 0., .5 - abs(fract(r * .5) - .5)) * .3 * uCrackK; }
-  else { alb = vec3(.35, .2, .55); rough = .2; metal = 1.; }
+  else if (id < 16.5){ alb = vec3(.35, .2, .55); rough = .2; metal = 1.; em += vec3(.5, .25, 1.) * pow(1. - ndv, 3.) * .6; }
+  else { vec3 q = p - VC; float R = 6.2 * uVoidK; vec2 e = q.xy / max(R, .1); alb = vec3(0.); rough = .9; metal = 0.;                        // 공허: 검은 몸 · 보라 가장자리 · 속에서 도는 빛
+    em = vec3(.002, 0., .005) + vec3(.5, .18, 1.) * pow(1. - ndv, 5.) * .9 + vec3(.25, .06, .6) * pow(fbm(n.xy * 3.5 + vec2(uT * .5, -uT * .3)), 5.) * .25;
+    float op = min(uEyeK, 1.), over = max(uEyeK - 1., 0.);
+    if (q.z > 0. && op > .005){ float sh = pow(abs(e.x) / .64, 1.25) + pow(abs(e.y) / (.3 * op), 2.);                                                     // 세로로 찢어진 동공의 보라 눈
+      if (sh < 1.){ float ir = length(e * vec2(1., 1.15)), fib = .75 + .25 * sin(atan(e.y, e.x) * 38. + fbm(e * 12.) * 4.); em = vec3(.02, 0., .04) + vec3(.8, .3, 1.) * smoothstep(.31, .16, ir) * fib * (1.4 + 2.5 * over) + vec3(1., .8, 1.) * smoothstep(.11, .03, ir) * (.45 + 1.5 * over) + vec3(.35, .1, .8) * smoothstep(.16, .3, ir) * .25;
+        float slit = smoothstep(.012, 0., abs(e.x) - (.022 + .03 * (1. - abs(e.y) / .24))) * step(abs(e.y), .24); em *= 1. - slit * .97; }
+      em += vec3(.85, .45, 1.) * smoothstep(.05, 0., abs(sh - 1.)) * (.9 + 1.5 * over); } }
   vec3 f0 = mix(vec3(.04), alb * 3. + .05, metal), spec = f0 * pow(max(dot(n, hv), 0.), mix(900., 20., rough)) * (1. - rough) * 4.;
+  if (id > 16.5) { spec = vec3(0.); rim = vec3(0.); }
   vec3 col = (alb * (1. - metal) * ndl + spec * ndl) * li * sh + alb * amb * ao + rim * ao + flash * alb * 6. + em;
   vec3 kd = normalize(vec3(.4, .55, .75)); float nk = max(dot(n, kd), 0.);                                                                      // 앞쪽 위에서 오는 은은한 보랏빛 달빛(형태가 읽히게)
-  col += (alb * (1. - metal * .6) * nk * .7 + f0 * pow(max(dot(n, normalize(kd - rd)), 0.), mix(500., 14., rough)) * (1. - rough) * 1.6) * vec3(.34, .27, .62) * ao * (id < 3.7 || id > 14.5 ? 1. : .3);
-  col += sky(reflect(rd, n)) * fres * (1. - rough) * .14 * ao;
+  col += (alb * (1. - metal * .6) * nk * .7 + f0 * pow(max(dot(n, normalize(kd - rd)), 0.), mix(500., 14., rough)) * (1. - rough) * 1.6) * vec3(.34, .27, .62) * ao * (id > 16.5 ? 0. : id < 3.7 || id > 14.5 ? 1. : .3);
+  col += sky(reflect(rd, n)) * fres * (1. - rough) * .14 * ao * step(id, 16.5);
   return col;
 }
 vec3 veil(vec3 ro, vec3 rd, float tmax){                                                                                                       // 구슬이 내리는 빛의 장막
@@ -298,13 +294,13 @@ function state(t) {
   if (t < T.PORT) { const k = seg(t, 0, T.PORT); cam = camera(add(mix3([16, 1.1, 84], [12, 1.5, 62], eOut(k)), mul(br, .3)), mix3([5, .5, 22], [2, 4, 8], k), .01); S.focal = 1.35; S.focus = 30; S.aper = .3; S.crackK = .15 + .85 * eInOut(seg(t, .5, 3.5)); S.orbI = .25 + .5 * k; S.rays = .2; }
   else if (t < T.RISE) { const k = seg(t, T.PORT, T.RISE), P0 = PORTS[1]; cam = camera(add(mix3([36, 17.5, 26], [31.5, 18.2, 18.5], eOut(k)), mul(br, .2)), add(P0, [0, .2, 0]), 0); S.focal = 1.55; S.focus = 20; S.aper = .45; S.orbI = .7; S.rays = .15; }
   else if (t < T.FACE) { const k = eInOut(seg(t, T.RISE, T.FACE)); cam = camera(add(mix3([-2, 1.8, 40], [-1, 8, 34], k), mul(br, .3)), mix3([-4, 8, 5], [0, 30, -3], k), 0); S.focal = .95; S.focus = 35; S.aper = .15; }
-  else if (t < T.HALO) { const k = eOut(seg(t, T.FACE, T.HALO)); cam = camera(add(mix3([-5.5, 34.8, 12.5], [-3.6, 34.6, 8.6], k), mul(br, .05)), [1.2, 34.2, -2.], .03); S.focal = 1.75; S.focus = 10.5; S.aper = .7; S.rays = 0; }
+  else if (t < T.HALO) { const k = eOut(seg(t, T.FACE, T.HALO)); cam = camera(add(mix3([-4, 25.5, 30], [-1.6, 24.2, 21], k), mul(br, .06)), [0, 23.2, -2], .02); S.focal = 1.6; S.focus = lerp(33, 24, k); S.aper = .6; S.rays = 0; }   // 공허와 눈
   else if (t < T.WIDE) { const k = eInOut(seg(t, T.HALO, T.WIDE)); cam = camera(add(mix3([14, 46, 34], [9, 84, 36], k), mul(br, .3)), mix3([0, 56, -6], [0, 78, -6], k), .03); S.focal = 1.15; S.focus = 42; S.aper = .12; S.rays = .3; }
   else if (t < T.POWER) { const k = seg(t, T.WIDE, T.POWER); cam = camera(add(mix3([-7, 1.6, 36], [-4.5, 1.8, 30], eOut(k)), mul(br, .2)), [0, 46, -6], 0); S.focal = 1.1; S.focus = 42; S.aper = .05; S.rays = .35; }
   else if (t < T.HERO) { const a = lerp(.55, 1.15, seg(t, T.POWER, T.HERO)), sh = 1.2 * pulse(t, T.SHOCK, .02, 1.) ; cam = camera(add([Math.sin(a) * 74, 13, Math.cos(a) * 74 - 3], [(h1(t * 60) - .5) * sh, (h1(t * 60 + 3) - .5) * sh, 0]), [0, 32, -6], .02); S.focal = 1.1; S.focus = 74; S.aper = .06; S.rays = .5; }
   else { const k = eOut(seg(t, T.HERO, T.END)); cam = camera(add(mix3([0, 2.5, 68], [0, 3.2, 57], k), mul(br, .15)), [0, 46, -6], 0); S.focal = 1.02; S.focus = 60; S.aper = .06; S.rays = .35; }
   S.cam = cam;
-  S.eyeK = t >= T.IGNITE ? 1 + 1.6 * pulse(t, T.IGNITE, .02, .9) : 0;
+  S.voidK = eOut(seg(t, 10.4, 12.2)); S.eyeK = t >= T.IGNITE ? eOut(seg(t, T.IGNITE, T.IGNITE + .22)) + 1.4 * pulse(t, T.IGNITE, .02, .9) : 0;   // 빈 옥좌 위로 공허가 모이고 → 눈이 뜨인다
   const pv = (i, o, l) => { S.port[i * 2] = o; S.port[i * 2 + 1] = l; };                                                            // 차원문 눈: 뜸 · 오른쪽→왼쪽
   { const o = Math.min(eOut(seg(t, T.EYEO, T.EYEO + .35)), 1 - eIn(seg(t, T.EYEC - .3, T.EYEC))); pv(1, o, lerp(1, -1, eInOut(seg(t, T.EYEO + .45, T.EYEC - .45)))); }
   if (t >= T.STARE) { for (let i = 0; i < 4; i++) { const o = t < T.POWER ? eOut(seg(t, T.STARE, T.STARE + .25)) : Math.max(0, Math.sin((t - T.POWER) * 1.4 + i * 1.7)) > .35 ? 1 : 0; pv(i, o, t < T.POWER ? 0 : Math.sin((t - T.POWER) * .9 + i) ); } }
@@ -322,7 +318,7 @@ function render(t) {
   const prog = P.scene(), u = prog.u, f1 = (n, v) => { if (u[n] != null) gl.uniform1f(u[n], v || 0); };
   X.pass(prog, RT.scene, () => { gl.uniform2f(u.uRes, sw, sh); f1("uT", t); if (u.uZero != null) gl.uniform1i(u.uZero, 0); gl.uniform3f(u.uCamPos, ...S.cam.pos); gl.uniformMatrix3fv(u.uCam, false, new Float32Array([...S.cam.r, ...S.cam.u, ...S.cam.f])); f1("uFocal", S.focal);
     if (u.uPort != null) gl.uniform2fv(u.uPort, S.port); if (u.uAtlas != null) X.bindTex(4, atlasTex, u.uAtlas);
-    for (const [n, v] of [["uEyeK", S.eyeK], ["uFlash", S.flash], ["uShock", S.shock], ["uPower", S.power], ["uCrownA", S.crownA], ["uHaloA", S.haloA], ["uTopA", S.topA], ["uOrbI", S.orbI], ["uCrackK", S.crackK]]) f1(n, v); });
+    for (const [n, v] of [["uEyeK", S.eyeK], ["uVoidK", S.voidK], ["uFlash", S.flash], ["uShock", S.shock], ["uPower", S.power], ["uCrownA", S.crownA], ["uHaloA", S.haloA], ["uTopA", S.topA], ["uOrbI", S.orbI], ["uCrackK", S.crackK]]) f1(n, v); });
   const lp = proj(S, ORB), bloomTex = X.bloom(RT.scene.tex, 1.15), raysTex = X.rays(lp ? clamp(lp[0] / Wd) : .5, lp ? clamp(1 - lp[1] / Hd) : 1.1, .92), r0 = rng(Math.floor(t * 60)), hit = S.shake;
   X.pass(P.final(), null, (u2) => { X.bindTex(0, RT.scene.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);
     gl.uniform2f(u2.uShake, (r0() - .5) * hit * .02, (r0() - .5) * hit * .02); gl.uniform1f(u2.uZoom, 1 + .02 * hit); gl.uniform1f(u2.uCA, .0012 + .005 * hit);
@@ -333,7 +329,7 @@ function render(t) {
 const player = CSUI.create({
   stage: $("cs"), audio: bgm, volume: .9, duration: T.END, theme: "monarch", capBlend: false, recW: 3840, recH: 2160, maxMB: 100,
   no: "08", title: "MONARCH", sub: "모나크", hero: "/thumbs/monarch_hero.jpg",
-  tagline: "어둠의 옥좌에 앉은 거대한 지배자.\n왕관 위의 두 후광, 흰 별을 품은 구슬 — 모든 것이 그 아래에 있다.",
+  tagline: "빈 옥좌 위로 모여든 공허, 그 속에서 뜨이는 하나의 눈.\n왕관 위의 두 후광, 흰 별을 품은 구슬 — 모든 것이 그 아래에 있다.",
   meta: [["0:30", "Length"], ["4K · 3D", "Renderer"], ["Original", "Score"]],
   chapters: [{ t: 0, name: "the floor" }, { t: T.PORT, name: "the eye" }, { t: T.RISE, name: "the throne" }, { t: T.FACE, name: "awaken" }, { t: T.HALO, name: "the crown" }, { t: T.WIDE, name: "dominion" }, { t: T.POWER, name: "power" }, { t: T.HERO, name: "MONARCH" }],
   captions: [],
