@@ -25,7 +25,7 @@
      13.6   흰 섬광 → 13.8 공허: 모든 빛을 삼키는 검은 구, 빨려드는 나선의 빛과 룬의 띠 (모나크의 형체는 그리지 않는다 — 개념만)
      16.6   지배: 세 룬 고리가 공허를 돌고, 만세의 말들이 빛이 되어 무릎 꿇듯 공허로 빨려든다 · 공허에 보랏빛 눈이 뜨인다
      18.6   왕관이라는 개념: 반시계로 도는 여덟 꼭짓점 별과 여덟 다이아 · 서로 반대로 도는 두 후광 · 가운데의 흰 별
-     20.6   운명의 봉인: 모든 고리가 한 평면으로 정렬해 하나의 인장이 되고 21.2 일격 — 虚空の王國の支配者 / MONARCH / SEALER OF FATE
+     20.6   상징이 가운데에 세 번 뜬다(20.6 · 21.3 · 22.0): 가는 빛살 속의 검은 눈 · 도는 네 갈래 칼날 별 → 22.6 虚空の王國の支配者 / MONARCH / SEALER OF FATE
    색: 짙은 보라 공허 · 핏빛으로 번지는 저주 · 흰 별빛 · 남색 · 자홍 성운. 음원: tools/make_monarch3_audio.py (오리지널, 시각표 같음)
    ═══════════════════════════════════════════════════════════════ */
 const TAU = Math.PI * 2, PI = Math.PI;
@@ -40,8 +40,9 @@ const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add = (a, b) => [
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }, mix3 = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)];
 function camera(pos, tgt, roll) { const f = norm(sub(tgt, pos)), r0 = norm(cross(f, [0, 1, 0])), u0 = cross(r0, f), c = Math.cos(roll), s = Math.sin(roll); return { pos, r: [r0[0] * c + u0[0] * s, r0[1] * c + u0[1] * s, r0[2] * c + u0[2] * s], u: [u0[0] * c - r0[0] * s, u0[1] * c - r0[1] * s, u0[2] * c - r0[2] * s], f }; }
 
-const T = { BG: .5, POP: 1.0, CNT: 1.4, W0: 2.0, LIGHT: 7.8, ZERO: 10.2, FLASH1: 10.4, HAIL: 11.0, FLASH2: 13.6, REVEAL: 13.8, S2: 16.6, S3: 18.6, HERO: 20.6, TITLE: 21.2, END: 26.0 };   // 음원과 같은 시각표
-const CUTS = [T.S2, T.S3, T.HERO], ES = 1.8;                                                                                           // ES: 모나크 배율(셰이더와 같음)
+const T = { BG: .5, POP: 1.0, CNT: 1.4, W0: 2.0, LIGHT: 7.8, ZERO: 10.2, FLASH1: 10.4, HAIL: 11.0, FLASH2: 13.6, REVEAL: 13.8, S2: 16.6, S3: 18.6, HERO: 20.6, TITLE: 22.6, END: 26.0 };
+const SYMS = [20.6, 21.3, 22.0];                                                                                                  // 상징이 뜨는 세 번   // 음원과 같은 시각표
+const CUTS = [T.S2, T.S3], ES = 1.8;                                                                                           // ES: 모나크 배율(셰이더와 같음)
 const KT = 28, TICKS = [...Array(KT + 1)].map((_, k) => T.CNT + (T.ZERO - T.CNT) * Math.pow(k / KT, .6));                              // 인구 계수기 눈금(점점 빨라진다)
 const COUNT = (() => { const r = rng(3000), a = []; for (let k = 0; k <= KT; k++) a.push(k === 0 ? 3e9 : k === KT ? 0 : Math.round(3e9 * (1 - Math.pow(k / KT, 1.35)) * (1 + (r() - .5) * .04))); for (let k = 1; k < KT; k++) a[k] = Math.max(1, Math.min(a[k], a[k - 1] - 1)); return a; })();
 const WORDS = [["IRREVERSIBLE", "돌이킬 수 없는"], ["MERCILESS", "무자비한"], ["GODLESS", "신을 믿지 않는"], ["BLASPHEMY", "신성모독"], ["FALSE SAVIOR", "거짓 구원자"], ["DAMNED", "저주받은"], ["YOU SAVAGE", "이 야만인아"], ["FALL TO RUIN", "폐허로 떨어지다"],
@@ -121,7 +122,7 @@ void main(){
   o = vec4(max(col, 0.), 10.); }`;
 const FS_SIGIL = `#version 300 es
 precision highp float; in vec2 vUv; out vec4 o;
-uniform vec2 uRes; uniform float uT, uZoomV, uRotV, uPanY, uVoidR, uSwirlK, uArmK, uMotes, uEyeK, uCrownK, uHaloK, uStarK, uSealK, uStamp; uniform sampler2D uRunes;
+uniform vec2 uRes; uniform float uT, uZoomV, uRotV, uPanY, uVoidR, uSwirlK, uArmK, uMotes, uEyeK, uCrownK, uHaloK, uStarK, uSealK, uStamp, uSym, uSymS, uBack; uniform sampler2D uRunes;
 ${CSGL.NOISE}
 mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 float PX;
@@ -147,6 +148,7 @@ void main(){
   float f, lit = exp(-length(c0) * 1.7); vec2 bp = rot(uT * .02 + .3 / (length(c0) + .6)) * c0 * 1.1 / mix(1., uZoomV, .35);                // 배경: 가운데서 비추는 성운 · 세 겹의 별
   vec3 col = vec3(.003, .001, .009) + nebula(bp * .75, lit, uT, f) + vec3(.3, .1, .7) * exp(-length(c0) * 2.5) * .2;
   vec2 sp0 = c0 / mix(1., uZoomV, .5); col += starsL(sp0 * 70. + uT * vec2(.3, -.15), .45, .07) * .45 + starsL(sp0 * 28. + 3.7, .22, .06) * .85 + starsL(c0 / mix(1., uZoomV, .8) * 9. + 1.3, .08, .045) * 1.5;
+  vec3 bgc = col;
   float Rv = .23 * uVoidR, e = r - Rv;
   if (uSwirlK > 0.){ float lr = log(max(r, 1e-3)), spv = an * 3. + lr * 5.5 + uT * 2.4, arms = pow(.5 + .5 * cos(spv), 5.), fil = fbm(vec2(an * 5. + lr * 9. + uT * 1.4, lr * 4. - uT * .8));   // 공허로 빨려드는 세 갈래 나선의 빛
     float fall = smoothstep(Rv, Rv * 1.5, r) * exp(-max(r - Rv, 0.) * 2.6);
@@ -173,7 +175,18 @@ void main(){
     float ai = floor(a1 / 1.5708 + .5), aa = a1 - ai * 1.5708, spikes = 0.; for (int j = -1; j <= 1; j++){ float fj = float(j), L = j == 0 ? .15 : .08; vec2 sd = vec2(cos(aa - fj * .11), sin(aa - fj * .11)) * r; spikes += ln(abs(sd.y), .0022) * step(.58, sd.x) * step(sd.x, .58 + L); }
     float aj = floor((a1 - .785) / 1.5708 + .5), ab = a1 - .785 - aj * 1.5708; vec2 dq = abs(vec2(cos(ab), sin(ab)) * r - vec2(.62, 0.)) / vec2(.047, .029); float dia2 = ln(abs(dq.x + dq.y - 1.) * .025, .0015) + ln(abs(dq.x + dq.y - .55) * .025, .001);   // 두 겹 다이아
     col += gold * (ln(abs(r - .576), .003) * 1.3 + spikes * 1.1 + dia2) * m1 + vec3(.7, .5, 1.) * ln(abs(r - .497), .0018) * m2; }
-  if (uStamp >= 0.){ float rr = length(c0), R = uStamp * 1.7; col += (vec3(1., .85, .6) * exp(-abs(rr - R) * 45.) * 1.4 + vec3(.6, .3, 1.) * exp(-abs(rr - R * .7) * 14.) * .4) * exp(-uStamp * 1.3); }   // 봉인의 일격
+  col = mix(bgc, col, uBack);                                                                                                        // 상징이 뜨면 인장은 뒤로 물러난다
+  if (uSym > 0.){ vec2 p = c0 / uSymS; float r2 = length(p), a = atan(p.y, p.x), n = 48., ai = floor(a / 6.2832 * n + .5), aa = a - ai * 6.2832 / n, big = step(.75, fract(ai / 4.));   // 가운데의 상징: 가는 빛살 속의 검은 눈
+    float L = .4 + .14 * hash(vec2(ai, 3.)) + .12 * big; vec2 rp = vec2(cos(aa), sin(aa)) * r2, tq = rp - vec2(L + .025, 0.);
+    float rays = ln(abs(rp.y), .0012) * step(.34, rp.x) * step(rp.x, L) * (.3 + .7 * smoothstep(L, .34, rp.x)) + ln(abs(abs(tq.x) / .022 + abs(tq.y) / .011 - 1.) * .011, .0012) * big;
+    float W = .3, xx = p.x / W, lid = .12 * max(1. - xx * xx, 0.), de = abs(p.x) < W ? abs(abs(p.y) - lid) : length(vec2(abs(p.x) - W, p.y));   // 눈꺼풀 선 두 겹
+    float lids = ln(de, .0025) * 1.3 + ln(abs(de - .026), .0015) * .6, inside = smoothstep(.101, .099, r2);
+    vec2 q = rot(uT * 1.3) * p, q2 = rot(.785) * q;                                                                                 // 도는 네 갈래 칼날 별
+    float bl = exp(-abs(q.x) * 70. * (1. + abs(q.y) * 7.)) * smoothstep(.9, 0., abs(q.y)) + exp(-abs(q.y) * 70. * (1. + abs(q.x) * 7.)) * smoothstep(.9, 0., abs(q.x));
+    float bl2 = (exp(-abs(q2.x) * 110. * (1. + abs(q2.y) * 9.)) * smoothstep(.45, 0., abs(q2.y)) + exp(-abs(q2.y) * 110. * (1. + abs(q2.x) * 9.)) * smoothstep(.45, 0., abs(q2.x))) * .6;
+    vec3 ball = vec3(.004, 0., .012) + vec3(.4, .14, .9) * smoothstep(.018, 0., abs(r2 - .1)) + vec3(1.) * (exp(-length(p - vec2(-.032, .036)) * 150.) * 1.6 + exp(-length(p - vec2(.03, -.022)) * 240.) * .9);   // 검은 눈알 · 흰 반짝임 둘
+    col = mix(col, ball, inside * min(uSym, 1.)); col += (vec3(.72, .5, 1.) * (rays * .9 + lids) + vec3(.9, .78, 1.) * (bl * 1.05 + bl2 * .8) * (1. - inside * .95) * smoothstep(.06, .16, r2) + vec3(.4, .15, .9) * exp(-r2 * 7.) * .12 * (1. - inside)) * uSym; }
+  if (uStamp >= 0.){ float rr = length(c0), R = uStamp * 1.7; col += (vec3(1., .85, .7) * exp(-abs(rr - R) * 90.) * .8 + vec3(.6, .3, 1.) * exp(-abs(rr - R * .7) * 20.) * .2) * exp(-uStamp * 3.); }   // 봉인의 일격
   o = vec4(max(col, 0.), 10.); }`;
 function lazyProgram(vs, fs) {
   const gl = X.gl, mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
@@ -261,7 +274,7 @@ function drawOverlay(t, S) { SBK = DPR * TXS; tg.setTransform(1, 0, 0, 1, 0, 0);
 /* ═════════════════ 연출: 시각 t → 상태 (순수 함수) ═════════════════ */
 function state(t) {
   const S = { M: [0, 10 * ES, 0], focal: 1.3, focus: 400, aper: 0, eyeK: 1, port: new Float32Array(8), portP: new Float32Array(12), portK: new Float32Array(4), flash: 0, shock: -1, power: 0, crackK: 1, orbI: 1, fade: 0, shake: 0, rays: .1, bloom: .6,
-    zoomV: 1, rotV: 0, panY: 0, voidR: 0, diskK: 0, armK: 0, armA: 0, motes: 0, sealK: 0, stamp: -1, voidK: 0, orbK: 1, auraK: 1, wispK: 1, hornK: 1, crownK: 1, haloK: 1, topK: 1, ringK: 1, emerge: 0, trans: 0, spinA: t * .4, ringA: t * .05, skyRing: 1, bg: 0, iringK: 0, starK: 0, ieyeK: 0, dread: 0, light: 0, hail: 0, spin: 0 };
+    zoomV: 1, rotV: 0, panY: 0, sym: 0, symS: 1, back: 1, voidR: 0, diskK: 0, armK: 0, armA: 0, motes: 0, sealK: 0, stamp: -1, voidK: 0, orbK: 1, auraK: 1, wispK: 1, hornK: 1, crownK: 1, haloK: 1, topK: 1, ringK: 1, emerge: 0, trans: 0, spinA: t * .4, ringA: t * .05, skyRing: 1, bg: 0, iringK: 0, starK: 0, ieyeK: 0, dread: 0, light: 0, hail: 0, spin: 0 };
   const boltP = (lo, hi) => BOLTS.slice(lo, hi).reduce((m, tb) => Math.max(m, pulse(t, tb, .01, .22) * (Math.floor((t - tb) * 30) % 3 !== 1 ? 1 : .3)), 0);
   S.fade = seg(t, T.END - .6, T.END - .1);
   if (t < T.REVEAL) {                                                                                                                   // 인트로
@@ -278,9 +291,11 @@ function state(t) {
     S.armK = eOut(seg(t, T.S2 - .3, T.S2 + 1.)); S.armA = t * .35; S.motes = eInOut(seg(t, T.S2 + .1, T.S3 + .6));
     S.eyeK = eOut(seg(t, T.S2 + .7, T.S2 + 1.1)) * (1 - eIn(seg(t, T.S3 - .3, T.S3))) + .9 * eOut(seg(t, T.TITLE + .6, T.TITLE + 1.4));
     S.crownK = eOut(seg(t, T.S3, T.S3 + 1.3)); S.haloK = eInOut(seg(t, T.S3 + .4, T.S3 + 1.7)); S.starK = eOut(seg(t, T.S3 + .2, T.S3 + .7)) + 1.2 * pulse(t, T.TITLE, .02, .9);
-    S.sealK = eInOut(seg(t, T.HERO, T.TITLE)); S.stamp = t >= T.TITLE ? t - T.TITLE : -1;
-    S.flash = Math.max(3.2 * (1 - eOut(seg(t, T.REVEAL, T.REVEAL + .6))), .5 * boltP(12, 16), 1.1 * pulse(t, T.TITLE, .01, .5));
-    S.shake = Math.max(pulse(t, T.REVEAL, .01, .8), .3 * boltP(12, 16), .7 * pulse(t, T.TITLE, .01, .6));
+    S.sealK = eInOut(seg(t, T.S3 + 1.2, T.HERO)); let sj = -1; SYMS.forEach((p, i) => { if (t >= p) sj = i; }); S.stamp = sj >= 0 ? t - SYMS[sj] : -1;
+    if (sj >= 0) { const p = SYMS[sj], nx = SYMS[sj + 1]; S.sym = eOut(seg(t, p, p + .25)) * (nx ? 1 - .7 * eInOut(seg(t, p + .4, nx - .02)) : 1); S.symS = 1 + .7 * (1 - eOut(seg(t, p, p + .35))); }   // 세 번 뜨는 상징
+    S.back = 1 - .9 * eOut(seg(t, T.HERO - .1, T.HERO + .3));
+    S.flash = Math.max(3.2 * (1 - eOut(seg(t, T.REVEAL, T.REVEAL + .6))), .5 * boltP(12, 16), SYMS.reduce((m, p, i) => Math.max(m, (.9 + .2 * i) * pulse(t, p, .01, .3)), 0));
+    S.shake = Math.max(pulse(t, T.REVEAL, .01, .8), .3 * boltP(12, 16), SYMS.reduce((m, p, i) => Math.max(m, (.6 + .2 * i) * pulse(t, p, .01, .5)), 0));
     let zv, rv, py = 0;                                                                                                               // 2D 보기: 확대 · 회전 · 위로 밀기
     if (t < T.S2) { const k = eOut(seg(t, T.REVEAL, T.S2)); zv = lerp(1.4, 1.1, k); rv = .15 * k; }                                       // 드러난 공허
     else if (t < T.S3) { const k = eInOut(seg(t, T.S2, T.S3)); zv = lerp(.98, .9, k); rv = lerp(-.25, -.1, k); }                          // 지배
@@ -297,7 +312,7 @@ function render(t) {
   drawOverlay(t, S); X.upload(txtTex, tcv, true); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
   if (intro) { const pr = P.intro(), u = pr.u; X.pass(pr, TG, () => { gl.uniform2f(u.uRes, sw, sh); for (const [n, v] of [["uT", t], ["uBG", S.bg], ["uRingA", S.ringA], ["uRingK", S.iringK], ["uStarK", S.starK], ["uEyeK", S.ieyeK], ["uDread", S.dread], ["uLight", S.light], ["uHail", S.hail]]) if (u[n] != null) gl.uniform1f(u[n], v); if (u.uRunes != null) X.bindTex(6, runeTex, u.uRunes); }); }
   else { const pr = P.sigil(), u = pr.u; X.pass(pr, TG, () => { gl.uniform2f(u.uRes, sw, sh);
-    for (const [n, v] of [["uT", t], ["uZoomV", S.zoomV], ["uRotV", S.rotV], ["uPanY", S.panY], ["uVoidR", S.voidR], ["uSwirlK", S.diskK], ["uArmK", S.armK], ["uMotes", S.motes], ["uEyeK", S.eyeK], ["uCrownK", S.crownK], ["uHaloK", S.haloK], ["uStarK", S.starK], ["uSealK", S.sealK], ["uStamp", S.stamp]]) if (u[n] != null) gl.uniform1f(u[n], v);
+    for (const [n, v] of [["uT", t], ["uZoomV", S.zoomV], ["uRotV", S.rotV], ["uPanY", S.panY], ["uVoidR", S.voidR], ["uSwirlK", S.diskK], ["uArmK", S.armK], ["uMotes", S.motes], ["uEyeK", S.eyeK], ["uCrownK", S.crownK], ["uHaloK", S.haloK], ["uStarK", S.starK], ["uSealK", S.sealK], ["uStamp", S.stamp], ["uSym", S.sym], ["uSymS", S.symS], ["uBack", S.back]]) if (u[n] != null) gl.uniform1f(u[n], v);
     if (u.uRunes != null) X.bindTex(6, runeTex, u.uRunes); }); }
   const lp = [Wd / 2, Hd / 2 - (intro ? 0 : S.panY * Hd / 2)], bloomTex = X.bloom(TG.tex, 1.1), raysTex = X.rays(lp ? clamp(lp[0] / Wd) : .5, lp ? clamp(1 - lp[1] / Hd) : .9, .92), r0 = rng(Math.floor(t * 60)), hit = S.shake;
   X.pass(P.final(), null, (u2) => { X.bindTex(0, TG.tex, u2.uScene); X.bindTex(1, bloomTex, u2.uBloom); X.bindTex(2, txtTex, u2.uTxt); X.bindTex(3, raysTex, u2.uRays); gl.uniform2f(u2.uRes, pw, ph); gl.uniform1f(u2.uT, t);

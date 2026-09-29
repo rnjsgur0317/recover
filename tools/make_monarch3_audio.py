@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """MONARCH V3 음원 — 직접 합성한 오리지널(결과 mp3 는 로컬 전용).
-흐름(초): 0.5 어둠 속 계수기(팀파니 눈금 · 속삭임) → 7.8 번개 → 10.4 섬광 · 별 → 11.0 만세 셋 → 13.6 섬광 → 13.8 모나크(오르간 · 합창) → 20.6 마지막 화음 → 26 끝
+흐름(초): 0.5 어둠 속 계수기(팀파니 눈금 · 속삭임) → 7.8 번개 → 10.4 섬광 · 별 → 11.0 만세 셋 → 13.6 섬광 → 13.8 공허(오르간 · 합창) → 20.6 · 21.3 · 22.0 상징의 일격 셋 → 22.6 이름 → 26 끝
 페이지(monarch3_gl.html)의 시각표와 같은 값을 쓴다."""
 import os, subprocess
 import numpy as np
@@ -10,7 +10,7 @@ SR, END = 44100, 26.0
 N = int(END * SR)
 PUB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public") + os.sep
 rs = np.random.RandomState(11)
-T = dict(BG=.5, POP=1.0, CNT=1.4, W0=2.0, LIGHT=7.8, ZERO=10.2, FLASH1=10.4, HAIL=11.0, FLASH2=13.6, REVEAL=13.8, S2=16.6, S3=18.6, HERO=20.6, TITLE=21.2)
+T = dict(BG=.5, POP=1.0, CNT=1.4, W0=2.0, LIGHT=7.8, ZERO=10.2, FLASH1=10.4, HAIL=11.0, FLASH2=13.6, REVEAL=13.8, S2=16.6, S3=18.6, HERO=20.6, TITLE=22.6)
 def S(t): return int(round(t * SR))
 def bp(lo, hi, x, order=2): return sosfilt(butter(order, [lo, hi], "bandpass", fs=SR, output="sos"), x)
 def lp(f, x, order=2): return sosfilt(butter(order, f, "lowpass", fs=SR, output="sos"), x)
@@ -118,6 +118,8 @@ for tb in BOLTS[12:]: add(FX, thunder(.5, 2.5, int(tb * 10)), tb, -.5 + rs.rand(
 add(M, bell(mid(61), .3), T["S3"], -.3); add(M, bell(mid(68), .25), T["S3"] + .5, .3)
 add(M, organ([25, 37, 44, 49, 52, 56, 61], 5., .55, att=.05, rel=2.4), T["HERO"]); add(M, choir([61, 64, 68, 73, 75], 5., .5, att=.08, rel=2.4), T["HERO"])
 add(M, brass([37, 44, 49, 56], 4., .7, att=.03, rel=2.2, bright=1.), T["HERO"]); add(M, gong(1.0, 5.), T["HERO"]); add(M, taiko(1.2, 46), T["HERO"])
+for i, tp in enumerate((21.3, 22.0)):                                                                   # 상징이 두 번 더 뜬다(20.6 의 일격과 합쳐 셋)
+    add(M, taiko(1.0 + .1 * i, 46), tp); add(M, brass([37 + 2 * i, 44 + 2 * i, 49 + 2 * i, 56 + 2 * i], 1.0, .8 + .1 * i, att=.02, rel=.6, bright=1.1), tp); add(M, gong(.55 + .1 * i, 3.), tp); add(FX, thunder(.55, 2.5, 40 + i), tp)
 add(M, bell(mid(73), .35), T["TITLE"], .2); add(M, bell(mid(80), .22), T["TITLE"] + .02, -.2)
 
 def verb(buf, sec=3.6, dec=1.7, wet=.32, seed=3):                                  # 큰 궁전의 잔향
