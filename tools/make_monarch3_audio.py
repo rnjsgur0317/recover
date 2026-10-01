@@ -2,7 +2,7 @@
 """MONARCH V3 음원 — 직접 합성한 오리지널(결과 mp3 는 로컬 전용). 하이브리드 트랩 · 오케스트라: 펀치 있는 킥 · 808 · 스네어/클랩 · 하이햇 롤
 · 브라암 · 슈퍼소우 패드 · 아르페지오 · 합창 · 라이저 · 역재생 스웰 · 임팩트 · 사이드체인. 150 BPM(한 박 .4 초) — 13.8 에서 거꾸로 센 격자.
 흐름(초): 0.5 어둠(드론 · 심장 박동 킥이 계수기 눈금마다, 점점 빨라짐 · 속삭임) → 7.8 번개(스네어 롤 · 라이저) → 10.2 정적 → 10.4 섬광 일격
-→ 11.0 · 11.8 · 12.6 ALL HAIL(808 · 합창 외침) → 13.6 섬광 → 13.8 드롭(C#m · A · D · G#) → 16.6 아르페지오 → 20.2 빌드
+→ 11.0 · 11.8 · 12.6 ALL HAIL(808 · 합창 외침) → 13.6 섬광 → 13.8 드롭(C#m · A · D · G#, 리드 훅 · 워블 베이스) → 16.6 아르페지오 → 20.2 빌드
 → 20.6 · 21.4 · 22.2 상징의 일격 셋 → 23.0 이름(마지막 화음) → 26 끝. 페이지(monarch3_gl.html)의 시각표와 같은 값을 쓴다."""
 import os, subprocess
 import numpy as np
@@ -167,6 +167,67 @@ for i, (tp, r) in enumerate(zip(SYMS, (25, 26, 32))):
 t0 = T["TITLE"]; K_(t0, 1.2); add(BS, k808(mid(37), 2.6, 1.1, .3), t0); add(FX, impact(1.1), t0); add(DR, crash(1., 3.5), t0)
 add(MU, braam([37, 44, 49, 52], 3., 1.1), t0); addw(MU, supersaw([49, 52, 56, 61, 63], 3., .9, cut=3000, att=.02, rel=1.4), t0); add(MU, choir([61, 64, 68, 73, 75], 3., 1.1, att=.05, rel=1.4), t0)
 for i, m in enumerate((73, 80, 85)): add(MU, bell(mid(m), .3, 3.), t0 + .05 + i * .12, -.3 + .3 * i)
+
+# ══════ 더 꽉 차게: 현악 오스티나토 · 리드 멜로디 · 워블 베이스 · 셋잇단 하이햇 · 탐 필인 · 스터터 ══════
+from scipy.signal import lfilter
+def spic(m, v=1.):                                                     # 스타카토 현악
+    t = tt(.14); x = saw(mid(m) * t) + saw(mid(m) * 1.004 * t + .3) + .5 * saw(mid(m) * .997 * t + .7)
+    return bp(180, 5000, x) * np.exp(-t * 26) * np.minimum(1, t / .004) * v * .35
+def tom(f, v=1.):
+    t = tt(.5); return np.tanh((np.sin(2 * np.pi * np.cumsum(f * (1 + .6 * np.exp(-t * 20))) / SR) * np.exp(-t * 7) + bp(300, 3000, rs.randn(len(t))) * np.exp(-t * 30) * .3) * 1.6) * v
+def growl(f, dur, v=1., rate=5.):                                      # 으르렁거리는 워블 베이스(8분음마다 필터가 열렸다 닫힌다)
+    t = tt(dur); x = saw(f * t) + saw(f * 1.006 * t + .3) + .6 * np.sign(np.sin(2 * np.pi * f * .5 * t)); lfo = .5 + .5 * np.sin(2 * np.pi * rate * t - np.pi / 2)
+    out = np.zeros(len(t)); zi = None
+    for i in range(0, len(t), 256):
+        so = _sos("lowpass", 120 + 2200 * lfo[i] ** 2)
+        if zi is None: zi = np.zeros((so.shape[0], 2))
+        out[i:i + 256], zi = sosfilt(so, x[i:i + 256], zi=zi)
+    return np.tanh(out * 2.2) * env(len(t), .005, .05) * v * .32
+def lead(seq, step, v=1.):                                             # 슈퍼소우 리드: 레가토 · 포르타멘토 · 비브라토
+    n = int((len(seq) * step + .35) * SR); f = np.zeros(n); g = np.zeros(n); last = mid(seq[0] or 60)
+    for k, m in enumerate(seq):
+        i0, i1 = int(k * step * SR), int((k + 1) * step * SR)
+        if m is not None: last = mid(m); g[i0:i1 - int(.012 * SR)] = 1
+        f[i0:i1] = last
+    f[int(len(seq) * step * SR):] = last; a = np.exp(-1 / (.025 * SR)); f = lfilter([1 - a], [1, -a], f)          # 음 사이를 미끄러진다
+    f[:int(.03 * SR)] = mid(seq[0] or 60); t = np.arange(n) / SR; ph = np.cumsum(f * (1 + .007 * np.sin(2 * np.pi * 5.5 * t))) / SR
+    x = sum(saw(ph * 2 ** (d / 12) + rs.rand()) for d in (-.15, -.07, 0, .07, .15)) / 5
+    ga, gr = np.exp(-1 / (.004 * SR)), np.exp(-1 / (.07 * SR))                                                  # 빠르게 열리고 천천히 닫히는 문
+    ge = np.maximum(lfilter([1 - gr], [1, -gr], g), lfilter([1 - ga], [1, -ga], g) * g)
+    return np.tanh(lp(6000, x) * ge * 1.6) * v * .45
+def gate(buf, t0, t1, step=.1, duty=.45):                              # 스터터: 16분음으로 끊어 친다
+    i0, i1 = S(t0), S(t1); tq = (np.arange(i1 - i0) / SR) % step; buf[i0:i1] *= np.where(tq < step * duty, 1., .08)[:, None]
+
+# 인트로: 2.0 부터 달리는 스타카토 현악(점점 커지고 밝아진다) · 7.8 부터 한 옥타브 위가 겹친다
+OST = [49, 49, 61, 49, 52, 49, 56, 50]; x = 2.0; k = 0
+while x < T["ZERO"] - .05:
+    u = (x - 2.0) / (T["ZERO"] - 2.0); add(MU, spic(OST[k % 8], .35 + .65 * u), x, .25 * np.sin(k));
+    if x >= T["LIGHT"]: add(MU, spic(OST[k % 8] + 12, .5), x, -.25 * np.sin(k))
+    x += .1; k += 1
+add(FX, riser(.4, .6)[::-1], T["FLASH1"] + .05)                       # 섬광 뒤로 떨어지는 소리
+# ALL HAIL: 매 박 킥 · 셋잇단 하이햇 · 808 미끄럼
+for n_ in range(7):
+    tb = T["HAIL"] + n_ * .4
+    if all(abs(tb - h) > .05 for h in HAILS): K_(tb, .75); add(BS, k808(mid(37 + [0, 0, 1, 1, 3, 3, 3][n_]), .3, .7, .6), tb)
+x = T["HAIL"]; k = 0
+while x < 13.0 - .01:
+    if k % 6 >= 3: add(DR, hat(.3), x, -.3)
+    x += .4 / 3; k += 1
+# 드롭: 리드 멜로디(8분음) · 워블 베이스 · 탐 필인 · 마디 끝 스터터 · 거꾸로 스네어
+HOOK = [68, None, 68, 69, 68, 64, 61, None, 64, None, 64, 66, 68, 66, 64, 61, 66, None, 66, 69, 74, 73, 69, 66, 68, 72, 75, 72, 68, 72, 75, 80]
+add(MU, lead([m + 12 if m else None for m in HOOK], .2, 1.), T["REVEAL"], .1)
+for bi, (b0, root, ch) in enumerate(BARS):
+    add(BS, growl(mid(root + 12) if root < 30 else mid(root), BAR, .9), b0)
+    for j, f in enumerate((160, 130, 105, 85)): add(DR, tom(f, .7), b0 + 1.2 + j * .1, -.4 + .27 * j)
+    add(DR, snare(.4)[::-1], b0 + .8 - .45 + 1e-3)
+    if bi in (1, 3): gate(MU, b0 + 1.2, b0 + 1.6)
+# 상징 사이: 합창의 외침 · 킥 롤로 이어 붙인다
+for i, tp in enumerate(SYMS):
+    add(MU, choir([61 + 2 * i, 64 + 2 * i, 68 + 2 * i], .3, 1.1, (750, 1200, 2600), .01, .12), tp + .42)
+    for j in range(4):
+        tq = tp + .4 + j * .1
+        if tq < T["TITLE"] - .05: K_(tq, .45 + .15 * j)
+add(MU, lead([73, 75, 76, 80, 85], .2, .9), T["TITLE"] + .1, -.1)          # 마지막: 훅의 마무리
 
 # ── 믹스: 사이드체인 · 잔향 · 마스터 ──
 KE = np.zeros(N)
