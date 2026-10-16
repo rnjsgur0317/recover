@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
-"""MONARCH V3 음원 — 직접 합성한 오리지널(결과 mp3 는 로컬 전용). 하이브리드 트랩 · 오케스트라: 펀치 있는 킥 · 808 · 스네어/클랩 · 하이햇 롤
-· 브라암 · 슈퍼소우 패드 · 아르페지오 · 합창 · 라이저 · 역재생 스웰 · 임팩트 · 사이드체인. 150 BPM(한 박 .4 초) — 13.8 에서 거꾸로 센 격자.
-흐름(초): 0.5 어둠(드론 · 심장 박동 킥이 계수기 눈금마다, 점점 빨라짐 · 속삭임) → 7.8 번개(스네어 롤 · 라이저) → 10.2 정적 → 10.4 섬광 일격
-→ 11.0 · 11.8 · 12.6 ALL HAIL(808 · 합창 외침) → 13.6 섬광 → 13.8 드롭(C#m · A · D · G#, 리드 훅 · 워블 베이스) → 16.6 아르페지오 → 20.2 빌드
-→ 20.6 · 21.4 · 22.2 상징의 일격 셋 → 23.0 이름(마지막 화음) → 26 끝. 페이지(monarch3_gl.html)의 시각표와 같은 값을 쓴다."""
+"""MONARCH V3 음원 — 노래가 아닌 영화식 사운드 디자인. 실제 녹음 효과음(Pixabay, 상업적 이용 가능 · 출처 표기 불필요)을
+장면의 사건에 맞춰 놓는다. 원본은 tools/src_media/monarch3_sfx/ (git 제외), 결과 public/monarch3_cut.mp3 도 로컬 전용.
+흐름(초): 0.5 어둠의 울림 · 블랙홀 웅웅거림 → 1.4 ~ 10.2 계수기 눈금마다 실제 심장 박동(점점 빨라짐) · 시계 · 말마다 속삭임
+→ 7.8 번개 · 역재생 심벌이 차오름 → 10.2 정적 → 10.4 거대한 일격(임팩트 · 브라암 · 서브 드롭) · 별의 반짝임
+→ 11.0 · 11.8 · 12.6 합창 타격(한 번마다 높아짐) → 13.6 휘익 · 일격 → 13.8 블랙홀 임팩트(공허) → 16.6 휘익 · 반짝이는 알갱이
+→ 18.6 왕관: 마법 · 브라암 → 20.6 · 21.4 · 22.2 상징의 일격 셋(점점 커짐) → 23.0 이름: 종 · 합창의 끝 → 26 끝.
+페이지(monarch3_gl.html)의 시각표와 같은 값을 쓴다."""
 import os, subprocess
 import numpy as np
 from scipy.signal import fftconvolve, butter, sosfilt
 
 SR, END = 44100, 26.0
 N = int(END * SR)
-PUB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public") + os.sep
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SFX = os.path.join(ROOT, "tools", "src_media", "monarch3_sfx")
+PUB = os.path.join(ROOT, "public") + os.sep
 rs = np.random.RandomState(7)
 T = dict(BG=.5, POP=1.0, CNT=1.4, W0=2.0, LIGHT=7.8, ZERO=10.2, FLASH1=10.4, HAIL=11.0, FLASH2=13.6, REVEAL=13.8, S2=16.6, S3=18.6, HERO=20.6, TITLE=23.0)
 SYMS = [20.6, 21.4, 22.2]
@@ -20,228 +24,90 @@ BOLTS = [7.8, 8.25, 8.6, 8.9, 9.15, 9.4, 9.6, 9.78, 9.95, 10.08, 10.2, 10.3, 14.
 HAILS = [T["HAIL"] + k * .8 for k in range(3)]
 
 def S(t): return int(round(t * SR))
-def _sos(kind, f, o=2): return butter(o, f, kind, fs=SR, output="sos")
-def lp(f, x, o=2): return sosfilt(_sos("lowpass", min(f, SR * .45), o), x)
-def hp(f, x, o=2): return sosfilt(_sos("highpass", f, o), x)
-def bp(lo, hi, x, o=2): return sosfilt(_sos("bandpass", [lo, min(hi, SR * .45)], o), x)
-def tt(d): return np.arange(int(d * SR)) / SR
-def env(n, a, r): t = np.arange(n) / SR; d = n / SR; return np.minimum(1, t / max(a, 1e-4)) * np.clip((d - t) / max(r, 1e-4), 0, 1)
-def add(buf, x, t, pan=0., v=1.):
-    i = S(t)
-    if i >= N or i + len(x) <= 0: return
+def load(name):                                                         # 효과음을 스테레오 float 로
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", os.path.join(SFX, name + ".mp3"), "-f", "f32le", "-ac", "2", "-ar", str(SR), "-"], capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.float32).reshape(-1, 2).astype(np.float64)
+A = {n: load(n) for n in ("drone1", "drone2", "hole1", "hole2", "clock", "heart2", "whisper1", "whisper2", "thunder1", "thunder2", "rev1", "rev2", "riser1",
+                          "impact1", "impact2", "braam1", "braam2", "subdrop", "shimmer1", "shimmer2", "choir1", "choir2", "whoosh", "glitch", "bell")}
+def db(v): return 10 ** (v / 20)
+def cut(x, a=0., b=None, fi=.005, fo=.05):                              # 구간을 잘라 앞뒤를 부드럽게
+    y = x[S(a): S(b) if b else len(x)].copy(); n = len(y); i, o = min(n, S(fi)), min(n, S(fo))
+    if i: y[:i] *= np.linspace(0, 1, i)[:, None]
+    if o: y[n - o:] *= np.linspace(1, 0, o)[:, None]
+    return y
+def pitch(x, semi):                                                     # 재생 속도로 음높이 바꾸기
+    if not semi: return x
+    r = 2 ** (semi / 12); idx = np.arange(0, len(x) - 1, r); return np.stack([np.interp(idx, np.arange(len(x)), x[:, c]) for c in (0, 1)], 1)
+def pan(x, p): return x * np.array([np.sqrt(.5 - p * .5), np.sqrt(.5 + p * .5)]) * np.sqrt(2)
+MIX = np.zeros((N, 2)); BED = np.zeros((N, 2))
+def put(x, t, g=0., p=0., bus=None):                                    # t 에 소리의 '시작'을 놓는다
+    buf = MIX if bus is None else bus; i = S(t); x = pan(x, p) * db(g)
     if i < 0: x = x[-i:]; i = 0
-    j = min(N, i + len(x)); x = x[: j - i] * v; buf[i:j, 0] += x * np.sqrt(.5 - pan * .5); buf[i:j, 1] += x * np.sqrt(.5 + pan * .5)
-def addw(buf, x, t, v=1., d=.013): add(buf, x, t, -.4, v); add(buf, x, t + d, .4, v)     # 넓게: 한쪽을 살짝 늦춘다
-mid = lambda m: 440 * 2 ** ((m - 69) / 12)
-def saw(ph): return 2 * (ph % 1) - 1
+    j = min(N, i + len(x))
+    if j > i: buf[i:j] += x[: j - i]
+def hit(x, t, onset, g=0., p=0., bus=None): put(x, t - onset, g, p, bus)   # 소리의 '때리는 순간(onset)'을 t 에 맞춘다
 
-# ── 소리 ──
-def kick(v=1., tone=50):
-    t = tt(.55); x = np.sin(2 * np.pi * np.cumsum(tone + 160 * np.exp(-t * 38)) / SR) * np.exp(-t * 6.5) + hp(2000, rs.randn(len(t))) * np.exp(-t * 320) * .35
-    return np.tanh(x * 1.9) * v
-def k808(f, dur, v=1., glide=0.):                                   # 808: 머리에서 살짝 높게 → 음, 긴 꼬리 · 포화
-    t = tt(dur + .25); fr = f * (1 + glide * np.exp(-t * 9)) * (1 + .9 * np.exp(-t * 60)); ph = np.cumsum(fr) / SR
-    x = np.sin(2 * np.pi * ph) + .22 * np.sin(4 * np.pi * ph); e = np.minimum(1, t / .004) * np.exp(-t * .8) * np.clip((dur + .25 - t) / .25, 0, 1)
-    return np.tanh(x * e * 2.8) * .8 * v
-def snare(v=1.):
-    t = tt(.45); body = np.sin(2 * np.pi * np.cumsum(185 + 60 * np.exp(-t * 50)) / SR) * np.exp(-t * 22) * .7
-    return np.tanh((body + bp(1200, 9000, rs.randn(len(t))) * np.exp(-t * 16) * .9) * 1.6) * v
-def clap(v=1.):
-    t = tt(.4); e = sum(np.exp(-np.maximum(t - d, 0) * 120) * (t >= d) for d in (0, .011, .022, .034)) + np.exp(-t * 13) * .5 * (t >= .034)
-    return np.tanh(bp(900, 3500, rs.randn(len(t))) * e * 1.5) * v * .8
-def hat(v=1., op=False): t = tt(.5 if op else .08); return hp(7500, rs.randn(len(t)), 3) * np.exp(-t * (7 if op else 70)) * v * .5
-def crash(v=1., d=3.): t = tt(d); n = rs.randn(len(t)); return (hp(3500, n) * .8 + bp(5000, 12000, n) * .5) * np.exp(-t * 1.3) * v * .5
-def impact(v=1.):
-    t = tt(3.); boom = np.sin(2 * np.pi * np.cumsum(28 + 90 * np.exp(-t * 5)) / SR) * np.exp(-t * 1.1) * 1.4
-    return np.tanh((boom + lp(1200, rs.randn(len(t))) * np.exp(-t * 3) * .8 + hp(2500, rs.randn(len(t))) * np.exp(-t * 9) * .5) * 1.5) * v
-def braam(notes, dur, v=1.):                                         # 거대한 금관 같은 톱니 뭉치 · 열리는 필터 · 일그러짐
-    t = tt(dur); x = np.zeros(len(t))
-    for m in notes:
-        for d in np.linspace(-.18, .18, 7): x += saw(mid(m) * 2 ** (d / 12) * t + rs.rand())
-    e = np.minimum(1, t / .03) * np.exp(-t * .9); out = np.zeros(len(t)); zi = None
-    for i in range(0, len(t), 512):
-        so = _sos("lowpass", 150 + 4000 * e[i] ** 1.5)
-        if zi is None: zi = np.zeros((so.shape[0], 2))
-        out[i:i + 512], zi = sosfilt(so, x[i:i + 512], zi=zi)
-    out += np.sin(2 * np.pi * mid(notes[0] - 12) * t) * 3
-    return np.tanh(out * e * .35) * v
-def supersaw(notes, dur, v=1., cut=2200, att=.2, rel=.5):
-    t = tt(dur); x = np.zeros(len(t))
-    for m in notes:
-        for d in np.linspace(-.22, .22, 7): x += saw(mid(m) * 2 ** (d / 12) * t + rs.rand())
-    return lp(cut, x) * env(len(t), att, rel) * v / len(notes) / 7 * 2.4
-def pluck(m, v=1., dur=.35):
-    t = tt(dur); f = mid(m); x = np.zeros(len(t))
-    for k in range(1, 18):
-        if f * k > 15000: break
-        x += np.sin(2 * np.pi * f * k * t + k) / k * np.exp(-t * (6 + k * 4.5))
-    return x * v * .6
-def choir(notes, dur, v, vowel=(700, 1150, 2600), att=.3, rel=.6):
-    t = tt(dur); src = np.zeros(len(t))
-    for m in notes:
-        for k in range(6):
-            f = mid(m) * 2 ** (rs.uniform(-.12, .12) / 12); vib = 1 + .006 * np.sin(2 * np.pi * (5 + rs.rand()) * t + rs.rand() * 6); src += saw(np.cumsum(f * vib) / SR + rs.rand())
-    x = bp(vowel[0] * .75, vowel[0] * 1.3, src) + .8 * bp(vowel[1] * .8, vowel[1] * 1.25, src) + .35 * bp(vowel[2] * .85, vowel[2] * 1.2, src) + lp(500, src) * .15
-    return x * env(len(t), att, rel) * v / (len(notes) * 6) * 3.2
-def riser(d, v=1.):
-    t = tt(d); u = t / d; return lp(9000, hp(600, rs.randn(len(t))) * u ** 2.2 * .6 + saw(np.cumsum(90 * 2 ** (5 * u ** 1.6)) / SR) * u ** 2 * .25) * v
-def swell(d, v=1.): t = tt(d); return (bp(300, 7000, rs.randn(len(t))) * np.exp(-t * 4))[::-1] * v   # 역재생 스웰
-def bell(f, v, dur=3.):
-    t = tt(dur); x = sum(np.sin(2 * np.pi * f * r * t) * a * np.exp(-t * dc) for r, a, dc in ((.5, .5, .6), (1, 1, .9), (1.19, .45, 1.4), (1.56, .5, 1.1), (2, .35, 1.6), (2.51, .3, 2.2)))
-    return x * np.minimum(1, t / .002) * v
-def tick(v=1.): t = tt(.05); return (hp(3000, rs.randn(len(t))) * np.exp(-t * 400) + np.sin(2 * np.pi * 2100 * t) * np.exp(-t * 200) * .5) * v
-def crack(v=1.):
-    t = tt(1.6); return (hp(1800, rs.randn(len(t))) * np.exp(-t * 20) * .8 + lp(180, rs.randn(len(t))) * np.exp(-t * 2.2) * 2.5) * v
-def whisper(v=1.):
-    t = tt(.9); nz = rs.randn(len(t)); f1 = 500 + 900 * rs.rand()
-    return (bp(f1 * .8, f1 * 1.3, nz) + .7 * bp(1800, 3200, nz) + .4 * bp(4000, 7000, nz)) * np.sin(np.pi * t / .9) ** 2 * (.6 + .4 * np.sin(2 * np.pi * (5 + 3 * rs.rand()) * t)) * v
-
-DR, BS, MU, FX = (np.zeros((N, 2)) for _ in range(4)); KICKS = []
-def K_(t, v=1., tone=50): add(DR, kick(v, tone), t); KICKS.append((t, v))
-tA = np.arange(N) / SR
-
-# ── 0.5 ~ 10.4 어둠 속의 계수 ──
-drone = np.sin(2 * np.pi * mid(25) * tA) * .55 + np.sin(2 * np.pi * mid(37) * tA) * .18
-drone *= np.clip((tA - T["BG"]) / 1.5, 0, 1) * np.clip((T["ZERO"] - tA) / .03, 0, 1); BS += drone[:, None] * .5
-addw(MU, supersaw([37, 40, 44, 49], 5.2, .5, cut=500, att=2.5, rel=.4), T["BG"])
-addw(MU, supersaw([37, 40, 44, 49, 50], 4.9, .6, cut=1300, att=.4, rel=.05), 5.3)                    # 반음이 부딪히며 필터가 열린다
-st = tt(5.2); addw(MU, (np.sin(2 * np.pi * mid(73) * st) + np.sin(2 * np.pi * mid(74) * st)) * np.clip(st / 5, 0, 1) ** 2 * .05, 5.0)
-for k, tk in enumerate(TICKS[:-1]):                                     # 심장 박동 킥(쿵-쿵)과 시계 딸깍 — 눈금이 빨라질수록 몰아친다
-    v = .45 + .5 * k / K; K_(tk, v, 46); add(DR, kick(v * .5, 46), tk + .13); add(FX, tick(.35), tk + .01, -.6 + 1.2 * rs.rand())
-for tw in WORDS: add(FX, whisper(.5), tw, -.8 + 1.6 * rs.rand()); add(MU, bell(mid(73 + int(rs.choice([0, 3, 7, -2]))), .05, 2.), tw + .05, -.5 + rs.rand())
-for i, tb in enumerate(BOLTS[:12]): add(FX, crack(.35 + .45 * i / 11), tb, -.6 + 1.2 * rs.rand())
-tr, gap = T["LIGHT"], .2                                               # 7.8 ~ 10.2 점점 빨라지는 스네어 롤 · 라이저
-while tr < T["ZERO"] - .02: add(DR, snare(.2 + .8 * (tr - T["LIGHT"]) / 2.4), tr); tr += gap; gap = max(.028, gap * .9)
-add(FX, riser(T["ZERO"] - T["LIGHT"], 1.1), T["LIGHT"])
-# 10.2 정적 → 10.4 섬광: 일격 · 브라암 · 808
-add(FX, impact(1.3), T["FLASH1"]); add(MU, braam([37, 44, 49], 2.2, 1.2), T["FLASH1"]); add(DR, crash(.9), T["FLASH1"]); add(BS, k808(mid(37), 1.3, 1.1, .3), T["FLASH1"]); K_(T["FLASH1"], 1.2)
-for i, m in enumerate((85, 88, 92, 97)): add(MU, bell(mid(m), .1, 2.5), T["FLASH1"] + .12 + i * .07, -.4 + .27 * i)
-add(FX, swell(.55, .6), T["HAIL"] - .55)
-
-# ── 11.0 ~ 13.6 ALL HAIL ──
+# ── 바닥에 깔리는 울림(공허 · 블랙홀) ──
+put(cut(A["drone2"], 0, 9.8, .8, 1.5), T["BG"], -6)                     # 어둠이 떠오른다
+put(cut(A["drone1"], 0, 6.8, .3, .05), T["ZERO"] - 6.8, -4)             # 10.2 를 향해 부풀다 뚝
+put(cut(A["hole1"], 8, 18., 1.5, .02), T["BG"] + .2, -1, 0, BED)        # 블랙홀 웅웅거림(앞부분)
+put(cut(A["hole1"], 30, 42.5, .2, 1.5), T["FLASH2"], 3, 0, BED)         # 공허가 드러난 뒤 더 크게
+put(cut(A["clock"], .0, 7.0, .5, .3), 1.2, -8)                          # 시계 째깍
+# ── 1.4 ~ 10.2 계수기 눈금마다 실제 심장 박동 ──
+hb = cut(A["heart2"], .1, 1.1, .002, .1)
+for k, tk in enumerate(TICKS[:-1]): hit(pitch(hb, -1 + 2 * k / K), tk, .18, -10 + 9 * k / K, .2 * np.sin(k))
+# ── 말이 떠오를 때마다 속삭임 ──
+for k, tw in enumerate(WORDS):
+    if k % 4 == 3: put(cut(A["whisper2"], .3, 2.5, .05, .4), tw, -9, -.7 + 1.4 * rs.rand())
+    else: s0 = 2 + rs.rand() * 22; put(cut(A["whisper1"], s0, s0 + 1.3, .08, .4), tw, -6, -.8 + 1.6 * rs.rand())
+# ── 7.8 번개 · 차오름 ──
+for i, tb in enumerate(BOLTS[:10]):                                     # 10.2 이후의 번개(10.2 · 10.3)는 정적을 위해 소리를 내지 않는다
+    th, on = (A["thunder1"], .6) if i % 2 == 0 else (A["thunder2"], .48)
+    hit(cut(th, 0, on + (2.5 if i == 0 else .9), .002, .35), tb, on, -12 + 7 * i / 9, -.6 + 1.2 * rs.rand())
+hit(cut(A["rev1"], 0, 5.0, .2, .01), T["ZERO"], 4.8, -3)                 # 역재생 심벌: 10.2 에 꼭대기
+put(cut(A["riser1"], .0, T["ZERO"] - T["LIGHT"], .3, .02), T["LIGHT"], -9)
+# 10.2 ~ 10.4 정적: 이 구간의 바닥 울림을 끊는다
+g = np.ones(N); i0, i1 = S(T["ZERO"]), S(T["FLASH1"]); g[i0:i1] = 0; g[i1:i1 + S(.4)] = np.linspace(0, 1, S(.4)); BED *= g[:, None]
+MIX[S(T["ZERO"] + .02): S(T["FLASH1"]) - S(.03)] *= .03                    # 섬광 직전 0.2 초는 거의 무음(이후에 놓는 일격은 영향 없음)
+# ── 10.4 섬광: 거대한 일격 → 별 ──
+hit(A["impact2"], T["FLASH1"], .02, -1); hit(cut(A["braam1"], 0, 5.), T["FLASH1"], .22, -2); hit(A["subdrop"], T["FLASH1"], .32, -4)
+put(cut(A["shimmer2"], .2, 3.2, .05, .8), T["FLASH1"] + .15, -6)        # 눈 모양 룬 뒤의 별
+# ── 11.0 · 11.8 · 12.6 ALL HAIL: 합창 타격(점점 높게) ──
 for i, h in enumerate(HAILS):
-    r = [25, 26, 28][i]; K_(h, 1.1); add(BS, k808(mid(r + 12), .7, 1.1, .35), h); add(DR, clap(1.), h); add(DR, crash(.5 + .2 * i, 2.), h)
-    ch = [r + 36, r + 39, r + 43, r + 48]; add(MU, choir(ch, .32, 1.2 + .2 * i, (750, 1200, 2600), .01, .15), h); add(MU, choir(ch, .55, 1.2 + .2 * i, (400, 2000, 2800), .01, .3), h + .34)
-    add(MU, braam([r + 12, r + 19, r + 24], .7, .9 + .1 * i), h)
-    add(DR, snare(.8), h + .4); add(DR, clap(.6), h + .4)
-x = 11.0
-while x < 13.0 - .01: add(DR, hat(.35 + .25 * ((round((x - 11.0) / .1)) % 2 == 0)), x, .3); x += .1
-tr, gap = 13.0, .1
-while tr < T["FLASH2"] - .03: add(DR, snare(.35 + .6 * (tr - 13.) / .6), tr); tr += gap; gap = max(.025, gap * .85)
-add(FX, riser(.6, 1.), 13.0); add(FX, swell(.5, .6), T["FLASH2"] - .5)
-add(FX, impact(1.2), T["FLASH2"]); add(DR, crash(.8), T["FLASH2"])
-
-# ── 13.8 ~ 20.2 드롭: C#m · A · D · G# ──
-BAR = 1.6
-BARS = [(13.8, 25, [49, 52, 56]), (15.4, 33, [45, 49, 52]), (17.0, 26, [50, 54, 57]), (18.6, 32, [44, 48, 51])]
-for bi, (b0, root, ch) in enumerate(BARS):
-    K_(b0, 1.15); K_(b0 + 1.0, .9); K_(b0 + 1.4, .55)
-    add(BS, k808(mid(root + 12), .85, 1.05, .25 if bi else .5), b0); add(BS, k808(mid(root + 12), .35, .9, .4), b0 + 1.0); add(BS, k808(mid(root + 24), .18, .6), b0 + 1.4)
-    add(DR, snare(.95), b0 + .8); add(DR, clap(.8), b0 + .8)
-    for s8 in range(8):
-        tq = b0 + s8 * .2
-        if s8 == 7:
-            for r3 in range(4): add(DR, hat(.3 + .1 * r3), tq + r3 * .05, .3)          # 마디 끝의 32분 롤
-        else: add(DR, hat(.45 if s8 % 2 == 0 else .3), tq, .3)
-    add(DR, hat(.35, True), b0 + .6, -.3); add(DR, hat(.3, True), b0 + 1.4, -.3)
-    add(DR, crash(.7 if bi == 0 else .45, 2.2), b0)
-    addw(MU, supersaw(ch + [ch[0] + 12], BAR + .1, .75, cut=2400 if bi < 2 else 3800, att=.02, rel=.1), b0)
-    add(MU, choir([c + 12 for c in ch], BAR, .7 + .15 * bi, att=.08, rel=.3), b0)
-    add(MU, braam([ch[0] - 12, ch[0] - 5, ch[0]], .45, .75), b0); add(MU, braam([ch[0] - 12, ch[0] - 5, ch[0]], .3, .55), b0 + 1.0)
-    if b0 + BAR > T["S2"]:                                               # 16.6 부터 16분 아르페지오
-        pat = [0, 1, 2, 3, 2, 1, 2, 3]; notes = ch + [ch[0] + 12]
-        for s16 in range(16):
-            tq = b0 + s16 * .1
-            if tq >= T["S2"] - .01: add(MU, pluck(notes[pat[s16 % 8]] + 12, .55 + .2 * (s16 % 4 == 0)), tq, .35 * np.sin(s16))
-add(FX, crash(.6), T["S2"]); add(FX, swell(.4, .5), T["S2"] - .4); add(DR, crash(.9), T["S3"]); add(MU, choir([56, 61, 64, 68], 1.6, .9, att=.05, rel=.4), T["S3"])
-tr = 20.2                                                                # 20.2 빌드
-while tr < T["HERO"] - .02: add(DR, snare(.45 + .5 * (tr - 20.2) / .4), tr); tr += .05
-add(FX, riser(.4, 1.2), 20.2)
-
+    hit(pitch(A["choir2"], 2 * i), h, .06, -1 + i, .15 * (i - 1)); hit(A["impact1"], h, .08, -5 + i)
+put(cut(A["choir1"], .4, 3.0, .3, .3), T["HAIL"], -12)                  # 뒤에 깔리는 큰 성당의 합창
+hit(cut(A["rev2"], 0, 3.1, .3, .01), T["FLASH2"], 3.08, -2)             # 13.6 을 향해 차오르는 역재생 크래시
+put(cut(A["glitch"], .2, 2.1, .01, .1), 12.9, -4, .3)
+# ── 13.6 섬광 → 13.8 공허 ──
+hit(A["whoosh"], T["FLASH2"], .88, -3); hit(cut(A["braam2"], 0, 3.9), T["FLASH2"], .02, -5)
+hit(A["hole2"], T["REVEAL"], .18, 0); hit(A["subdrop"], T["REVEAL"], .32, -6)
+# ── 16.6 지배: 휘익 · 빨려드는 빛 알갱이 ──
+hit(A["whoosh"], T["S2"], .88, -4, -.3); put(cut(A["shimmer1"], 4., 9.5, .6, .8), T["S2"] - .1, -6)
+hit(cut(A["thunder2"], 0, 3.5, .002, .8), BOLTS[13], .48, -13, .5)
+# ── 18.6 왕관이라는 개념 ──
+put(cut(A["shimmer2"], .2, 3.5, .05, 1.), T["S3"], -5); hit(cut(A["braam2"], 0, 2.6, .002, .8), T["S3"], .02, -10)
+hit(cut(A["thunder1"], 0, 3.5, .002, .8), BOLTS[14], .6, -14, -.5)
+hit(cut(A["rev2"], 0, 3.1, .3, .01), T["HERO"], 3.08, -5)
 # ── 20.6 · 21.4 · 22.2 상징의 일격 셋 ──
-for i, (tp, r) in enumerate(zip(SYMS, (25, 26, 32))):
-    v = 1. + .15 * i; K_(tp, 1.3); add(BS, k808(mid(r + 12), .75, 1.25, .45), tp); add(FX, impact(v), tp); add(DR, crash(.7 + .15 * i, 2.5), tp)
-    add(MU, braam([r + 12, r + 19, r + 24, r + 28], .75, v), tp); add(MU, choir([r + 36, r + 40, r + 43, r + 48], .6, 1.3 * v, (650, 1100, 2600), .01, .35), tp)
-    if i < 2: add(FX, swell(.35, .45), tp + .8 - .35)
-# 23.0 이름: 마지막 화음
-t0 = T["TITLE"]; K_(t0, 1.2); add(BS, k808(mid(37), 2.6, 1.1, .3), t0); add(FX, impact(1.1), t0); add(DR, crash(1., 3.5), t0)
-add(MU, braam([37, 44, 49, 52], 3., 1.1), t0); addw(MU, supersaw([49, 52, 56, 61, 63], 3., .9, cut=3000, att=.02, rel=1.4), t0); add(MU, choir([61, 64, 68, 73, 75], 3., 1.1, att=.05, rel=1.4), t0)
-for i, m in enumerate((73, 80, 85)): add(MU, bell(mid(m), .3, 3.), t0 + .05 + i * .12, -.3 + .3 * i)
-
-# ══════ 더 꽉 차게: 현악 오스티나토 · 리드 멜로디 · 워블 베이스 · 셋잇단 하이햇 · 탐 필인 · 스터터 ══════
-from scipy.signal import lfilter
-def spic(m, v=1.):                                                     # 스타카토 현악
-    t = tt(.14); x = saw(mid(m) * t) + saw(mid(m) * 1.004 * t + .3) + .5 * saw(mid(m) * .997 * t + .7)
-    return bp(180, 5000, x) * np.exp(-t * 26) * np.minimum(1, t / .004) * v * .35
-def tom(f, v=1.):
-    t = tt(.5); return np.tanh((np.sin(2 * np.pi * np.cumsum(f * (1 + .6 * np.exp(-t * 20))) / SR) * np.exp(-t * 7) + bp(300, 3000, rs.randn(len(t))) * np.exp(-t * 30) * .3) * 1.6) * v
-def growl(f, dur, v=1., rate=5.):                                      # 으르렁거리는 워블 베이스(8분음마다 필터가 열렸다 닫힌다)
-    t = tt(dur); x = saw(f * t) + saw(f * 1.006 * t + .3) + .6 * np.sign(np.sin(2 * np.pi * f * .5 * t)); lfo = .5 + .5 * np.sin(2 * np.pi * rate * t - np.pi / 2)
-    out = np.zeros(len(t)); zi = None
-    for i in range(0, len(t), 256):
-        so = _sos("lowpass", 120 + 2200 * lfo[i] ** 2)
-        if zi is None: zi = np.zeros((so.shape[0], 2))
-        out[i:i + 256], zi = sosfilt(so, x[i:i + 256], zi=zi)
-    return np.tanh(out * 2.2) * env(len(t), .005, .05) * v * .32
-def lead(seq, step, v=1.):                                             # 슈퍼소우 리드: 레가토 · 포르타멘토 · 비브라토
-    n = int((len(seq) * step + .35) * SR); f = np.zeros(n); g = np.zeros(n); last = mid(seq[0] or 60)
-    for k, m in enumerate(seq):
-        i0, i1 = int(k * step * SR), int((k + 1) * step * SR)
-        if m is not None: last = mid(m); g[i0:i1 - int(.012 * SR)] = 1
-        f[i0:i1] = last
-    f[int(len(seq) * step * SR):] = last; a = np.exp(-1 / (.025 * SR)); f = lfilter([1 - a], [1, -a], f)          # 음 사이를 미끄러진다
-    f[:int(.03 * SR)] = mid(seq[0] or 60); t = np.arange(n) / SR; ph = np.cumsum(f * (1 + .007 * np.sin(2 * np.pi * 5.5 * t))) / SR
-    x = sum(saw(ph * 2 ** (d / 12) + rs.rand()) for d in (-.15, -.07, 0, .07, .15)) / 5
-    ga, gr = np.exp(-1 / (.004 * SR)), np.exp(-1 / (.07 * SR))                                                  # 빠르게 열리고 천천히 닫히는 문
-    ge = np.maximum(lfilter([1 - gr], [1, -gr], g), lfilter([1 - ga], [1, -ga], g) * g)
-    return np.tanh(lp(6000, x) * ge * 1.6) * v * .45
-def gate(buf, t0, t1, step=.1, duty=.45):                              # 스터터: 16분음으로 끊어 친다
-    i0, i1 = S(t0), S(t1); tq = (np.arange(i1 - i0) / SR) % step; buf[i0:i1] *= np.where(tq < step * duty, 1., .08)[:, None]
-
-# 인트로: 2.0 부터 달리는 스타카토 현악(점점 커지고 밝아진다) · 7.8 부터 한 옥타브 위가 겹친다
-OST = [49, 49, 61, 49, 52, 49, 56, 50]; x = 2.0; k = 0
-while x < T["ZERO"] - .05:
-    u = (x - 2.0) / (T["ZERO"] - 2.0); add(MU, spic(OST[k % 8], .35 + .65 * u), x, .25 * np.sin(k));
-    if x >= T["LIGHT"]: add(MU, spic(OST[k % 8] + 12, .5), x, -.25 * np.sin(k))
-    x += .1; k += 1
-add(FX, riser(.4, .6)[::-1], T["FLASH1"] + .05)                       # 섬광 뒤로 떨어지는 소리
-# ALL HAIL: 매 박 킥 · 셋잇단 하이햇 · 808 미끄럼
-for n_ in range(7):
-    tb = T["HAIL"] + n_ * .4
-    if all(abs(tb - h) > .05 for h in HAILS): K_(tb, .75); add(BS, k808(mid(37 + [0, 0, 1, 1, 3, 3, 3][n_]), .3, .7, .6), tb)
-x = T["HAIL"]; k = 0
-while x < 13.0 - .01:
-    if k % 6 >= 3: add(DR, hat(.3), x, -.3)
-    x += .4 / 3; k += 1
-# 드롭: 리드 멜로디(8분음) · 워블 베이스 · 탐 필인 · 마디 끝 스터터 · 거꾸로 스네어
-HOOK = [68, None, 68, 69, 68, 64, 61, None, 64, None, 64, 66, 68, 66, 64, 61, 66, None, 66, 69, 74, 73, 69, 66, 68, 72, 75, 72, 68, 72, 75, 80]
-add(MU, lead([m + 12 if m else None for m in HOOK], .2, 1.), T["REVEAL"], .1)
-for bi, (b0, root, ch) in enumerate(BARS):
-    add(BS, growl(mid(root + 12) if root < 30 else mid(root), BAR, .9), b0)
-    for j, f in enumerate((160, 130, 105, 85)): add(DR, tom(f, .7), b0 + 1.2 + j * .1, -.4 + .27 * j)
-    add(DR, snare(.4)[::-1], b0 + .8 - .45 + 1e-3)
-    if bi in (1, 3): gate(MU, b0 + 1.2, b0 + 1.6)
-# 상징 사이: 합창의 외침 · 킥 롤로 이어 붙인다
 for i, tp in enumerate(SYMS):
-    add(MU, choir([61 + 2 * i, 64 + 2 * i, 68 + 2 * i], .3, 1.1, (750, 1200, 2600), .01, .12), tp + .42)
-    for j in range(4):
-        tq = tp + .4 + j * .1
-        if tq < T["TITLE"] - .05: K_(tq, .45 + .15 * j)
-add(MU, lead([73, 75, 76, 80, 85], .2, .9), T["TITLE"] + .1, -.1)          # 마지막: 훅의 마무리
+    hit(cut(A["braam1"], 0, 2.6 if i < 2 else 6., .002, .6 if i < 2 else 1.5), tp, .22, -4 + 1.5 * i); hit(A["impact1"], tp, .08, -4 + i)
+    hit(pitch(A["choir2"], [0, 2, 5][i]), tp, .06, -6 + i)
+    if i == 2: hit(A["subdrop"], tp, .32, -3)
+hit(cut(A["thunder2"], 0, 4., .002, 1.), BOLTS[15], .48, -14, .4)
+# ── 23.0 이름: 종 · 합창의 마지막 ──
+hit(A["bell"], T["TITLE"], .16, -1); hit(A["bell"], T["TITLE"] + 1.6, .16, -9, .3)
+put(cut(A["choir1"], 8.6, 10.97, .4, 1.2), T["TITLE"] - .1, -6)
 
-# ── 믹스: 사이드체인 · 잔향 · 마스터 ──
-KE = np.zeros(N)
-for tk, v in KICKS:
-    i = S(tk); n = min(N - i, int(.35 * SR))
-    if n > 0: KE[i:i + n] = np.maximum(KE[i:i + n], np.exp(-np.arange(n) / SR * 11) * min(1, v))
-MU *= (1 - .55 * KE)[:, None]; FX *= (1 - .25 * KE)[:, None]
-def verb(buf, sec=2.8, dec=1.8, wet=.3, seed=3):
-    r = np.random.RandomState(seed); n = int(sec * SR); e = np.exp(-np.arange(n) / SR * dec); pre = np.zeros(int(.025 * SR))
-    L = np.concatenate([pre, lp(6000, r.randn(n) * e)]); R = np.concatenate([pre, lp(6000, r.randn(n) * e)])
-    out = buf.copy(); out[:, 0] += fftconvolve(buf[:, 0], L)[:N] * wet * .02; out[:, 1] += fftconvolve(buf[:, 1], R)[:N] * wet * .02; return out
-mix = verb(DR, .7, 6., .12, 5) + BS * .95 + verb(MU, 2.8, 1.8, .35, 3) * .8 + verb(FX, 2.2, 2.2, .25, 7) * .9
-mix[:int(.3 * SR)] *= np.linspace(0, 1, int(.3 * SR))[:, None]
-fo = S(25.2); mix[fo:] *= np.linspace(1, 0, N - fo)[:, None] ** 2
-pk = np.max(np.abs(mix)); mix = (np.tanh(mix / pk * 2.) / np.tanh(2.) * .7).astype(np.float32)
+# ── 믹스: 잔향으로 한 공간에 묶고 · 부드럽게 눌러 소리 크기를 맞춘다 ──
+mix = MIX + BED * db(-5)
+def verb(buf, sec=3., dec=1.6, wet=.18, seed=3):
+    r = np.random.RandomState(seed); n = int(sec * SR); e = np.exp(-np.arange(n) / SR * dec); sos = butter(2, 5000, "lowpass", fs=SR, output="sos")
+    L, R = sosfilt(sos, r.randn(n) * e), sosfilt(sos, r.randn(n) * e); out = buf.copy()
+    out[:, 0] += fftconvolve(buf[:, 0], L)[:N] * wet * .015; out[:, 1] += fftconvolve(buf[:, 1], R)[:N] * wet * .015; return out
+mix = verb(mix)
+i0, i1 = S(T["ZERO"] + .02), S(T["FLASH1"]) - S(.02); mix[i0:i1] *= np.concatenate([np.linspace(1, .02, S(.04)), np.full(i1 - i0 - S(.04), .02)])[:, None]   # 잔향 꼬리까지 정적
+mix[:S(.3)] *= np.linspace(0, 1, S(.3))[:, None]
+fo = S(24.8); mix[fo:] *= np.linspace(1, 0, N - fo)[:, None] ** 1.5
+pk = np.max(np.abs(mix)); mix = (np.tanh(mix / pk * 1.6) / np.tanh(1.6) * .72).astype(np.float32)
 p = subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", "-c:a", "libmp3lame", "-b:a", "256k", PUB + "monarch3_cut.mp3"], input=mix.tobytes())
 print("mp3", p.returncode, round(len(mix) / SR, 2), "peak", round(float(pk), 3))
