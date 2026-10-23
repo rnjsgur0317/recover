@@ -23,6 +23,7 @@
     <button data-tab="order">주문·예약<span id="cntReserve" class="count-badge" hidden></span></button>
     <button data-tab="register">게임 등록</button>
     <button data-tab="games">게임 관리</button>
+    <button data-tab="videos">영상 관리</button>
     <button data-tab="notice">공지</button>
     <button data-tab="upcoming">신작</button>
     <button data-tab="discount">할인·BEST</button>
@@ -115,6 +116,25 @@
       </div>
       <div class="hint" id="gmInfo" style="margin:8px 0 4px"></div>
       <div id="gmList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </section>
+
+  <!-- 영상 관리 (사이트 전용 상품) -->
+  <section class="tab-page" id="page-videos">
+    <div class="card">
+      <h2>영상 등록</h2>
+      <p class="desc">영상은 <b>이 사이트에서만</b> 판매돼요 (디스코드 자판기·소개채널에는 올라가지 않아요).
+      결제는 게임과 같이 봇이 잔액에서 차감하고 구매자에게 링크를 DM으로 보냅니다. 등록하면 유저 [영상] 탭에 바로 표시돼요.</p>
+      <div class="vd-form" id="vdNew"></div>
+    </div>
+    <div class="card">
+      <h2>영상 목록</h2>
+      <div class="gm-bar">
+        <input type="text" id="vdSearch" placeholder="제목·링크 검색">
+        <button class="small" id="vdReload">새로고침</button>
+      </div>
+      <div id="vdList" style="margin-top:10px"><div class="empty">불러오는 중...</div></div>
+      <datalist id="vdCatList"></datalist>
     </div>
   </section>
 
@@ -237,6 +257,7 @@
 </div>
 
 <div id="toast"></div>
+<script src="/richtext.js"></script>
 <script src="/admin.js"></script>
 </body>
 </html>

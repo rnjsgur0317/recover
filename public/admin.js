@@ -253,6 +253,7 @@ function renderOrders() {
           <div>
             <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${
               { reserve: ' <span class="game-tag">예약</span>',
+                video: ' <span class="game-tag">영상</span>',
                 pass: ' <span class="game-tag pass-tag">게임패스</span>',
                 claim: ' <span class="game-tag pass-tag">무료 수령</span>' }[o.kind] || ""}${o.fixed && o.kind === "order" ? ' <span class="game-tag hot">할인가</span>' : ""}</div>
             <div class="sub">${esc(o.username)} (${esc(o.uid)}) · ${fmtDate(o.created_at)}</div>
@@ -516,17 +517,18 @@ function renderRgPreview() {
     }));
 }
 
-// 파일들 → 미디어 dataURL 목록 (이미지는 압축, mp4/webm 8MB 이하, 최대 4개). 게임 등록·수정 공용
-async function readMediaFiles(files, list) {
+// 파일들 → 미디어 dataURL 목록 (이미지는 압축, mp4/webm 은 videoMB 이하, 최대 max 개).
+// 게임 등록·수정(4개·8MB) · 영상 관리(6개·12MB) 공용
+async function readMediaFiles(files, list, max = 4, videoMB = 8) {
   const out = [...list];
   for (const file of files) {
-    if (out.length >= 4) { toast("미디어는 최대 4개까지예요.", true); break; }
+    if (out.length >= max) { toast(`미디어는 최대 ${max}개까지예요.`, true); break; }
     if (file.type.startsWith("image/")) {
       try {
         out.push(await compressImage(file));
       } catch (e) { toast(`이미지를 읽을 수 없어요: ${file.name}`, true); }
     } else if (file.type === "video/mp4" || file.type === "video/webm") {
-      if (file.size > 8 * 1024 * 1024) { toast(`영상은 8MB 이하만 가능해요: ${file.name}`, true); continue; }
+      if (file.size > videoMB * 1024 * 1024) { toast(`영상은 ${videoMB}MB 이하만 가능해요: ${file.name}`, true); continue; }
       out.push(await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result);
@@ -780,6 +782,197 @@ $("#gmReload").addEventListener("click", loadGames);
 document.querySelector('.tabs button[data-tab="games"]').addEventListener("click", () => {
   if (!gmOpen) loadGames();
 });
+
+// ---- 영상 관리 (사이트 전용 상품)
+const VD_MAX_MEDIA = 6, VD_VIDEO_MB = 12;   // 서버 VIDEO_MAX_MEDIA · VIDEO_MEDIA_LIMIT 와 같게
+const VD_INFO_EXAMPLE = "예시)\n## 작품 소개\n여름 한정 4K 영상입니다.\n\n출연 : 000\n길이 : 1시간 20분\n화질 : 4K\n\n- 자막 포함\n- 스트리밍 + 다운로드";
+let vdCache = [];
+let vdOpen = 0;      // 수정 창이 열린 영상 id
+
+function vdSrc(id, i) {
+  return `/api/video/media?id=${id}&i=${i}`;
+}
+
+// 등록·수정 공용 폼 (v.id 가 있으면 수정)
+function videoFormHTML(v) {
+  const cur = (v.media || []).map((m, i) => m === "video"
+    ? `<video src="${vdSrc(v.id, i)}#t=0.1" muted preload="metadata"></video>`
+    : `<img src="${vdSrc(v.id, i)}" alt="">`).join("");
+  return `
+    <label>제목 *</label>
+    <input type="text" data-f="title" maxlength="100" value="${esc(v.title || "")}">
+    <div class="row2">
+      <div><label>판매가 (원) *</label><input type="text" data-f="price" maxlength="12" value="${v.price ?? ""}" placeholder="5000"></div>
+      <div><label>정가 (원, 선택 — 할인율 표시용)</label><input type="text" data-f="official" maxlength="12" value="${v.official || ""}"></div>
+    </div>
+    <div class="row2">
+      <div><label>분류 (선택 — [영상] 탭 필터)</label><input type="text" data-f="category" maxlength="30" list="vdCatList" value="${esc(v.category || "")}"></div>
+      <div><label>판매 상태</label><select data-f="on_sale">
+        <option value="1">판매 중</option>
+        <option value="0"${v.on_sale === false ? " selected" : ""}>숨김 (판매 중지)</option>
+      </select></div>
+    </div>
+    <label>영상 링크 * (구매자에게 DM으로 보낼 링크)</label>
+    <input type="text" data-f="link" maxlength="500" value="${esc(v.link || "")}" placeholder="https://...">
+    <label>상품 정보 (자유 입력)</label>
+    <textarea data-f="info" maxlength="5000" style="min-height:170px" placeholder="${esc(VD_INFO_EXAMPLE)}">${esc(v.info || "")}</textarea>
+    <p class="hint" style="margin-top:6px">쓴 그대로 보여요. 꾸미려면 <code>## 소제목</code> · <code>- 목록</code> · <code>항목 : 내용</code>(정보 표) · <code>---</code>(구분선) · <code>**굵게**</code> · 주소는 자동 링크</p>
+    <div class="vd-preview" data-vd-preview></div>
+    <label>미리보기 이미지·영상 (최대 ${VD_MAX_MEDIA}개 · 첫 번째가 대표 · 영상은 mp4/webm ${VD_VIDEO_MB}MB 이하)</label>
+    ${v.id ? `<div class="gm-media" data-vd-cur>${cur || '<span class="hint">등록된 미디어가 없어요.</span>'}</div>` : ""}
+    <div class="dropzone" data-vd-drop style="margin-top:8px"><span>${v.id
+      ? "새 미디어로 바꾸려면 클릭하거나 끌어다 놓으세요" : "클릭하거나 파일을 끌어다 놓으세요 (여러 개 가능)"}</span></div>
+    <input type="file" data-vd-file accept="image/*,video/mp4,video/webm" multiple hidden>
+    <div class="gm-media" data-vd-new hidden></div>
+    ${v.id
+      ? '<div class="controls"><button class="small good" data-vd-save>수정 저장</button><button class="small" data-vd-cancel>취소</button></div>'
+      : '<button class="primary" data-vd-save>영상 등록</button>'}`;
+}
+
+function bindVideoForm(root, v) {
+  let media = [];   // 새로 올릴 미디어 dataURL (비어 있으면 기존 것 유지)
+  const field = (k) => root.querySelector(`[data-f="${k}"]`);
+
+  const preview = root.querySelector("[data-vd-preview]");
+  const renderPreview = () => {
+    const html = renderRichText(field("info").value);
+    preview.innerHTML = html ? `<div class="ttl">유저 화면 미리보기</div><div class="rt">${html}</div>` : "";
+  };
+  field("info").addEventListener("input", renderPreview);
+  renderPreview();
+
+  const newBox = root.querySelector("[data-vd-new]");
+  const drop = root.querySelector("[data-vd-drop]");
+  const file = root.querySelector("[data-vd-file]");
+  const renderNew = () => {
+    newBox.hidden = media.length === 0;
+    drop.hidden = media.length >= VD_MAX_MEDIA;
+    const cur = root.querySelector("[data-vd-cur]");
+    if (cur) cur.style.opacity = media.length ? ".35" : "";
+    newBox.innerHTML = media.map((du, i) => `
+      <div class="vd-item">
+        ${du.startsWith("data:video") ? `<video src="${du}" muted></video>` : `<img src="${du}" alt="">`}
+        ${i === 0 ? '<span class="vd-first">대표</span>' : ""}
+        <button type="button" class="vd-rm" data-vdrm="${i}">×</button>
+      </div>`).join("");
+    newBox.querySelectorAll("[data-vdrm]").forEach((b) =>
+      b.addEventListener("click", () => { media.splice(Number(b.dataset.vdrm), 1); renderNew(); }));
+  };
+  const add = async (files) => { media = await readMediaFiles(files, media, VD_MAX_MEDIA, VD_VIDEO_MB); renderNew(); };
+  drop.addEventListener("click", () => file.click());
+  file.addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
+  ["dragover", "dragleave", "drop"].forEach((evt) =>
+    drop.addEventListener(evt, (e) => {
+      e.preventDefault();
+      drop.classList.toggle("dragover", evt === "dragover");
+      if (evt === "drop") add([...e.dataTransfer.files]);
+    }));
+
+  const cancel = root.querySelector("[data-vd-cancel]");
+  if (cancel) cancel.addEventListener("click", () => { vdOpen = 0; renderVideoAdmin(); });
+  const saveBtn = root.querySelector("[data-vd-save]");
+  saveBtn.addEventListener("click", async () => {
+    const body = {
+      action: v.id ? "update" : "add",
+      title: field("title").value.trim(), price: field("price").value.trim(),
+      official: field("official").value.trim(), category: field("category").value.trim(),
+      link: field("link").value.trim(), info: field("info").value, on_sale: field("on_sale").value === "1",
+    };
+    if (v.id) body.id = v.id;
+    if (!body.title || !body.price || !body.link) return toast("제목/판매가/영상 링크는 필수입니다.", true);
+    if (!confirm(`'${body.title}' ${fmtWon(body.price.replace(/,/g, ""))}원 — ${v.id ? "수정할까요?" : "등록할까요?"}${
+      media.length ? `\n(미리보기 ${media.length}개${v.id ? "로 교체" : ""})` : ""}${body.on_sale ? "" : "\n(숨김 상태 — 유저에게 안 보여요)"}`)) return;
+    saveBtn.disabled = true;
+    let id;
+    try {
+      id = (await api("/api/admin/video", body)).id;
+    } catch (e) {
+      saveBtn.disabled = false;
+      return toast(e.message, true);
+    }
+    try {
+      for (let i = 0; i < media.length; i++) {   // 큰 파일도 되도록 한 개씩
+        toast(`미리보기 올리는 중... ${i + 1}/${media.length}`);
+        await api("/api/admin/video_media", { id, idx: i, total: media.length, data: media[i] });
+      }
+      toast(v.id ? "수정 완료!" : "등록 완료! 유저 [영상] 탭에 바로 표시돼요.");
+    } catch (e) {
+      toast(`정보는 저장됐지만 미리보기 업로드 실패: ${e.message} — 목록에서 [수정]으로 다시 올려주세요.`, true);
+    }
+    if (v.id) vdOpen = 0;
+    else resetNewVideoForm();
+    loadVideoAdmin();
+  });
+}
+
+function resetNewVideoForm() {
+  const root = $("#vdNew");
+  root.innerHTML = videoFormHTML({});
+  bindVideoForm(root, {});
+}
+
+async function loadVideoAdmin() {
+  try {
+    vdCache = (await api("/api/admin/videos")).videos || [];
+    $("#vdCatList").innerHTML = [...new Set(vdCache.map((v) => v.category).filter(Boolean))]
+      .map((c) => `<option value="${esc(c)}">`).join("");
+    renderVideoAdmin();
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderVideoAdmin() {
+  const q = $("#vdSearch").value.trim().toLowerCase();
+  const rows = vdCache.filter((v) => !q || v.title.toLowerCase().includes(q) || v.link.toLowerCase().includes(q));
+  const box = $("#vdList");
+  box.innerHTML = rows.length ? rows.map((v) => `
+    <div class="req-card gm-row" data-vd="${v.id}">
+      <div class="head">
+        <div style="display:flex;gap:12px;min-width:0;flex:1">
+          ${!v.media.length ? '<div class="gm-thumb gm-noimg">미디어 없음</div>'
+            : v.media[0] === "video"
+              ? `<video class="gm-thumb" src="${vdSrc(v.id, 0)}#t=0.1" muted preload="metadata"></video>`
+              : `<img class="gm-thumb" src="${vdSrc(v.id, 0)}" loading="lazy" alt="">`}
+          <div style="min-width:0">
+            <div class="name">${esc(v.title)}${v.on_sale ? "" : '<span class="gm-tag">숨김</span>'}${v.category ? `<span class="gm-tag dim">${esc(v.category)}</span>` : ""}</div>
+            <div class="sub">${fmtWon(v.price)}원${v.official ? ` (정가 ${fmtWon(v.official)}원)` : ""} · 미디어 ${v.media.length}개 · 최근 30일 판매 ${v.sold}건 · 등록 ${fmtDate(v.created_at)}</div>
+            <div class="sub">링크: <a class="gm-link" href="${esc(v.link)}" target="_blank" rel="noopener noreferrer">${esc(v.link)}</a></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex:none">
+          <button class="small" data-vd-toggle>${vdOpen === v.id ? "닫기" : "수정"}</button>
+          <button class="small danger" data-vd-del>삭제</button>
+        </div>
+      </div>
+      ${vdOpen === v.id ? `<div class="gm-edit vd-form">${videoFormHTML(v)}</div>` : ""}
+    </div>`).join("")
+    : `<div class="empty">${vdCache.length ? "검색 결과가 없어요." : "등록된 영상이 없어요."}</div>`;
+
+  box.querySelectorAll("[data-vd]").forEach((card) => {
+    const v = vdCache.find((x) => x.id === Number(card.dataset.vd));
+    card.querySelector("[data-vd-toggle]").addEventListener("click", () => {
+      vdOpen = vdOpen === v.id ? 0 : v.id;
+      renderVideoAdmin();
+    });
+    card.querySelector("[data-vd-del]").addEventListener("click", async () => {
+      if (!confirm(`'${v.title}'을(를) 삭제할까요?\n\n최근 구매자도 [내 정보]에서 링크를 못 받게 돼요.\n판매만 멈추려면 [수정] → 판매 상태 '숨김'을 쓰세요.`)) return;
+      try {
+        await api("/api/admin/video", { action: "delete", id: v.id });
+        if (vdOpen === v.id) vdOpen = 0;
+        toast("삭제 완료");
+        loadVideoAdmin();
+      } catch (e) { toast(e.message, true); }
+    });
+    const form = card.querySelector(".vd-form");
+    if (form) bindVideoForm(form, v);
+  });
+}
+
+$("#vdSearch").addEventListener("input", renderVideoAdmin);
+$("#vdReload").addEventListener("click", loadVideoAdmin);
+document.querySelector('.tabs button[data-tab="videos"]').addEventListener("click", () => {
+  if (!vdOpen) loadVideoAdmin();
+});
+resetNewVideoForm();
 
 // ---- BEST 관리
 $("#bestSet").addEventListener("click", async () => {

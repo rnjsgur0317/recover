@@ -183,6 +183,20 @@ def init_db():
             min_amount INTEGER NOT NULL,           -- 1회 구매 기준 금액
             created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS videos (        -- 영상 상품 (사이트 전용 — 봇 판매 목록엔 없음)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT '',     -- [영상] 탭 필터용 분류 (선택)
+            price INTEGER NOT NULL,
+            official INTEGER NOT NULL DEFAULT 0,   -- 정가 (할인율 표시용, 선택)
+            link TEXT NOT NULL,                    -- 구매자에게 보낼 링크
+            info TEXT NOT NULL DEFAULT '',         -- 자유 입력 상품 정보
+            media TEXT NOT NULL DEFAULT '[]',      -- 미리보기 파일명 JSON 목록 (vid_*)
+            media_pending TEXT NOT NULL DEFAULT '[]',  -- 업로드 중인 새 미디어 (다 올라오면 media 와 교체)
+            on_sale INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
         """)
         c.commit()
         for stmt in (
@@ -197,6 +211,7 @@ def init_db():
             "ALTER TABLE orders ADD COLUMN coupon_pct INTEGER NOT NULL DEFAULT 0",  # 할인쿠폰 적용률
             "ALTER TABLE product_regs ADD COLUMN kind TEXT NOT NULL DEFAULT 'add'",    # add/edit
             "ALTER TABLE product_regs ADD COLUMN old_name TEXT NOT NULL DEFAULT ''",  # edit: 수정 전 이름
+            "ALTER TABLE orders ADD COLUMN ref_id INTEGER NOT NULL DEFAULT 0",     # kind=video: 영상 id
         ):
             try:
                 c.execute(stmt)
@@ -481,7 +496,8 @@ def build_embed(title, description, fields, color):
 
 # ---------------------------------------------------------------- WSGI 기반
 
-STATUS_TEXT = {200: "200 OK", 302: "302 Found", 400: "400 Bad Request",
+STATUS_TEXT = {200: "200 OK", 206: "206 Partial Content", 302: "302 Found", 400: "400 Bad Request",
+               416: "416 Range Not Satisfiable",
                401: "401 Unauthorized", 403: "403 Forbidden",
                404: "404 Not Found", 500: "500 Internal Server Error"}
 
@@ -688,7 +704,7 @@ def api_my_requests(req):
             "SELECT id,amount,status,created_at "
             "FROM charges WHERE uid=? ORDER BY id DESC LIMIT 20", (s["uid"],)).fetchall()
         orders = db().execute(
-            "SELECT id,game,price,status,result,kind,link_sent,gift_game,gift_link,coupon_pct,"
+            "SELECT id,game,price,status,result,kind,link_sent,gift_game,gift_link,coupon_pct,ref_id,"
             "created_at,updated_at "
             "FROM orders WHERE uid=? ORDER BY id DESC LIMIT 30", (s["uid"],)).fetchall()
     products = load_shop().get("products") or {}
@@ -699,7 +715,7 @@ def api_my_requests(req):
                         and o["kind"] != "pass"
                         and (o["kind"] != "reserve" or o["link_sent"])
                         and now() - o["updated_at"] <= 7 * 86400
-                        and bool((products.get(o["game"]) or {}).get("link")))
+                        and bool(order_link(o, products)))
         o["gift_ok"] = (o["status"] == "완료" and bool(o["gift_game"]) and bool(o["gift_link"])
                         and now() - o["updated_at"] <= 7 * 86400)
         o.pop("gift_link", None)   # 링크는 전용 API로만 수령
@@ -720,11 +736,16 @@ def best_set():
     return {r["game"] for r in rows}
 
 
+def media_kinds(files):
+    """파일명 목록 → ["img" | "video", ...]"""
+    return ["video" if f.rsplit(".", 1)[-1] in VIDEO_EXTS else "img" for f in files]
+
+
 def media_flags(shop, name):
     files = entry_files(shop.get("images", {}).get(name))
     if not files:
         return False, None
-    return True, ("video" if files[0].rsplit(".", 1)[-1] in VIDEO_EXTS else "img")
+    return True, media_kinds(files)[0]
 
 
 TIER_DISCOUNTS = ((120000, 10), (70000, 8), (40000, 5), (25000, 2))  # (누적액, 할인%)
@@ -828,9 +849,7 @@ def api_shopdata(req):
             cats[cat] = []
             order.append(cat)
         files = entry_files(images.get(name))
-        media = None
-        if files:
-            media = "video" if files[0].rsplit(".", 1)[-1] in VIDEO_EXTS else "img"
+        media = media_kinds(files)[0] if files else None
         g = {
             "name": name,
             "price": info.get("price", 0),
@@ -871,17 +890,33 @@ def api_shopdata(req):
     })
 
 
-def _serve_media_file(fname):
-    if not fname or not re.match(r"^(img|upc|gft)_[0-9a-f]{16}\.(jpg|png|webp|gif|mp4|webm)$", fname):
+def _serve_media_file(fname, req=None):
+    """상점 미디어 파일. req 를 주면 Range 요청(영상 탐색 · iOS Safari 재생 필수)에 206 으로 응답."""
+    if not fname or not re.match(r"^(img|upc|gft|vid)_[0-9a-f]{16}\.(jpg|png|webp|gif|mp4|webm)$", fname):
         return json_resp({"error": "이미지가 없습니다."}, 404)
     fpath = os.path.join(SHOPIMG_DIR, fname)
     if not os.path.isfile(fpath):
         return json_resp({"error": "이미지가 없습니다."}, 404)
+    ext = fname.rsplit(".", 1)[1]
+    headers = [("Content-Type", IMG_CTYPE[ext]), ("Cache-Control", "private, max-age=600"),
+               ("Accept-Ranges", "bytes")]
+    size = os.path.getsize(fpath)
+    m = re.match(r"^bytes=(\d*)-(\d*)$", (req.environ.get("HTTP_RANGE") or "").strip()) if req else None
+    if m and (m.group(1) or m.group(2)):
+        if m.group(1):
+            start = int(m.group(1))
+            end = min(int(m.group(2)) if m.group(2) else size - 1, size - 1)
+        else:   # bytes=-N : 끝에서 N바이트
+            start, end = max(0, size - int(m.group(2))), size - 1
+        if start > end:
+            return Response(b"", 416, [("Content-Range", f"bytes */{size}")])
+        with open(fpath, "rb") as f:
+            f.seek(start)
+            data = f.read(end - start + 1)
+        return Response(data, 206, headers + [("Content-Range", f"bytes {start}-{end}/{size}")])
     with open(fpath, "rb") as f:
         data = f.read()
-    ext = fname.rsplit(".", 1)[1]
-    return Response(data, 200, [("Content-Type", IMG_CTYPE[ext]),
-                                ("Cache-Control", "private, max-age=600")])
+    return Response(data, 200, headers)
 
 
 def api_shop_image(req):
@@ -897,7 +932,7 @@ def api_shop_image(req):
     files = entry_files(load_shop().get("images", {}).get(name))
     if not files or not (0 <= i < len(files)):
         return json_resp({"error": "이미지가 없습니다."}, 404)
-    return _serve_media_file(files[i])
+    return _serve_media_file(files[i], req)
 
 
 def api_upc_image(req):
@@ -910,7 +945,7 @@ def api_upc_image(req):
         rid = 0
     with db_lock:
         row = db().execute("SELECT image FROM upcoming WHERE id=?", (rid,)).fetchone()
-    return _serve_media_file(row["image"] if row else "")
+    return _serve_media_file(row["image"] if row else "", req)
 
 
 def api_charge_create(req):
@@ -1192,8 +1227,10 @@ def api_my_link(req):
         return json_resp({"error": "아직 출시 전이에요. 출시되면 링크가 발송됩니다."}, 400)
     if now() - row["updated_at"] > 7 * 86400:
         return json_resp({"error": "다운로드 기간(7일)이 지났어요. 필요하면 [링크 복구] 탭에서 요청해주세요."}, 400)
-    link = ((load_shop().get("products") or {}).get(row["game"]) or {}).get("link", "")
+    link = order_link(row, load_shop().get("products") or {})
     if not link:
+        if row["kind"] == "video":
+            return json_resp({"error": "판매가 끝난 영상이에요. 필요하면 [링크 복구] 탭에서 요청해주세요."}, 400)
         return json_resp({"error": "링크 정보가 아직 동기화되지 않았어요. 잠시 후 다시 시도해주세요."}, 400)
     return json_resp({"link": link, "game": row["game"]})
 
@@ -1315,13 +1352,21 @@ def api_sync_pull_orders(req):
                 "UPDATE orders SET status='실패', result='처리 시간 초과 — 잔액이 차감됐다면 관리자에게 문의해주세요', updated_at=? "
                 "WHERE id=?", (now(), oid))
             restore_coupon(oid)
+        # 영상 주문은 그것을 아는 봇({"videos": true})에게만 — 구버전 봇은 판매 목록에 없다며 실패시킴
+        only = "" if d.get("videos") else " AND kind!='video'"
         rows = db().execute(
-            "SELECT id,uid,username,game,price,kind,fixed,gift_game,gift_link,coupon_pct FROM orders "
-            "WHERE status='대기' ORDER BY id LIMIT 10").fetchall()
+            "SELECT id,uid,username,game,price,kind,fixed,gift_game,gift_link,coupon_pct,ref_id FROM orders "
+            f"WHERE status='대기'{only} ORDER BY id LIMIT 10").fetchall()
         for r in rows:
             db().execute("UPDATE orders SET status='처리중', updated_at=? WHERE id=?", (now(), r["id"]))
         db().commit()
-    return json_resp({"orders": row_dicts(rows)})
+        out = row_dicts(rows)
+        for o in out:
+            if o["kind"] == "video":   # 영상은 봇 판매 목록에 없으니 정가·링크를 사이트가 붙여 보냄
+                v = db().execute("SELECT price, link FROM videos WHERE id=?", (o["ref_id"],)).fetchone()
+                o["list_price"] = v["price"] if v else o["price"]
+                o["link"] = v["link"] if v else ""
+    return json_resp({"orders": out})
 
 
 def api_sync_order_results(req):
@@ -1409,7 +1454,7 @@ def api_shop_detail(req):
     if not info:
         return json_resp({"error": "판매 중인 상품이 아닙니다."}, 404)
     files = entry_files(shop.get("images", {}).get(name))
-    media_list = ["video" if f.rsplit(".", 1)[-1] in VIDEO_EXTS else "img" for f in files]
+    media_list = media_kinds(files)
     sales = discount_map()
     out = {
         "name": name,
@@ -1814,7 +1859,7 @@ def api_gift_image(req):
         rid = 0
     with db_lock:
         row = db().execute("SELECT image FROM gifts WHERE id=?", (rid,)).fetchone()
-    return _serve_media_file(row["image"] if row else "")
+    return _serve_media_file(row["image"] if row else "", req)
 
 
 def pick_gift(total):
@@ -2160,7 +2205,7 @@ def api_admin_games(req):
              "reg": int(info.get("reg", 0) or 0),
              "is_subscription": bool(info.get("is_subscription")),
              "detail": details.get(name, {}),
-             "media": ["video" if fn.rsplit(".", 1)[-1] in VIDEO_EXTS else "img" for fn in files]}
+             "media": media_kinds(files)}
         if name in sales:
             g["sale_price"] = sales[name]
         if name in bests:
@@ -2645,6 +2690,256 @@ def api_admin_gacha(req):
     save_shop(shop)
     return json_resp({"ok": True, "config": cfg})
 
+# ---------------------------------------------------------------- 영상 (사이트 전용 상품)
+# 영상은 봇 판매 목록(products.json)에 없고 이 사이트 DB 에만 있다. 결제만 봇이 한다:
+# orders(kind='video', ref_id=영상 id) → pull_orders 가 정가·링크를 붙여 줌 → 봇이 잔액 차감·구매기록·링크 DM.
+
+VIDEO_MAX_MEDIA = 6
+VIDEO_MEDIA_LIMIT = 12 * 1024 * 1024                       # 미리보기 파일 1개 최대 12MB
+MAX_VIDEO_MEDIA_BODY = VIDEO_MEDIA_LIMIT * 4 // 3 + 64 * 1024  # base64 로 1개씩 올리는 요청
+VIDEO_INFO_MAX = 5000
+
+
+def clean_rich(text, maxlen):
+    """자유 입력 본문 — 줄바꿈·공백은 살리고 제어문자와 줄 끝 공백만 정리."""
+    if not isinstance(text, str):
+        return ""
+    text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text.replace("\r\n", "\n").replace("\r", "\n"))
+    text = "\n".join(line.rstrip() for line in text.split("\n"))
+    return re.sub(r"\n{3,}", "\n\n", text).strip()[:maxlen]
+
+
+def _json_list(text):
+    try:
+        items = json.loads(text or "[]")
+    except ValueError:
+        return []
+    return [x for x in items if isinstance(x, str)] if isinstance(items, list) else []
+
+
+def remove_shopimg(files):
+    for fn in files:
+        try:
+            os.remove(os.path.join(SHOPIMG_DIR, fn))
+        except OSError:
+            pass
+
+
+def order_link(order, products):
+    """주문의 다운로드 링크 — 영상은 사이트 DB, 나머지는 봇이 push 한 판매 목록."""
+    if order["kind"] == "video":
+        with db_lock:
+            row = db().execute("SELECT link FROM videos WHERE id=?", (order["ref_id"],)).fetchone()
+        return row["link"] if row else ""
+    return (products.get(order["game"]) or {}).get("link", "")
+
+
+def video_owned_ids(uid):
+    """구매 완료한 영상 id (주문 기록 보관 30일 안)."""
+    with db_lock:
+        rows = db().execute(
+            "SELECT DISTINCT ref_id FROM orders WHERE uid=? AND kind='video' AND status='완료'",
+            (uid,)).fetchall()
+    return {r["ref_id"] for r in rows}
+
+
+def video_public(row, owned=False):
+    """유저에게 보여도 되는 필드만 (링크 제외)."""
+    return {"id": row["id"], "title": row["title"], "category": row["category"],
+            "price": row["price"], "official": row["official"],
+            "media": media_kinds(_json_list(row["media"])), "owned": owned,
+            "created_at": row["created_at"]}
+
+
+def _query_int(req, key):
+    try:
+        return int((req.query().get(key) or ["0"])[0])
+    except ValueError:
+        return 0
+
+
+def api_videos(req):
+    """[영상] 탭 목록 — 판매 중인 것만, 최근 등록순."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    with db_lock:
+        rows = db().execute("SELECT * FROM videos WHERE on_sale=1 ORDER BY id DESC").fetchall()
+    owned = video_owned_ids(s["uid"])
+    return json_resp({"videos": [video_public(r, r["id"] in owned) for r in rows]})
+
+
+def api_video_detail(req):
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    vid = _query_int(req, "id")
+    with db_lock:
+        row = db().execute("SELECT * FROM videos WHERE id=? AND on_sale=1", (vid,)).fetchone()
+    if not row:
+        return json_resp({"error": "판매 중인 영상이 아닙니다."}, 404)
+    out = video_public(row, vid in video_owned_ids(s["uid"]))
+    out["info"] = row["info"]
+    return json_resp(out)
+
+
+def api_video_media(req):
+    """영상 상품 미리보기 이미지/영상 (로그인 필요). ?id=번호&i=순서"""
+    if not req.session():
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    vid, i = _query_int(req, "id"), _query_int(req, "i")
+    with db_lock:
+        row = db().execute("SELECT media FROM videos WHERE id=?", (vid,)).fetchone()
+    files = _json_list(row["media"]) if row else []
+    if not (0 <= i < len(files)):
+        return json_resp({"error": "이미지가 없습니다."}, 404)
+    return _serve_media_file(files[i], req)
+
+
+def api_video_order(req):
+    """영상 구매 주문 → 봇이 잔액 차감 후 링크 DM. 등급 할인은 적용, 게임 할인쿠폰·사은품은 게임 전용."""
+    s = req.session()
+    if not s:
+        return json_resp({"error": "로그인이 필요합니다."}, 401)
+    vid = (req.read_json() or {}).get("id")
+    if not isinstance(vid, int):
+        return json_resp({"error": "잘못된 요청"}, 400)
+    with db_lock:
+        row = db().execute("SELECT * FROM videos WHERE id=? AND on_sale=1", (vid,)).fetchone()
+    if not row:
+        return json_resp({"error": "판매 중인 영상이 아닙니다."}, 404)
+    shop = load_shop()
+    price = apply_tier_discount(int(row["price"]), user_discount_pct(shop, s["uid"]))
+    balance = shop.get("balances", {}).get(s["uid"], 0)
+    if balance < price:
+        return json_resp({"error": f"잔액이 부족합니다. (내 잔액 {balance:,}원 / 결제 {price:,}원) 충전 후 이용해주세요."}, 400)
+    with db_lock:
+        err = _order_guards(s["uid"], [row["title"]])
+        if err:
+            return json_resp({"error": err}, 400)
+        db().execute(
+            "INSERT INTO orders(uid,username,game,price,kind,fixed,ref_id,created_at,updated_at) "
+            "VALUES(?,?,?,?,'video',1,?,?,?)",
+            (s["uid"], s["name"], row["title"], price, vid, now(), now()))
+        db().commit()
+    return json_resp({"ok": True, "price": price})
+
+
+def parse_video_form(d):
+    """영상 등록·수정 폼 검증. (값 dict, None) 또는 (None, 오류문)."""
+    f = {"title": clean(d.get("title"), 100), "category": clean(d.get("category"), 30),
+         "link": clean(d.get("link"), 500), "info": clean_rich(d.get("info"), VIDEO_INFO_MAX),
+         "on_sale": 1 if d.get("on_sale", True) else 0}
+    try:
+        f["price"] = int(str(d.get("price", "")).replace(",", "").strip())
+        f["official"] = int(str(d.get("official") or "0").replace(",", "").strip() or 0)
+    except ValueError:
+        return None, "가격은 숫자로 입력하세요."
+    if not f["title"]:
+        return None, "제목을 입력하세요."
+    if f["price"] <= 0 or f["official"] < 0:
+        return None, "가격을 확인하세요."
+    if not re.match(r"^https?://", f["link"]):
+        return None, "영상 링크는 http(s):// 로 시작해야 합니다."
+    return f, None
+
+
+def api_admin_videos(req):
+    """[영상 관리] 탭: 전체 영상(숨김 포함) + 링크·정보 + 최근 30일 판매 수."""
+    with db_lock:
+        rows = db().execute("SELECT * FROM videos ORDER BY id DESC").fetchall()
+        sold = {r["ref_id"]: r["n"] for r in db().execute(
+            "SELECT ref_id, COUNT(*) AS n FROM orders WHERE kind='video' AND status='완료' "
+            "GROUP BY ref_id").fetchall()}
+    out = []
+    for r in rows:
+        v = video_public(r)
+        v.update({"link": r["link"], "info": r["info"], "on_sale": bool(r["on_sale"]),
+                  "sold": sold.get(r["id"], 0), "updated_at": r["updated_at"]})
+        out.append(v)
+    return json_resp({"videos": out})
+
+
+def api_admin_video(req):
+    """영상 관리. {action: add|update|delete, id?, title, category, price, official, link, info, on_sale}
+    미디어는 저장 후 /api/admin/video_media 로 한 개씩 올린다."""
+    d = req.read_json(limit=64 * 1024) or {}
+    action = d.get("action")
+    if action == "add":
+        f, err = parse_video_form(d)
+        if err:
+            return json_resp({"error": err}, 400)
+        with db_lock:
+            cur = db().execute(
+                "INSERT INTO videos(title,category,price,official,link,info,on_sale,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (f["title"], f["category"], f["price"], f["official"], f["link"], f["info"],
+                 f["on_sale"], now(), now()))
+            db().commit()
+        return json_resp({"ok": True, "id": cur.lastrowid})
+    vid = d.get("id")
+    if not isinstance(vid, int) or action not in ("update", "delete"):
+        return json_resp({"error": "잘못된 요청"}, 400)
+    f = None
+    if action == "update":
+        f, err = parse_video_form(d)
+        if err:
+            return json_resp({"error": err}, 400)
+    with db_lock:
+        row = db().execute("SELECT * FROM videos WHERE id=?", (vid,)).fetchone()
+        if not row:
+            return json_resp({"error": "없는 영상입니다. 새로고침 후 다시 시도하세요."}, 404)
+        if action == "update":
+            db().execute(
+                "UPDATE videos SET title=?, category=?, price=?, official=?, link=?, info=?, on_sale=?, "
+                "updated_at=? WHERE id=?",
+                (f["title"], f["category"], f["price"], f["official"], f["link"], f["info"],
+                 f["on_sale"], now(), vid))
+        else:
+            remove_shopimg(_json_list(row["media"]) + _json_list(row["media_pending"]))
+            db().execute("DELETE FROM videos WHERE id=?", (vid,))
+        db().commit()
+    return json_resp({"ok": True, "id": vid})
+
+
+def api_admin_video_media(req):
+    """영상 미리보기 1개 업로드. {id, idx, total, data: dataURL} — idx 0 부터 순서대로.
+    마지막(idx=total-1)까지 다 올라와야 기존 미디어와 교체된다 (도중에 끊기면 기존 것 유지)."""
+    d = req.read_json(limit=MAX_VIDEO_MEDIA_BODY) or {}
+    vid = d.get("id")
+    try:
+        idx, total = int(d.get("idx", -1)), int(d.get("total", 0))
+    except (TypeError, ValueError):
+        idx, total = -1, 0
+    if not isinstance(vid, int) or not (0 <= idx < total <= VIDEO_MAX_MEDIA):
+        return json_resp({"error": "업로드 실패 — 파일이 12MB 를 넘지 않는지 확인해주세요."}, 400)
+    try:
+        raw, ext = decode_media(d.get("data") or "", limit=VIDEO_MEDIA_LIMIT)
+    except ValueError as e:
+        return json_resp({"error": str(e)}, 400)
+    with db_lock:
+        row = db().execute("SELECT media, media_pending FROM videos WHERE id=?", (vid,)).fetchone()
+        if not row:
+            return json_resp({"error": "없는 영상입니다."}, 404)
+        pending = _json_list(row["media_pending"])
+        if idx == 0:
+            remove_shopimg(pending)   # 지난번에 끊긴 업로드 찌꺼기
+            pending = []
+        if len(pending) != idx:
+            return json_resp({"error": "업로드 순서가 어긋났어요. 다시 저장해주세요."}, 400)
+        fname = "vid_" + hashlib.sha1(f"vid{vid}#{idx}#{time.time()}".encode()).hexdigest()[:16] + "." + ext
+        with open(os.path.join(SHOPIMG_DIR, fname), "wb") as fp:
+            fp.write(raw)
+        pending.append(fname)
+        if idx == total - 1:
+            remove_shopimg(_json_list(row["media"]))
+            db().execute("UPDATE videos SET media=?, media_pending='[]', updated_at=? WHERE id=?",
+                         (json.dumps(pending), now(), vid))
+        else:
+            db().execute("UPDATE videos SET media_pending=? WHERE id=?", (json.dumps(pending), vid))
+        db().commit()
+    return json_resp({"ok": True, "done": idx == total - 1})
+
 
 GET_ROUTES = {
     "/login": route_login,
@@ -2663,12 +2958,16 @@ GET_ROUTES = {
     "/api/my/gift_link": api_my_gift_link,
     "/api/shop/giftimg": api_gift_image,
     "/api/gacha": api_gacha,
+    "/api/videos": api_videos,
+    "/api/video": api_video_detail,
+    "/api/video/media": api_video_media,
 }
 GET_ADMIN_ROUTES = {
     "/api/admin/requests": api_admin_requests,
     "/api/admin/image": api_admin_image,
     "/api/admin/gacha": api_admin_gacha_get,
     "/api/admin/games": api_admin_games,
+    "/api/admin/videos": api_admin_videos,
 }
 POST_ROUTES = {
     "/api/request": api_request_create,
@@ -2691,6 +2990,7 @@ POST_ROUTES = {
     "/api/gacha/pull": api_gacha_pull,
     "/api/sync/pull_gacha": api_sync_pull_gacha,
     "/api/sync/gacha_results": api_sync_gacha_results,
+    "/api/video/order": api_video_order,
 }
 POST_ADMIN_ROUTES = {
     "/api/admin/respond": api_admin_respond,
@@ -2705,6 +3005,8 @@ POST_ADMIN_ROUTES = {
     "/api/admin/gift": api_admin_gift,
     "/api/admin/reservation_send": api_admin_reservation_send,
     "/api/admin/gacha": api_admin_gacha,
+    "/api/admin/video": api_admin_video,
+    "/api/admin/video_media": api_admin_video_media,
 }
 
 _init_done = False

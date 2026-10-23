@@ -614,3 +614,48 @@ button.small.danger:hover { color: #111; }
   .gm-edit .row2 { grid-template-columns: 1fr; }
   .gm-thumb { width: 72px; height: 40px; }
 }
+
+/* [영상] 탭 · 자유 입력 상품 정보 (rt-) */
+.vd-cats { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.vd-cats:empty { display: none; }
+.rt {
+  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+  font-size: .9rem; line-height: 1.75; word-break: break-word;
+}
+.rt p { margin: 0 0 10px; }
+.rt .rt-h { font-weight: 800; font-size: .98rem; margin: 16px 0 6px; }
+.rt .rt-h:first-child { margin-top: 0; }
+.rt ul { margin: 0 0 10px; padding-left: 20px; }
+.rt hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.rt a { color: #111; font-weight: 600; word-break: break-all; }
+.rt-table { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 0 0 10px; }
+.rt-row { display: flex; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: .86rem; }
+.rt-row:last-child { border-bottom: none; }
+.rt-row .k { flex: 0 0 96px; color: var(--text-dim); font-weight: 600; }
+.rt-row .v { flex: 1; min-width: 0; }
+.rt > :last-child { margin-bottom: 0; }
+/* 관리자 [영상 관리] */
+.vd-form .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.vd-form select {
+  width: 100%; border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 11px 10px; font-family: inherit; font-size: .95rem; background: #fff; color: var(--text);
+}
+.vd-form select:focus { outline: none; border-color: #111; }
+.vd-form code { background: #f0f0f2; border-radius: 4px; padding: 0 4px; font-size: .78rem; }
+.vd-preview { margin-top: 10px; border: 1px dashed var(--border-strong); border-radius: 10px; padding: 12px 14px; background: #fafafa; }
+.vd-preview:empty { display: none; }
+.vd-preview .ttl { font-size: .74rem; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; }
+.vd-preview .rt { margin-top: 0; padding-top: 0; border-top: none; }
+.vd-item { position: relative; }
+.vd-first {
+  position: absolute; top: 4px; left: 4px; background: #111; color: #fff;
+  font-size: .62rem; font-weight: 800; border-radius: 5px; padding: 1px 6px;
+}
+.vd-rm {
+  position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,.7); color: #fff; font-weight: 800; cursor: pointer; line-height: 1;
+}
+@media (max-width: 560px) {
+  .vd-form .row2 { grid-template-columns: 1fr; }
+  .rt-row .k { flex-basis: 72px; }
+}

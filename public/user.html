@@ -23,6 +23,7 @@
 
   <nav class="tabs">
     <button data-tab="shop" class="active">게임 목록</button>
+    <button data-tab="video">영상</button>
     <button data-tab="notice">공지사항</button>
     <button data-tab="charge">잔액 충전</button>
     <button data-tab="recover">링크 복구</button>
@@ -43,6 +44,16 @@
         <div id="gameList"><div class="empty">불러오는 중...</div></div>
       </div>
     </div>
+  </section>
+
+  <!-- 영상 (사이트 전용 상품) -->
+  <section class="tab-page" id="page-video">
+    <div class="card" style="padding:14px 16px">
+      <input type="text" id="videoSearch" placeholder="영상 제목 검색">
+      <div class="vd-cats" id="videoCats"></div>
+      <p class="hint" style="margin-top:8px;margin-bottom:0">잔액으로 구매하면 링크가 디스코드 DM과 [내 정보]로 발송됩니다.</p>
+    </div>
+    <div id="videoList"><div class="empty">불러오는 중...</div></div>
   </section>
 
   <!-- 공지사항 -->
@@ -184,12 +195,12 @@
       <div id="profileExtra"></div>
     </div>
     <div class="card">
-      <h2>최근 구매한 게임</h2>
+      <h2>최근 구매</h2>
       <div id="recentBuys"><div class="empty">불러오는 중...</div></div>
     </div>
     <div class="card">
       <h2>구매 내역 (웹 주문)</h2>
-      <p class="desc">구매한 게임의 다운로드 링크는 디스코드 DM으로 발송됩니다.</p>
+      <p class="desc">구매한 게임·영상의 링크는 디스코드 DM으로 발송되고, 여기서도 7일간 받을 수 있어요.</p>
       <div id="myOrders"><div class="empty">불러오는 중...</div></div>
     </div>
     <div class="card">
@@ -207,6 +218,7 @@
 </div>
 
 <div id="toast"></div>
+<script src="/richtext.js"></script>
 <script src="/user.js"></script>
 <script src="/gacha.js"></script>
 </body>

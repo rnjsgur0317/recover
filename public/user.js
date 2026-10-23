@@ -394,9 +394,42 @@ async function loadNotices() {
 }
 loadNotices();
 
-// ---- 게임 상세 모달
+// ---- 상세 모달 (게임·영상 공용)
 function closeDetail() {
   $("#detailOverlay").hidden = true;
+  $("#detailBody").innerHTML = "";   // 재생 중인 미리보기 영상 정지
+}
+
+// 상세 모달 미디어 갤러리. mediaList: ["img"|"video", ...], srcOf(i) → 파일 주소
+function galleryHTML(mediaList) {
+  if (!mediaList.length) return "";
+  return `
+    <div class="gallery">
+      <div class="gallery-view" id="galleryView"></div>
+      ${mediaList.length > 1 ? `
+        <button class="gal-btn prev" id="galPrev">‹</button>
+        <button class="gal-btn next" id="galNext">›</button>
+        <div class="gal-dots" id="galDots">${mediaList.map((_, i) => `<span data-dot="${i}"></span>`).join("")}</div>` : ""}
+    </div>`;
+}
+
+function bindGallery(mediaList, srcOf, alt) {
+  if (!mediaList.length) return;
+  let gi = 0;
+  const view = $("#galleryView");
+  const show = () => {
+    view.innerHTML = mediaList[gi] === "video"
+      ? `<video class="detail-img" src="${srcOf(gi)}" controls muted playsinline loop></video>`
+      : `<img class="detail-img" src="${srcOf(gi)}" alt="${esc(alt)}">`;
+    document.querySelectorAll("[data-dot]").forEach((el, i) => el.classList.toggle("on", i === gi));
+  };
+  show();
+  if (mediaList.length > 1) {
+    $("#galPrev").addEventListener("click", () => { gi = (gi - 1 + mediaList.length) % mediaList.length; show(); });
+    $("#galNext").addEventListener("click", () => { gi = (gi + 1) % mediaList.length; show(); });
+    document.querySelectorAll("[data-dot]").forEach((el, i) =>
+      el.addEventListener("click", () => { gi = i; show(); }));
+  }
 }
 $("#detailClose").addEventListener("click", closeDetail);
 $("#detailOverlay").addEventListener("click", (e) => { if (e.target === $("#detailOverlay")) closeDetail(); });
@@ -420,16 +453,8 @@ async function openDetail(name) {
   let couponId = "";
   let finalPrice = tierPrice(nowPrice);     // 등급 할인 적용가 (실제 결제가) — 쿠폰 선택 시 갱신
   const mediaList = d.media_list || (d.img ? [d.media || "img"] : []);
-  const gallery = mediaList.length ? `
-    <div class="gallery">
-      <div class="gallery-view" id="galleryView"></div>
-      ${mediaList.length > 1 ? `
-        <button class="gal-btn prev" id="galPrev">‹</button>
-        <button class="gal-btn next" id="galNext">›</button>
-        <div class="gal-dots" id="galDots">${mediaList.map((_, i) => `<span data-dot="${i}"></span>`).join("")}</div>` : ""}
-    </div>` : "";
   body.innerHTML = `
-    ${gallery}
+    ${galleryHTML(mediaList)}
     <div class="detail-name">${d.best ? '<span class="game-tag best-tag">BEST</span> ' : ""}${esc(d.name)}${d.sale_price != null ? ' <span class="game-tag hot">할인중</span>' : ""}</div>
     <div class="detail-prices">
       <span class="now">${fmtWon(nowPrice)}원</span>
@@ -457,25 +482,7 @@ async function openDetail(name) {
          </div>`}
     <p class="hint" style="text-align:center">구매 시 잔액에서 차감되고, 링크는 디스코드 DM과 [내 정보]에서 7일간 받을 수 있어요.</p>`;
 
-  // 갤러리
-  if (mediaList.length) {
-    let gi = 0;
-    const view = $("#galleryView");
-    const show = () => {
-      const src = `/api/shop/image?name=${encodeURIComponent(d.name)}&i=${gi}`;
-      view.innerHTML = mediaList[gi] === "video"
-        ? `<video class="detail-img" src="${src}" controls muted playsinline loop></video>`
-        : `<img class="detail-img" src="${src}" alt="${esc(d.name)}">`;
-      document.querySelectorAll("[data-dot]").forEach((el, i) => el.classList.toggle("on", i === gi));
-    };
-    show();
-    if (mediaList.length > 1) {
-      $("#galPrev").addEventListener("click", () => { gi = (gi - 1 + mediaList.length) % mediaList.length; show(); });
-      $("#galNext").addEventListener("click", () => { gi = (gi + 1) % mediaList.length; show(); });
-      document.querySelectorAll("[data-dot]").forEach((el, i) =>
-        el.addEventListener("click", () => { gi = i; show(); }));
-    }
-  }
+  bindGallery(mediaList, (i) => `/api/shop/image?name=${encodeURIComponent(d.name)}&i=${i}`, d.name);
 
   const buyBtn = $("#detailBuy");
   const couponSel = $("#detailCoupon");
@@ -518,6 +525,121 @@ async function openDetail(name) {
     });
   }
 }
+
+// ---- 영상 (사이트 전용 상품 — 결제는 게임처럼 봇이 잔액에서 차감)
+let videoCache = null;
+let videoCat = "전체";
+
+async function loadVideos() {
+  try {
+    videoCache = (await api("/api/videos")).videos || [];
+    renderVideos();
+  } catch (e) {
+    $("#videoList").innerHTML = '<div class="card"><div class="empty">목록을 불러올 수 없어요.</div></div>';
+  }
+}
+
+function videoSrc(id, i) {
+  return `/api/video/media?id=${id}&i=${i}`;
+}
+
+function videoCard(v) {
+  const thumb = !v.media.length ? '<div class="game-img placeholder">H</div>'
+    : v.media[0] === "video"
+      ? `<video class="game-img" src="${videoSrc(v.id, 0)}#t=0.1" preload="metadata" muted playsinline loop data-hover></video>`
+      : `<img class="game-img" loading="lazy" src="${videoSrc(v.id, 0)}" alt="${esc(v.title)}">`;
+  return `
+    <div class="game-card" data-video="${v.id}" role="button" tabindex="0">
+      ${thumb}
+      <div class="game-info">
+        <div class="game-name">${esc(v.title)}${v.owned ? ' <span class="game-tag">구매함</span>' : ""}</div>
+        ${priceBlock(v)}
+      </div>
+    </div>`;
+}
+
+function renderVideos() {
+  if (!videoCache) return;
+  const cats = [...new Set(videoCache.map((v) => v.category).filter(Boolean))];
+  if (videoCat !== "전체" && !cats.includes(videoCat)) videoCat = "전체";
+  const catBox = $("#videoCats");
+  catBox.innerHTML = cats.length ? ["전체", ...cats].map((c) =>
+    `<button class="small${c === videoCat ? " active" : ""}" data-vcat="${esc(c)}">${esc(c)}</button>`).join("") : "";
+  catBox.querySelectorAll("[data-vcat]").forEach((b) =>
+    b.addEventListener("click", () => { videoCat = b.dataset.vcat; renderVideos(); }));
+
+  const q = $("#videoSearch").value.trim().toLowerCase();
+  const list = videoCache.filter((v) => (videoCat === "전체" || v.category === videoCat)
+    && (!q || v.title.toLowerCase().includes(q)));
+  const box = $("#videoList");
+  if (!list.length) {
+    box.innerHTML = `<div class="card"><div class="empty">${videoCache.length ? "검색 결과가 없어요." : "등록된 영상이 아직 없어요."}</div></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="cat-title">${esc(videoCat === "전체" ? "영상" : videoCat)} <span class="cat-count">${list.length}</span></div>
+    <div class="game-grid">${list.map(videoCard).join("")}</div>`;
+  box.querySelectorAll("[data-video]").forEach((card) => {
+    card.addEventListener("click", () => openVideoDetail(Number(card.dataset.video)));
+    const vEl = card.querySelector("video[data-hover]");
+    if (vEl) {   // 마우스를 올리면 미리보기 재생
+      card.addEventListener("mouseenter", () => vEl.play().catch(() => {}));
+      card.addEventListener("mouseleave", () => { vEl.pause(); vEl.currentTime = 0.1; });
+    }
+  });
+}
+
+async function openVideoDetail(id) {
+  const body = $("#detailBody");
+  body.innerHTML = '<div class="empty">불러오는 중...</div>';
+  $("#detailOverlay").hidden = false;
+  let v;
+  try {
+    v = await api("/api/video?id=" + id);
+  } catch (e) {
+    body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    return;
+  }
+  const finalPrice = tierPrice(v.price);
+  const off = v.official > v.price ? Math.round((1 - v.price / v.official) * 100) : 0;
+  body.innerHTML = `
+    ${galleryHTML(v.media)}
+    <div class="detail-name">${esc(v.title)}${v.owned ? ' <span class="game-tag">구매함</span>' : ""}</div>
+    <div class="detail-prices">
+      <span class="now">${fmtWon(v.price)}원</span>
+      ${off > 0 ? `<span class="was">정가 ${fmtWon(v.official)}원</span><span class="off">${off}% 할인</span>` : ""}
+    </div>
+    ${v.category ? `<div class="detail-row">분류 <b>${esc(v.category)}</b></div>` : ""}
+    ${v.info ? `<div class="rt">${renderRichText(v.info)}</div>` : ""}
+    ${myPct() ? `<div class="tier-price-row">내 등급 할인 <b>-${myPct()}%</b> 적용 → 최종 결제가 <b>${fmtWon(finalPrice)}원</b></div>` : ""}
+    <button class="primary" id="videoBuy">${fmtWon(finalPrice)}원 구매</button>
+    <p class="hint" style="text-align:center">구매 시 잔액에서 차감되고, 링크는 디스코드 DM과 [내 정보]에서 7일간 받을 수 있어요.${
+      v.owned ? "<br>이미 구매한 영상이에요. 링크는 [내 정보] 구매 내역에서 받을 수 있어요." : ""}</p>`;
+  bindGallery(v.media, (i) => videoSrc(v.id, i), v.title);
+
+  const buyBtn = $("#videoBuy");
+  buyBtn.addEventListener("click", async () => {
+    if ((shopCache?.balance ?? 0) < finalPrice) {
+      return toast(`잔액이 부족해요. (내 잔액 ${fmtWon(shopCache?.balance)}원) [잔액 충전] 탭에서 충전해주세요.`, true);
+    }
+    if (!confirm(`'${v.title}'을(를) ${fmtWon(finalPrice)}원에 구매할까요?${myPct() ? `\n(등급 할인 -${myPct()}% 적용)` : ""}${
+      v.owned ? "\n\n※ 이미 구매한 영상이에요." : ""}`)) return;
+    try {
+      buyBtn.disabled = true;
+      await api("/api/video/order", { id: v.id });
+      closeDetail();
+      toast("주문 완료! 봇이 곧 처리하고 DM으로 링크를 보내드려요. (최대 1분)");
+      loadShop();
+      loadMy();
+      loadVideos();
+    } catch (e) {
+      toast(e.message, true);
+      buyBtn.disabled = false;
+    }
+  });
+}
+
+$("#videoSearch").addEventListener("input", renderVideos);
+document.querySelector('.tabs button[data-tab="video"]').addEventListener("click", loadVideos);
 
 // ---- 장바구니 (이 브라우저에 저장)
 function getCart() {
@@ -696,7 +818,7 @@ function renderProfile() {
       <div class="item-row">
         <div>
           <div class="name">${esc(e.name)}</div>
-          <div class="sub">${fmtDate(e.ts)}${e.type === "subscription" ? " · 정기결제" : (e.type === "renewal" ? " · 자동갱신" : "")}</div>
+          <div class="sub">${fmtDate(e.ts)}${e.video ? " · 영상" : ""}${e.type === "subscription" ? " · 정기결제" : (e.type === "renewal" ? " · 자동갱신" : "")}</div>
         </div>
         <span class="price">${fmtWon(e.paid)}원</span>
       </div>`).join("")
@@ -823,6 +945,7 @@ async function loadMy() {
             <div>
               <div class="name">${esc(o.game)} · ${fmtWon(o.price)}원${
                 { reserve: ' <span class="game-tag">예약</span>',
+                  video: ' <span class="game-tag">영상</span>',
                   pass: ' <span class="game-tag pass-tag">게임패스</span>',
                   claim: ' <span class="game-tag pass-tag">무료 수령</span>' }[o.kind] || ""}</div>
               <div class="sub">${fmtDate(o.created_at)}${o.result ? " · " + esc(o.result) : (o.status === "대기" || o.status === "처리중" ? " · 봇이 처리 중이에요 (최대 1분)" : "")}</div>
